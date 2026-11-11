@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:background="@drawable/forge_bg_project_card"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="10dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/image_thumb"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:background="@color/forge_panel2"
+        android:contentDescription="图片缩略图"
+        android:scaleType="centerCrop" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/image_name"
+            style="@style/Forge.Text.Body"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="图片" />
+
+        <TextView
+            android:id="@+id/image_meta"
+            style="@style/Forge.Text.Tiny"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="file.png · 0 × 0" />
+
+        <TextView
+            android:id="@+id/image_code"
+            style="@style/Forge.Text.Tiny"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="未设置编码" />
+
+        <TextView
+            android:id="@+id/image_refs"
+            style="@style/Forge.Text.Tiny"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="未被引用" />
+    </LinearLayout>
+
+    <io.github.myoslatal.languageforge.uikit.ForgeButton
+        android:id="@+id/image_more"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:contentDescription="图片菜单"
+        android:text="⋯"
+        android:textSize="16sp"
+        app:forgeVariant="ghost" />
+</LinearLayout>

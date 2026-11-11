@@ -1,0 +1,1007 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/forge_bg"
+    android:orientation="vertical">
+
+    <!-- ============================ TOP BAR ============================ -->
+    <LinearLayout
+        android:id="@+id/topbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/forge_bg_topbar"
+        android:orientation="vertical">
+
+        <!-- Row 1: brand + project + history/theme -->
+        <LinearLayout
+            android:id="@+id/topbar_row"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/forge_topbar_height"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <LinearLayout
+                android:id="@+id/brand"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:layout_width="9dp"
+                    android:layout_height="9dp"
+                    android:layout_marginEnd="7dp"
+                    android:background="@drawable/forge_square_accent" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Forge.Text.Brand"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:includeFontPadding="false"
+                        android:singleLine="true"
+                        android:text="@string/brand_name" />
+
+                    <TextView
+                        style="@style/Forge.Text.BrandSub"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:includeFontPadding="false"
+                        android:singleLine="true"
+                        android:text="@string/brand_subtitle" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/project_chip"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/forge_bg_project_chip"
+                android:clickable="true"
+                android:contentDescription="@string/cd_project"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="26dp"
+                android:orientation="horizontal"
+                android:paddingStart="7dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="7dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/project_name"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/project_name"
+                    android:textColor="@color/forge_text"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_undo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:contentDescription="@string/cd_undo"
+                app:forgeIcon="@drawable/forge_ic_undo"
+                app:forgeVariant="ghost" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_redo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="2dp"
+                android:contentDescription="@string/cd_redo"
+                app:forgeIcon="@drawable/forge_ic_redo"
+                app:forgeVariant="ghost" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_theme"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="2dp"
+                android:contentDescription="@string/cd_theme"
+                app:forgeIcon="@drawable/forge_ic_theme"
+                app:forgeVariant="ghost" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/forge_line2" />
+
+        <!-- Row 2: gallery label + file actions -->
+        <LinearLayout
+            android:id="@+id/topbar_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/forge_toolbar_height"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="8dp">
+
+            <TextView
+                style="@style/Forge.Text.SectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:text="组件画廊 · UI KIT" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_open"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="打开"
+                app:forgeIcon="@drawable/forge_ic_folder"
+                app:forgeVariant="default" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_save"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="保存"
+                app:forgeIcon="@drawable/forge_ic_save"
+                app:forgeVariant="default" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_export"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="导出"
+                app:forgeIcon="@drawable/forge_ic_export"
+                app:forgeVariant="primary" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ============================ CONTENT ============================ -->
+    <ScrollView
+        android:id="@+id/content_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:overScrollMode="ifContentScrolls"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="@dimen/forge_content_pad"
+            android:paddingTop="14dp"
+            android:paddingEnd="@dimen/forge_content_pad"
+            android:paddingBottom="24dp">
+
+            <!-- 1. BUTTONS -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:forgeBadge="7 变体"
+                app:forgeTitle="按钮 · BUTTONS">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="默认"
+                        app:forgeVariant="default" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="主要操作"
+                        app:forgeVariant="primary" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="幽灵"
+                        app:forgeVariant="ghost" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="on 状态"
+                        app:forgeVariant="on" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="删除"
+                        app:forgeVariant="danger" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:enabled="false"
+                        android:text="禁用"
+                        app:forgeVariant="default" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="mini"
+                        app:forgeVariant="mini" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="mini 主"
+                        app:forgeVariant="miniPrimary" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:enabled="false"
+                        android:text="禁用"
+                        app:forgeVariant="primary" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:id="@+id/btn_selected_demo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="selected"
+                        app:forgeVariant="default" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="导出"
+                        app:forgeIcon="@drawable/forge_ic_export"
+                        app:forgeVariant="primary" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="打开"
+                        app:forgeIcon="@drawable/forge_ic_folder"
+                        app:forgeVariant="default" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="撤销（演示）"
+                        app:forgeIcon="@drawable/forge_ic_undo"
+                        app:forgeVariant="ghost" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="重做（演示）"
+                        app:forgeIcon="@drawable/forge_ic_redo"
+                        app:forgeVariant="ghost" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="新建"
+                        app:forgeIcon="@drawable/forge_ic_plus"
+                        app:forgeVariant="miniPrimary" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:text="default / primary / ghost / on / mini / miniPrimary / danger；按下为 accentSoft ripple，禁用约 40% 透明。" />
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 2. TABS -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="panel / inline"
+                app:forgeTitle="标签页 · TABS">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/forge_bg_card"
+                    android:clipToOutline="true"
+                    android:orientation="vertical">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeTabs
+                        android:id="@+id/tabs_panel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:forgeShowDivider="true" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/forge_bg_card"
+                    android:clipToOutline="true"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeTabs
+                        android:id="@+id/tabs_inline"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <TextView
+                        style="@style/Forge.Text.Hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="10dp"
+                        android:text="inline 模式：不绘制容器底边，用于 centerbar 内嵌标签。" />
+                </LinearLayout>
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 3. INPUTS -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="field / select / check"
+                app:forgeTitle="输入 · INPUTS">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeTextField
+                    android:id="@+id/field_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="选择正确翻译"
+                    app:forgeHelper="留空跟随「选择正确翻译」"
+                    app:forgeHint="选择正确翻译"
+                    app:forgeLabel="题目名称" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeTextField
+                    android:id="@+id/field_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:forgeHelper="显示在左侧题目列表"
+                    app:forgeHint="留空 = 自动取题干，例如：et-意思"
+                    app:forgeLabel="题目备注"
+                    app:forgeMultiline="true" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeSelect
+                    android:id="@+id/select_type"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:forgeEntries="@array/forge_question_types"
+                    app:forgeLabel="题型" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeCheckRow
+                    android:id="@+id/check_sound"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:checked="true"
+                    app:forgeLabel="默认开启反馈音效" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeSwitchRow
+                    android:id="@+id/switch_anim"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    app:forgeLabel="播放反馈动画" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Forge.Text.FieldLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="音量" />
+
+                    <SeekBar
+                        android:id="@+id/seek_volume"
+                        style="@style/Forge.SeekBar"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:max="100"
+                        android:progress="100" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                        android:id="@+id/volume_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="100%" />
+                </LinearLayout>
+
+                <io.github.myoslatal.languageforge.uikit.ForgeTextField
+                    android:id="@+id/field_search"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:forgeHint="搜索词形 / 释义 / 发音"
+                    app:forgeLabel="搜索词表" />
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 4. BADGES / CHIPS / KBD -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="badge / chip / kbd"
+                app:forgeTitle="标记 · MARKERS">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="#0LJX2" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="差一点"
+                        app:forgeTone="warn" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="校验通过"
+                        app:forgeTone="ok" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="已选 3"
+                        app:forgeTone="accent" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeChip
+                        android:id="@+id/chip_greeting"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="问候"
+                        app:forgeClosable="true" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeChip
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="选择正确翻译" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeChip
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="语法"
+                        app:forgeActive="true" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Forge.Text.Kbd"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Ctrl+S" />
+
+                    <TextView
+                        style="@style/Forge.Text.Kbd"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="Ctrl+E" />
+
+                    <TextView
+                        style="@style/Forge.Text.Kbd"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="?" />
+
+                    <TextView
+                        style="@style/Forge.Text.Tpill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="LTR" />
+
+                    <TextView
+                        style="@style/Forge.Text.Tpill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
+                        android:fontFamily="monospace"
+                        android:text="n" />
+                </LinearLayout>
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 5. CARDS / SECTION / HINTS -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="card / hint"
+                app:forgeTitle="卡片与提示 · CARDS">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeCard
+                    android:id="@+id/card_stem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:forgeAction="AA = 单独改字体"
+                    app:forgeTitle="题干与媒体">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeTextField
+                        android:id="@+id/field_stem"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="et"
+                        app:forgeHint="et"
+                        app:forgeLabel="题干" />
+
+                    <TextView
+                        style="@style/Forge.Text.Hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="给出词或句子，从若干选项中挑出正确释义 / 说法。" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="9dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <io.github.myoslatal.languageforge.uikit.ForgeButton
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="题图"
+                            app:forgeIcon="@drawable/forge_ic_plus"
+                            app:forgeVariant="miniPrimary" />
+
+                        <io.github.myoslatal.languageforge.uikit.ForgeButton
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="录音库"
+                            app:forgeVariant="mini" />
+
+                        <io.github.myoslatal.languageforge.uikit.ForgeButton
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:text="上传音频"
+                            app:forgeVariant="mini" />
+                    </LinearLayout>
+                </io.github.myoslatal.languageforge.uikit.ForgeCard>
+
+                <io.github.myoslatal.languageforge.uikit.ForgeSection
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    app:forgeBadge="3 事件"
+                    app:forgeTitle="反馈音效 · 区段组件">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/forge_bg_unit"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:text="答对"
+                            android:textColor="@color/forge_text"
+                            android:textSize="11.5sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            style="@style/Forge.Text.Hint"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="清亮铃 · 叮" />
+
+                        <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="试听"
+                            app:forgeTone="accent" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/forge_bg_unit"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:includeFontPadding="false"
+                            android:text="答错"
+                            android:textColor="@color/forge_text"
+                            android:textSize="11.5sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            style="@style/Forge.Text.Hint"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="闷响 · 错" />
+
+                        <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="试听"
+                            app:forgeTone="accent" />
+                    </LinearLayout>
+                </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+                <TextView
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="普通提示：留空 = 自动取题干，例如 et-意思。" />
+
+                <TextView
+                    style="@style/Forge.Text.Hint.Warn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="差一点：选项与答案只差声调时，显示黄色提示。" />
+
+                <TextView
+                    style="@style/Forge.Text.Hint.Ok"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="校验通过：导出播放器前建议清零。" />
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 6. OVERLAYS -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="toast / dialog / menu"
+                app:forgeTitle="弹层 · OVERLAYS">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:id="@+id/btn_overlay_toast"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Toast"
+                        app:forgeVariant="default" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:id="@+id/btn_overlay_dialog"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="对话框"
+                        app:forgeVariant="primary" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:id="@+id/btn_overlay_menu"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="菜单"
+                        app:forgeVariant="default" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:text="Toast：text 底 + panel 字、20dp 圆角，默认距底 114dp + 导航栏 inset。Dialog：42% scrim、9dp 圆角、header/footer panel2、body 可滚动、宽 min(screen-20dp, 680dp)、高约 88vh。Menu：PopupWindow，206–280dp、8dp 圆角，支持 header / divider / kbd / 选中标记。" />
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 6. LISTS -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="unit / question / dict"
+                app:forgeTitle="列表 · LISTS">
+
+                <TextView
+                    style="@style/Forge.Text.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="UNIT · 关卡行" />
+
+                <LinearLayout
+                    android:id="@+id/list_units"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:orientation="vertical" />
+
+                <TextView
+                    style="@style/Forge.Text.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="QUESTION · 题目行" />
+
+                <LinearLayout
+                    android:id="@+id/list_questions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:orientation="vertical" />
+
+                <TextView
+                    style="@style/Forge.Text.FieldLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="DICT · 词表行" />
+
+                <LinearLayout
+                    android:id="@+id/list_dict"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:background="@drawable/forge_bg_card"
+                    android:clipToOutline="true"
+                    android:orientation="vertical"
+                    android:padding="1dp" />
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 7. TYPOGRAPHY -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="sans / serif / mono"
+                app:forgeTitle="字体样张 · TYPE">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeCard
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:forgeAction="sans-serif · serif · monospace"
+                    app:forgeTitle="字体样张">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            style="@style/Forge.Text.FieldLabel"
+                            android:layout_width="70dp"
+                            android:layout_height="wrap_content"
+                            android:text="UI" />
+
+                        <TextView
+                            style="@style/Forge.Text.Body"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="界面字体 · 面板与按钮" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            style="@style/Forge.Text.FieldLabel"
+                            android:layout_width="70dp"
+                            android:layout_height="wrap_content"
+                            android:text="语言" />
+
+                        <TextView
+                            style="@style/Forge.Text.Lang"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Nostongue Forge · nortu" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            style="@style/Forge.Text.FieldLabel"
+                            android:layout_width="70dp"
+                            android:layout_height="wrap_content"
+                            android:text="标题" />
+
+                        <TextView
+                            style="@style/Forge.Text.Title"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="语言关卡制作器" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            style="@style/Forge.Text.FieldLabel"
+                            android:layout_width="70dp"
+                            android:layout_height="wrap_content"
+                            android:text="音标" />
+
+                        <TextView
+                            style="@style/Forge.Text.Pron"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="/ˈnɔstoŋ fɔːdʒ/" />
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/Forge.Text.Hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="UI = sans-serif；语言 / 标题 = serif；音标 / 代码 = monospace。" />
+                </io.github.myoslatal.languageforge.uikit.ForgeCard>
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+
+            <!-- 8. STATUS BAR / BOTTOM NAV -->
+            <io.github.myoslatal.languageforge.uikit.ForgeSection
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/forge_section_gap"
+                app:forgeBadge="static demo"
+                app:forgeTitle="状态栏 · 底部导航">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeStatusBar
+                    android:id="@+id/status_bar_demo"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/forge_statusbar_height" />
+
+                <TextView
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="底部导航固定在窗口底部：4 个 item，选中 accent 字 + accentSoft 底，56dp 高（外加系统导航栏 inset）。" />
+
+                <TextView
+                    style="@style/Forge.Text.Tiny"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Nostongue Forge UI Kit · Java · API 24–36 · v1.0" />
+            </io.github.myoslatal.languageforge.uikit.ForgeSection>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ============================ BOTTOM NAV ============================ -->
+    <io.github.myoslatal.languageforge.uikit.ForgeBottomNav
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+</LinearLayout>

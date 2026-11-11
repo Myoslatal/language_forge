@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/crop_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/forge_bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/crop_topbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/forge_bg_topbar"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/crop_topbar_row"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_crop_back"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="取消"
+                app:forgeIcon="@drawable/forge_ic_back"
+                app:forgeVariant="ghost" />
+
+            <TextView
+                style="@style/Forge.Text.Brand"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:includeFontPadding="false"
+                android:text="裁剪图片" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_crop_done"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="完成"
+                app:forgeVariant="primary" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <io.github.myoslatal.languageforge.ImageCropView
+        android:id="@+id/crop_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/forge_panel2" />
+
+    <TextView
+        style="@style/Forge.Text.Hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/forge_panel"
+        android:padding="10dp"
+        android:text="拖动四角调整裁剪范围；框外会被遮罩。" />
+</LinearLayout>

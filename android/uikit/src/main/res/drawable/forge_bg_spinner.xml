@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/forge_bg_input" />
+    <item android:drawable="@drawable/forge_ic_chevron_down"
+        android:gravity="end|center_vertical"
+        android:right="9dp"
+        android:width="12dp"
+        android:height="12dp" />
+</layer-list>

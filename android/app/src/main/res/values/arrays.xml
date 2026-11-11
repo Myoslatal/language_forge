@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="forge_question_types">
+        <item>选择正确翻译</item>
+        <item>选出最合适的回答</item>
+        <item>把词形和释义配对</item>
+        <item>把正确的词填进空格</item>
+    </string-array>
+</resources>

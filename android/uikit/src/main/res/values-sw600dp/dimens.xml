@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="forge_topbar_height">50dp</dimen>
+    <dimen name="forge_text_input">12sp</dimen>
+    <dimen name="forge_content_pad">18dp</dimen>
+    <dimen name="forge_section_gap">26dp</dimen>
+</resources>

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Radii -->
+    <dimen name="forge_radius">5dp</dimen>
+    <dimen name="forge_radius_dialog">9dp</dimen>
+    <dimen name="forge_radius_menu">8dp</dimen>
+    <dimen name="forge_radius_chip">12dp</dimen>
+    <dimen name="forge_radius_toast">20dp</dimen>
+
+    <!-- Font sizes -->
+    <dimen name="forge_text_body">12.5sp</dimen>
+    <dimen name="forge_text_control">12sp</dimen>
+    <dimen name="forge_text_tab">11.5sp</dimen>
+    <dimen name="forge_text_hint">10.5sp</dimen>
+    <dimen name="forge_text_card_title">10sp</dimen>
+    <dimen name="forge_text_section_title">9.5sp</dimen>
+    <dimen name="forge_text_field_label">9.5sp</dimen>
+    <dimen name="forge_text_badge">9.5sp</dimen>
+    <dimen name="forge_text_tiny">9sp</dimen>
+    <dimen name="forge_text_input">16sp</dimen>
+    <dimen name="forge_text_brand">12.5sp</dimen>
+    <dimen name="forge_text_brand_sub">8.5sp</dimen>
+    <dimen name="forge_text_lang">16sp</dimen>
+    <dimen name="forge_text_title">20sp</dimen>
+    <dimen name="forge_text_pron">13sp</dimen>
+    <dimen name="forge_text_mini">11sp</dimen>
+
+    <!-- Chrome -->
+    <dimen name="forge_topbar_height">46dp</dimen>
+    <dimen name="forge_toolbar_height">42dp</dimen>
+    <dimen name="forge_statusbar_height">26dp</dimen>
+    <dimen name="forge_bottomnav_height">56dp</dimen>
+    <dimen name="forge_content_pad">12dp</dimen>
+    <dimen name="forge_toast_bottom_margin">114dp</dimen>
+    <dimen name="forge_dialog_margin">20dp</dimen>
+    <dimen name="forge_dialog_max_width">680dp</dimen>
+    <dimen name="forge_menu_min_width">206dp</dimen>
+    <dimen name="forge_menu_max_width">280dp</dimen>
+    <dimen name="forge_section_gap">22dp</dimen>
+
+    <!-- Padding / spacing -->
+    <dimen name="forge_panel_pad_h">12dp</dimen>
+    <dimen name="forge_panel_pad_v">11dp</dimen>
+    <dimen name="forge_card_header_pad_h">11dp</dimen>
+    <dimen name="forge_card_header_pad_v">8dp</dimen>
+    <dimen name="forge_card_body_pad">11dp</dimen>
+    <dimen name="forge_button_pad_h">10dp</dimen>
+    <dimen name="forge_button_pad_v">6dp</dimen>
+    <dimen name="forge_button_min_height">28dp</dimen>
+    <dimen name="forge_button_icon_only_pad">6dp</dimen>
+    <dimen name="forge_button_icon_only_min_width">28dp</dimen>
+    <dimen name="forge_mini_pad_h">6dp</dimen>
+    <dimen name="forge_mini_pad_v">3dp</dimen>
+    <dimen name="forge_mini_min_height">20dp</dimen>
+    <dimen name="forge_tabs_pad_h">12dp</dimen>
+    <dimen name="forge_tabs_pad_v">7dp</dimen>
+    <dimen name="forge_tabs_strip_pad_h">9dp</dimen>
+    <dimen name="forge_tabs_strip_pad_t">7dp</dimen>
+    <dimen name="forge_field_gap">5dp</dimen>
+    <dimen name="forge_input_pad_h">8dp</dimen>
+    <dimen name="forge_input_pad_v">6dp</dimen>
+    <dimen name="forge_input_min_height">32dp</dimen>
+    <dimen name="forge_textarea_min_height">56dp</dimen>
+    <dimen name="forge_row_gap">7dp</dimen>
+    <dimen name="forge_row_pad_v">4dp</dimen>
+
+    <!-- Icons -->
+    <dimen name="forge_icon">15dp</dimen>
+    <dimen name="forge_icon_sm">12dp</dimen>
+    <dimen name="forge_icon_lg">18dp</dimen>
+    <dimen name="forge_icon_bottomnav">19dp</dimen>
+    <dimen name="forge_icon_chip">10dp</dimen>
+    <dimen name="forge_icon_search">15dp</dimen>
+</resources>

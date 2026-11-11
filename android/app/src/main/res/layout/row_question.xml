@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/question_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/forge_bg_qitem"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:minHeight="31dp"
+    android:orientation="horizontal"
+    android:paddingStart="15dp"
+    android:paddingTop="6dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="6dp">
+
+    <TextView
+        android:id="@+id/question_icon"
+        android:layout_width="17dp"
+        android:layout_height="17dp"
+        android:background="@drawable/forge_bg_qicon"
+        android:duplicateParentState="true"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:text="A"
+        android:textColor="@color/forge_q_icon"
+        android:textSize="9.5sp" />
+
+    <TextView
+        android:id="@+id/question_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:duplicateParentState="true"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        android:singleLine="true"
+        android:text="你好"
+        android:textColor="@color/forge_q_title"
+        android:textSize="11.5sp" />
+
+    <TextView
+        android:id="@+id/question_sub"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:text="选择正确翻译"
+        android:textColor="@color/forge_muted"
+        android:textSize="10sp" />
+
+    <TextView
+        android:id="@+id/question_warn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:text="!"
+        android:textColor="@color/forge_bad"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+</LinearLayout>

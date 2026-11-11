@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="forge_inset_base_padding" type="id" />
+    <item name="forge_field_label" type="id" />
+    <item name="forge_field_input" type="id" />
+    <item name="forge_field_helper" type="id" />
+    <item name="forge_field_spinner" type="id" />
+    <item name="forge_card_header" type="id" />
+    <item name="forge_card_title" type="id" />
+    <item name="forge_card_action" type="id" />
+    <item name="forge_card_body" type="id" />
+    <item name="forge_section_header" type="id" />
+    <item name="forge_section_title" type="id" />
+    <item name="forge_section_badge" type="id" />
+    <item name="forge_section_content" type="id" />
+    <item name="forge_switch" type="id" />
+    <item name="forge_checkbox" type="id" />
+    <item name="forge_bottomnav_row" type="id" />
+    <item name="forge_nav_icon" type="id" />
+    <item name="forge_nav_label" type="id" />
+</resources>

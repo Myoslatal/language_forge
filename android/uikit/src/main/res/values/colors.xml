@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Core palette, mirrored from NostongueForge_v1.3.1.html (light theme). -->
+    <color name="forge_bg">#E9EBEF</color>
+    <color name="forge_panel">#FFFFFF</color>
+    <color name="forge_panel2">#F6F7F9</color>
+    <color name="forge_panel3">#EEF1F5</color>
+    <color name="forge_line">#DFE3E9</color>
+    <color name="forge_line2">#EDF0F4</color>
+    <color name="forge_text">#171B21</color>
+    <color name="forge_muted">#6D7684</color>
+    <color name="forge_faint">#9AA3B0</color>
+    <color name="forge_accent">#2F6FEB</color>
+    <color name="forge_accent_soft">#1C2F6FEB</color>
+    <color name="forge_accent_line">#A9C4FB</color>
+    <color name="forge_ok">#159447</color>
+    <color name="forge_ok_bg">#E8F6ED</color>
+    <color name="forge_warn">#B26A00</color>
+    <color name="forge_warn_bg">#FFF5E3</color>
+    <color name="forge_bad">#D23B3B</color>
+    <color name="forge_bad_bg">#FDECEC</color>
+
+    <color name="forge_on_accent">#FFFFFF</color>
+    <color name="forge_ripple_on_accent">#33FFFFFF</color>
+    <color name="forge_transparent">#00000000</color>
+    <color name="forge_scrim">#6B0C1018</color>
+</resources>

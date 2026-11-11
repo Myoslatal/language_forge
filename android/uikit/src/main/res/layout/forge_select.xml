@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <TextView
+        android:id="@+id/forge_field_label"
+        style="@style/Forge.Text.FieldLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/forge_field_spinner"
+        style="@style/Forge.Spinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/forge_field_gap" />
+</merge>

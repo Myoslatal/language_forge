@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="forgeVariant" format="string" />
+    <attr name="forgeIcon" format="reference" />
+    <attr name="forgeIconSize" format="dimension" />
+    <attr name="forgeShowDivider" format="boolean" />
+    <attr name="forgeTitle" format="string" />
+    <attr name="forgeAction" format="string" />
+    <attr name="forgeBadge" format="string" />
+    <attr name="forgeLabel" format="string" />
+    <attr name="forgeHelper" format="string" />
+    <attr name="forgeMultiline" format="boolean" />
+    <attr name="forgeHint" format="string" />
+    <attr name="forgeEntries" format="reference" />
+    <attr name="forgeClosable" format="boolean" />
+    <attr name="forgeActive" format="boolean" />
+    <attr name="forgeTone" format="enum">
+        <enum name="neutral" value="0" />
+        <enum name="warn" value="1" />
+        <enum name="ok" value="2" />
+        <enum name="accent" value="3" />
+    </attr>
+
+    <declare-styleable name="ForgeButton">
+        <attr name="forgeVariant" />
+        <attr name="forgeIcon" />
+        <attr name="forgeIconSize" />
+        <attr name="android:text" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeTabs">
+        <attr name="forgeShowDivider" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeCard">
+        <attr name="forgeTitle" />
+        <attr name="forgeAction" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeSection">
+        <attr name="forgeTitle" />
+        <attr name="forgeBadge" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeTextField">
+        <attr name="forgeLabel" />
+        <attr name="forgeHelper" />
+        <attr name="forgeMultiline" />
+        <attr name="forgeHint" />
+        <attr name="android:text" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeSelect">
+        <attr name="forgeLabel" />
+        <attr name="forgeEntries" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeSwitchRow">
+        <attr name="forgeLabel" />
+        <attr name="android:checked" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeCheckRow">
+        <attr name="forgeLabel" />
+        <attr name="android:checked" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeChip">
+        <attr name="forgeClosable" />
+        <attr name="forgeActive" />
+        <attr name="android:text" />
+    </declare-styleable>
+
+    <declare-styleable name="ForgeBadge">
+        <attr name="forgeTone" />
+        <attr name="android:text" />
+    </declare-styleable>
+</resources>

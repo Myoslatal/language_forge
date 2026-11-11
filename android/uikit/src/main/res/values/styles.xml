@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- ===================== Typography ===================== -->
+    <style name="Forge.Text" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/forge_text_body</item>
+        <item name="android:textColor">@color/forge_text</item>
+    </style>
+
+    <style name="Forge.Text.Body" parent="Forge.Text">
+        <item name="android:lineSpacingMultiplier">1.6</item>
+    </style>
+
+    <style name="Forge.Text.Control" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_control</item>
+    </style>
+
+    <style name="Forge.Text.Hint" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_hint</item>
+        <item name="android:textColor">@color/forge_muted</item>
+        <item name="android:lineSpacingMultiplier">1.6</item>
+    </style>
+
+    <style name="Forge.Text.Hint.Warn" parent="Forge.Text.Hint">
+        <item name="android:textColor">@color/forge_warn</item>
+        <item name="android:background">@drawable/forge_bg_hint_warn</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+
+    <style name="Forge.Text.Hint.Ok" parent="Forge.Text.Hint">
+        <item name="android:textColor">@color/forge_ok</item>
+        <item name="android:background">@drawable/forge_bg_hint_ok</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+
+    <style name="Forge.Text.SectionTitle" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_section_title</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.FieldLabel" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_field_label</item>
+        <item name="android:letterSpacing">0.09</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.CardTitle" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_card_title</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.CardAction" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_card_title</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.Badge" parent="Forge.Text">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">@dimen/forge_text_badge</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.Kbd" parent="Forge.Text">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">@dimen/forge_text_card_title</item>
+        <item name="android:textColor">@color/forge_text</item>
+        <item name="android:background">@drawable/forge_bg_kbd</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:paddingTop">1dp</item>
+        <item name="android:paddingBottom">1dp</item>
+    </style>
+
+    <style name="Forge.Text.Tpill" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_tiny</item>
+        <item name="android:textColor">@color/forge_muted</item>
+        <item name="android:background">@drawable/forge_bg_tpill</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:paddingTop">1dp</item>
+        <item name="android:paddingBottom">1dp</item>
+    </style>
+
+    <style name="Forge.Text.Tiny" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_tiny</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.Brand" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_brand</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:textColor">@color/forge_text</item>
+    </style>
+
+    <style name="Forge.Text.BrandSub" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_brand_sub</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.Lang" parent="Forge.Text">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textSize">@dimen/forge_text_lang</item>
+        <item name="android:textColor">@color/forge_text</item>
+    </style>
+
+    <style name="Forge.Text.Title" parent="Forge.Text">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textSize">@dimen/forge_text_title</item>
+        <item name="android:textColor">@color/forge_text</item>
+    </style>
+
+    <style name="Forge.Text.Pron" parent="Forge.Text">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">@dimen/forge_text_pron</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <style name="Forge.Text.DialogTitle" parent="Forge.Text">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/forge_text</item>
+    </style>
+
+    <style name="Forge.Text.DialogBody" parent="Forge.Text">
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:textColor">@color/forge_text</item>
+        <item name="android:lineSpacingMultiplier">1.6</item>
+    </style>
+
+    <style name="Forge.Text.MenuHeader" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_section_title</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/forge_faint</item>
+    </style>
+
+    <style name="Forge.Text.MenuItem" parent="Forge.Text">
+        <item name="android:textSize">@dimen/forge_text_control</item>
+        <item name="android:textColor">@color/forge_text</item>
+    </style>
+
+    <style name="Forge.Text.Mono" parent="Forge.Text">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/forge_muted</item>
+    </style>
+
+    <!-- ===================== Controls ===================== -->
+    <style name="Forge.Button" parent="Widget.AppCompat.Button">
+        <item name="android:background">@drawable/forge_bg_button</item>
+        <item name="android:textColor">@color/forge_button_text</item>
+        <item name="android:textSize">@dimen/forge_text_control</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:paddingStart">@dimen/forge_button_pad_h</item>
+        <item name="android:paddingEnd">@dimen/forge_button_pad_h</item>
+        <item name="android:paddingTop">@dimen/forge_button_pad_v</item>
+        <item name="android:paddingBottom">@dimen/forge_button_pad_v</item>
+        <item name="android:minHeight">@dimen/forge_button_min_height</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:drawablePadding">4dp</item>
+    </style>
+
+    <style name="Forge.Button.Primary" parent="Forge.Button">
+        <item name="android:background">@drawable/forge_bg_button_primary</item>
+        <item name="android:textColor">@color/forge_button_text_primary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Forge.Button.Ghost" parent="Forge.Button">
+        <item name="android:background">@drawable/forge_bg_button_ghost</item>
+        <item name="android:textColor">@color/forge_button_text_muted</item>
+    </style>
+
+    <style name="Forge.Button.On" parent="Forge.Button">
+        <item name="android:background">@drawable/forge_bg_button_selected</item>
+        <item name="android:textColor">@color/forge_button_text_accent</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Forge.Button.Mini" parent="Forge.Button">
+        <item name="android:background">@drawable/forge_bg_button_mini</item>
+        <item name="android:textColor">@color/forge_button_text_muted</item>
+        <item name="android:textSize">@dimen/forge_text_mini</item>
+        <item name="android:paddingStart">@dimen/forge_mini_pad_h</item>
+        <item name="android:paddingEnd">@dimen/forge_mini_pad_h</item>
+        <item name="android:paddingTop">@dimen/forge_mini_pad_v</item>
+        <item name="android:paddingBottom">@dimen/forge_mini_pad_v</item>
+        <item name="android:minHeight">@dimen/forge_mini_min_height</item>
+    </style>
+
+    <style name="Forge.Button.MiniPrimary" parent="Forge.Button">
+        <item name="android:background">@drawable/forge_bg_button_mini_primary</item>
+        <item name="android:textColor">@color/forge_button_text_accent</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Forge.Button.Danger" parent="Forge.Button">
+        <item name="android:textColor">@color/forge_button_text_danger</item>
+    </style>
+
+    <style name="Forge.Tab" parent="TextAppearance.AppCompat">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/forge_text_tab</item>
+        <item name="android:textColor">@color/forge_tab_text</item>
+        <item name="android:background">@drawable/forge_bg_tab</item>
+        <item name="android:paddingStart">@dimen/forge_tabs_pad_h</item>
+        <item name="android:paddingEnd">@dimen/forge_tabs_pad_h</item>
+        <item name="android:paddingTop">@dimen/forge_tabs_pad_v</item>
+        <item name="android:paddingBottom">@dimen/forge_tabs_pad_v</item>
+        <item name="android:minHeight">30dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="Forge.Input" parent="Widget.AppCompat.EditText">
+        <item name="android:background">@drawable/forge_bg_input</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="backgroundTint">@null</item>
+        <item name="android:textSize">@dimen/forge_text_input</item>
+        <item name="android:textColor">@color/forge_text</item>
+        <item name="android:textColorHint">@color/forge_faint</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:paddingStart">@dimen/forge_input_pad_h</item>
+        <item name="android:paddingEnd">@dimen/forge_input_pad_h</item>
+        <item name="android:paddingTop">@dimen/forge_input_pad_v</item>
+        <item name="android:paddingBottom">@dimen/forge_input_pad_v</item>
+        <item name="android:minHeight">@dimen/forge_input_min_height</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textCursorDrawable">@null</item>
+    </style>
+
+    <style name="Forge.Spinner" parent="Widget.AppCompat.Spinner">
+        <item name="android:background">@drawable/forge_bg_spinner</item>
+        <item name="android:paddingStart">@dimen/forge_input_pad_h</item>
+        <item name="android:paddingEnd">28dp</item>
+        <item name="android:minHeight">@dimen/forge_input_min_height</item>
+        <item name="android:popupBackground">@drawable/forge_bg_menu</item>
+        <item name="android:spinnerMode">dropdown</item>
+        <item name="android:dropDownVerticalOffset">2dp</item>
+        <item name="android:overlapAnchor">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="Forge.SpinnerItem" parent="android:Widget.TextView">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/forge_text_input</item>
+        <item name="android:textColor">@color/forge_text</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:minHeight">@dimen/forge_input_min_height</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Forge.SpinnerDropDown" parent="android:Widget.TextView">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/forge_text</item>
+        <item name="android:paddingStart">9dp</item>
+        <item name="android:paddingEnd">9dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="Forge.CheckBox" parent="Widget.AppCompat.CompoundButton.CheckBox">
+        <item name="android:button">@drawable/forge_checkbox</item>
+        <item name="android:buttonTint">@null</item>
+        <item name="buttonTint">@null</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="Forge.SeekBar" parent="Widget.AppCompat.SeekBar">
+        <item name="android:progressDrawable">@drawable/forge_seekbar</item>
+        <item name="android:thumb">@drawable/forge_seekbar_thumb</item>
+        <item name="android:splitTrack">false</item>
+        <item name="android:minHeight">18dp</item>
+        <item name="android:maxHeight">18dp</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:background">@null</item>
+    </style>
+
+
+</resources>

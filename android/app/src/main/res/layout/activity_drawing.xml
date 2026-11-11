@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawing_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/forge_bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/drawing_topbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/forge_bg_topbar"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/drawing_topbar_row"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_drawing_back"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="取消"
+                app:forgeIcon="@drawable/forge_ic_back"
+                app:forgeVariant="ghost" />
+
+            <TextView
+                style="@style/Forge.Text.Brand"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:includeFontPadding="false"
+                android:text="手绘文字" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_drawing_save"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="保存"
+                app:forgeVariant="primary" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/drawing_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/forge_panel"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp">
+
+        <io.github.myoslatal.languageforge.uikit.ForgeButton
+            android:id="@+id/btn_brush"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="画笔"
+            app:forgeVariant="on" />
+
+        <io.github.myoslatal.languageforge.uikit.ForgeButton
+            android:id="@+id/btn_eraser"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="橡皮"
+            app:forgeVariant="ghost" />
+
+        <io.github.myoslatal.languageforge.uikit.ForgeButton
+            android:id="@+id/btn_clear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="清空"
+            app:forgeVariant="ghost" />
+
+        <io.github.myoslatal.languageforge.uikit.ForgeButton
+            android:id="@+id/btn_undo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:contentDescription="撤销"
+            android:enabled="false"
+            android:text="撤销"
+            android:textSize="11sp"
+            app:forgeVariant="ghost" />
+
+        <io.github.myoslatal.languageforge.uikit.ForgeButton
+            android:id="@+id/btn_redo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:contentDescription="重做"
+            android:enabled="false"
+            android:text="重做"
+            android:textSize="11sp"
+            app:forgeVariant="ghost" />
+
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/drawing_canvas_host"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12dp" />
+
+    <TextView
+        style="@style/Forge.Text.Tiny"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingBottom="8dp"
+        android:text="透明底；保存后作为自定义文字图片" />
+</LinearLayout>
