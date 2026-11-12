@@ -2288,7 +2288,7 @@ void renderQuestionEditor(App& app) {
   ImGui::SameLine();
   const float right = ImGui::GetWindowWidth() - 140;
   if (right > 0) ImGui::SetCursorPosX(right);
-  if (ImGui::Button("保存题目", ImVec2(120, 34))) app.saveQuestion();
+  if (ImGui::Button("保存题目##question_save_top", ImVec2(120, 34))) app.saveQuestion();
   ImGui::Spacing();
   ImGui::TextUnformatted("句子词汇与标点（按顺序）");
   if (app.editQuestion.segments.empty()) ImGui::TextDisabled("尚未选择词汇");
@@ -2407,9 +2407,9 @@ void renderQuestionEditor(App& app) {
     ImGui::PopID();
   }
   ImGui::Spacing();
-  if (ImGui::Button("保存题目", ImVec2(120, 34))) app.saveQuestion();
+  if (ImGui::Button("保存题目##question_save_bottom", ImVec2(120, 34))) app.saveQuestion();
   ImGui::SameLine();
-  if (ImGui::Button("取消", ImVec2(90, 34))) app.screen = App::Screen::Course;
+  if (ImGui::Button("取消##question_cancel_bottom", ImVec2(90, 34))) app.screen = App::Screen::Course;
 }
 
 void renderCourse(App& app) {
@@ -4348,6 +4348,10 @@ void renderResourcesWithPhase2(App& app) {
   ImGui::TextDisabled("资源管理");
   ImGui::Spacing();
   pageTitle("RESOURCES", "资源管理", "词汇、字体、图片与音频项目资源。");
+  ImGui::SameLine();
+  const float audioButtonX = ImGui::GetWindowWidth() - 150;
+  if (audioButtonX > 0) ImGui::SetCursorPosX(audioButtonX);
+  if (ImGui::Button("音频管理##resources_audio", ImVec2(120, 30))) app.openAudios();
   app.ensureVocabularyLoaded();
   app.ensureImagesLoaded();
   app.ensureAudioLoaded();
