@@ -11,6 +11,7 @@ import android.os.Looper;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
 import io.github.myoslatal.languageforge.uikit.ForgeButton;
 import io.github.myoslatal.languageforge.uikit.ForgeDialog;
+import io.github.myoslatal.languageforge.uikit.ForgeMenu;
 import io.github.myoslatal.languageforge.uikit.ForgeTextField;
 import io.github.myoslatal.languageforge.uikit.ForgeToast;
 
@@ -45,11 +47,18 @@ public class QuestionEditorActivity extends ForgeActivity {
     private ProjectStructure.Question question;
     private VocabularyStore vocabulary;
     private final List<String> parts = new ArrayList<>();
+    private final List<ProjectStructure.Question.Segment> segments = new ArrayList<>();
     private final ForgeTextField[] optionFields = new ForgeTextField[4];
     private RadioButton[] correctButtons = new RadioButton[4];
     private LinearLayout partsContainer;
     private TextView sentenceView;
     private TextView audioHint;
+    private TextView audioTrimText;
+    private SeekBar startSeek;
+    private SeekBar endSeek;
+    private boolean updatingTrim;
+    private Handler playHandler;
+    private Runnable playStopTask;
     private ForgeButton recordButton;
     private boolean recording;
     private boolean dirty;
@@ -62,6 +71,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private Runnable tickerTask;
     private String pendingAudio;
     private long pendingDuration;
+    private long audioStart;
+    private long audioEnd;
     private String existingAudio = "";
     private String originalAudio = "";
     private long existingDuration;
@@ -107,9 +118,21 @@ public class QuestionEditorActivity extends ForgeActivity {
             question.options.add("");
         } else {
             parts.addAll(question.parts);
+            segments.addAll(question.segments);
+            if (segments.isEmpty()) {
+                for (String part : question.parts) {
+                    segments.add(ProjectStructure.Question.Segment.word(part));
+                }
+            }
             existingAudio = question.audio;
             originalAudio = question.audio;
             existingDuration = question.audioDuration;
+            audioStart = question.audioStart;
+            audioEnd = question.audioEnd;
+            if (audioEnd <= audioStart && existingDuration > 0) {
+                audioStart = 0;
+                audioEnd = existingDuration;
+            }
         }
 
         setContentView(R.layout.activity_question_editor);
@@ -122,7 +145,31 @@ public class QuestionEditorActivity extends ForgeActivity {
         partsContainer = findViewById(R.id.question_parts);
         sentenceView = findViewById(R.id.question_sentence);
         audioHint = findViewById(R.id.question_audio_hint);
+        audioTrimText = findViewById(R.id.question_audio_trim);
+        startSeek = findViewById(R.id.question_audio_start);
+        endSeek = findViewById(R.id.question_audio_end);
         recordButton = findViewById(R.id.btn_question_record);
+        startSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser || updatingTrim) return;
+                audioStart = Math.min(progress, Math.max(0, audioEnd - 100));
+                dirty = true;
+                updateTrimUi();
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        endSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser || updatingTrim) return;
+                audioEnd = Math.max(progress, audioStart + 100);
+                dirty = true;
+                updateTrimUi();
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        findViewById(R.id.btn_question_trim_play).setOnClickListener(v -> playAudio());
         for (int i = 0; i < 4; i++) {
             int id = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
             optionFields[i] = findViewById(id);
@@ -147,6 +194,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         findViewById(R.id.btn_question_back).setOnClickListener(v -> confirmBack());
         findViewById(R.id.btn_save_question).setOnClickListener(v -> save());
         findViewById(R.id.btn_choose_question_parts).setOnClickListener(v -> openPicker());
+        findViewById(R.id.btn_insert_punct).setOnClickListener(v -> showPunctuationMenu(v));
         findViewById(R.id.btn_question_record).setOnClickListener(v -> toggleRecord());
         findViewById(R.id.btn_question_play).setOnClickListener(v -> playAudio());
         findViewById(R.id.btn_question_remove_audio).setOnClickListener(v -> removeAudio());
@@ -165,6 +213,20 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
         }
         return null;
+    }
+
+    private void showPunctuationMenu(View anchor) {
+        ForgeMenu menu = new ForgeMenu(this);
+        menu.addHeader("插入标点");
+        String[] marks = {"，", "。", "、", "？", "！", "；", "：", "“", "”", "（", "）", "…", "—", "/"};
+        for (String mark : marks) {
+            menu.addItem(mark, () -> {
+                segments.add(ProjectStructure.Question.Segment.punct(mark));
+                dirty = true;
+                renderParts();
+            });
+        }
+        menu.show(anchor);
     }
 
     private void openPicker() {
@@ -186,6 +248,18 @@ public class QuestionEditorActivity extends ForgeActivity {
                 parts.clear();
                 for (String id : selected) {
                     if (id != null && !id.isEmpty() && !parts.contains(id)) parts.add(id);
+                }
+                List<ProjectStructure.Question.Segment> punctuation = new ArrayList<>();
+                for (ProjectStructure.Question.Segment segment : segments) {
+                    if (!segment.word) punctuation.add(segment);
+                }
+                segments.clear();
+                for (String id : parts) {
+                    segments.add(ProjectStructure.Question.Segment.word(id));
+                }
+                segments.addAll(punctuation);
+                if (!punctuation.isEmpty()) {
+                    toast("已保留原有标点，并移到新词序列末尾");
                 }
                 dirty = true;
                 renderParts();
@@ -210,11 +284,15 @@ public class QuestionEditorActivity extends ForgeActivity {
 
     private String sentenceText() {
         StringBuilder builder = new StringBuilder();
-        for (String id : parts) {
-            String name = displayName(id);
-            if (name.isEmpty()) continue;
-            if (builder.length() > 0) builder.append(' ');
-            builder.append(name);
+        for (ProjectStructure.Question.Segment segment : segments) {
+            if (segment.word) {
+                String name = displayName(segment.vocabId);
+                if (name.isEmpty()) continue;
+                if (builder.length() > 0) builder.append(' ');
+                builder.append(name);
+            } else {
+                builder.append(segment.text);
+            }
         }
         if (builder.length() == 0) builder.append(question.sentence);
         return builder.toString();
@@ -222,16 +300,23 @@ public class QuestionEditorActivity extends ForgeActivity {
 
     private void renderParts() {
         partsContainer.removeAllViews();
-        sentenceView.setText(parts.isEmpty() ? "尚未选择词汇" : sentenceText());
-        for (int i = 0; i < parts.size(); i++) {
+        parts.clear();
+        for (ProjectStructure.Question.Segment segment : segments) {
+            if (segment.word) parts.add(segment.vocabId);
+        }
+        sentenceView.setText(segments.isEmpty() ? "尚未选择词汇" : sentenceText());
+        for (int i = 0; i < segments.size(); i++) {
             final int index = i;
+            ProjectStructure.Question.Segment segment = segments.get(i);
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(android.view.Gravity.CENTER_VERTICAL);
             TextView name = new TextView(this);
-            name.setText((i + 1) + ". " + displayName(parts.get(i)));
+            name.setText(segment.word
+                    ? (i + 1) + ". " + displayName(segment.vocabId)
+                    : (i + 1) + ". 标点 " + segment.text);
             name.setTextSize(14f);
-            name.setTextColor(getColor(R.color.forge_text));
+            name.setTextColor(getColor(segment.word ? R.color.forge_text : R.color.forge_accent));
             row.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1f));
             ForgeButton up = small("↑");
             up.setOnClickListener(v -> movePart(index, -1));
@@ -241,7 +326,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             row.addView(down, new LinearLayout.LayoutParams(dp(32), dp(32)));
             ForgeButton remove = small("×");
             remove.setOnClickListener(v -> {
-                parts.remove(index);
+                segments.remove(index);
                 dirty = true;
                 renderParts();
             });
@@ -252,9 +337,9 @@ public class QuestionEditorActivity extends ForgeActivity {
 
     private void movePart(int index, int delta) {
         int target = index + delta;
-        if (target < 0 || target >= parts.size()) return;
-        String value = parts.remove(index);
-        parts.add(target, value);
+        if (target < 0 || target >= segments.size()) return;
+        ProjectStructure.Question.Segment value = segments.remove(index);
+        segments.add(target, value);
         dirty = true;
         renderParts();
     }
@@ -355,6 +440,8 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (pendingAudio != null) MediaFiles.deleteQuietly(new File(pendingAudio));
         pendingAudio = file.getAbsolutePath();
         pendingDuration = duration;
+        audioStart = 0;
+        audioEnd = duration;
         audioRemoved = false;
         toast("录音已就绪，保存后写入项目");
         updateAudioUi();
@@ -376,6 +463,45 @@ public class QuestionEditorActivity extends ForgeActivity {
         long duration = pendingAudio != null ? pendingDuration : existingDuration;
         audioHint.setText("音频：" + new File(path).getName() + " · "
                 + String.format(Locale.ROOT, "%.1fs", Math.max(0, duration) / 1000.0));
+        updateTrimUi(duration);
+    }
+
+    private void updateTrimUi() {
+        updateTrimUi(pendingAudio != null ? pendingDuration : existingDuration);
+    }
+
+    private void updateTrimUi(long duration) {
+        if (audioTrimText == null) return;
+        boolean hasAudio = duration > 0 && currentAudioFile() != null;
+        if (!hasAudio) {
+            audioTrimText.setText("裁剪：未录制");
+            updatingTrim = true;
+            startSeek.setMax(1);
+            startSeek.setProgress(0);
+            endSeek.setMax(1);
+            endSeek.setProgress(1);
+            startSeek.setEnabled(false);
+            endSeek.setEnabled(false);
+            updatingTrim = false;
+            return;
+        }
+        audioStart = Math.max(0, Math.min(audioStart, duration));
+        audioEnd = Math.max(audioStart, Math.min(audioEnd, duration));
+        if (audioEnd - audioStart < 100) audioEnd = Math.min(duration, audioStart + 100);
+        updatingTrim = true;
+        startSeek.setMax((int) duration);
+        endSeek.setMax((int) duration);
+        startSeek.setProgress((int) audioStart);
+        endSeek.setProgress((int) audioEnd);
+        startSeek.setEnabled(true);
+        endSeek.setEnabled(true);
+        updatingTrim = false;
+        audioTrimText.setText("裁剪：" + formatMs(audioStart) + " → " + formatMs(audioEnd)
+                + "（至少 100ms）");
+    }
+
+    private String formatMs(long ms) {
+        return String.format(Locale.ROOT, "%.1fs", ms / 1000.0);
     }
 
     private File currentAudioFile() {
@@ -401,7 +527,13 @@ public class QuestionEditorActivity extends ForgeActivity {
             player = new MediaPlayer();
             player.setDataSource(file.getAbsolutePath());
             player.prepare();
+            player.seekTo((int) Math.max(0, audioStart));
             player.start();
+            if (playHandler == null) playHandler = new Handler(Looper.getMainLooper());
+            if (playStopTask != null) playHandler.removeCallbacks(playStopTask);
+            long length = Math.max(100, audioEnd - audioStart);
+            playStopTask = () -> stopPlayback();
+            playHandler.postDelayed(playStopTask, length);
         } catch (Exception e) {
             stopPlayback();
             toast("播放失败（设备可能没有音频输出）");
@@ -409,6 +541,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void stopPlayback() {
+        if (playHandler != null && playStopTask != null) {
+            playHandler.removeCallbacks(playStopTask);
+            playStopTask = null;
+        }
         if (player != null) {
             try { player.stop(); } catch (Exception ignored) {}
             try { player.release(); } catch (Exception ignored) {}
@@ -425,6 +561,8 @@ public class QuestionEditorActivity extends ForgeActivity {
         pendingDuration = 0;
         existingAudio = "";
         existingDuration = 0;
+        audioStart = 0;
+        audioEnd = 0;
         audioRemoved = true;
         dirty = true;
         updateAudioUi();
@@ -473,6 +611,12 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
             duration = existingDuration;
         }
+        if (duration > 0) {
+            if (audioStart < 0 || audioEnd > duration || audioEnd - audioStart < 100) {
+                toast("音频裁剪区间无效（至少 100ms）");
+                return;
+            }
+        }
         String oldAudio = originalAudio;
         String audioRelative = audioRemoved ? "" : existingAudio;
         if (sourceAudio != null) {
@@ -491,8 +635,12 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
         question.parts.clear();
         question.parts.addAll(parts);
+        question.segments.clear();
+        question.segments.addAll(segments);
         question.type = ProjectStructure.Question.TYPE_TRANSLATION_CHOICE;
         question.sentence = sentenceText();
+        question.audioStart = audioStart;
+        question.audioEnd = audioEnd;
         question.options.clear();
         question.options.addAll(options);
         question.correctIndex = correct;

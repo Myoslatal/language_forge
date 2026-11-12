@@ -262,3 +262,6 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
 Audio recording depends on an SDL capture device; on machines without one the UI reports a
 toast and does not create a file. Playback also degrades to a toast when SDL_mixer cannot open
 an audio device.
+
+Question editor additionally supports ordered punctuation segments, audio audioStart /
+audioEnd trim, and audio-management question reference counts with delete protection.

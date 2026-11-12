@@ -44,6 +44,7 @@ public class AudioManagementActivity extends ForgeActivity {
     private ForgeTextField search;
     private String query = "";
     private Map<String, List<String>> references = new HashMap<>();
+    private Map<String, List<String>> questionReferences = new HashMap<>();
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -98,6 +99,7 @@ public class AudioManagementActivity extends ForgeActivity {
 
     private void reloadReferences() {
         references = new HashMap<>();
+        questionReferences = new HashMap<>();
         VocabularyStore vocabulary = new VocabularyStore(projectDirectory);
         for (VocabularyEntry entry : vocabulary.entries) {
             if (entry.audio == null || entry.audio.isEmpty()) {
@@ -105,6 +107,20 @@ public class AudioManagementActivity extends ForgeActivity {
             }
             references.computeIfAbsent(entry.audio, key -> new ArrayList<>())
                     .add(vocabulary.displayName(entry));
+        }
+        ProjectStructure structure = ProjectStructure.load(projectDirectory);
+        for (ProjectStructure.Chapter chapter : structure.chapters) {
+            for (ProjectStructure.Unit unit : chapter.units) {
+                for (ProjectStructure.Course course : unit.courses) {
+                    for (ProjectStructure.Question question : course.questions) {
+                        if (question.audio == null || question.audio.isEmpty()) continue;
+                        String title = question.sentence == null || question.sentence.isEmpty()
+                                ? question.name : question.sentence;
+                        questionReferences.computeIfAbsent(question.audio,
+                                key -> new ArrayList<>()).add(title);
+                    }
+                }
+            }
         }
     }
 
@@ -156,11 +172,17 @@ public class AudioManagementActivity extends ForgeActivity {
         code.setText(item.code().isEmpty() ? "未设置编码" : "编码：" + item.code());
 
         List<String> names = references.get(item.relativePath());
-        if (names == null || names.isEmpty()) {
+        List<String> titles = questionReferences.get(item.relativePath());
+        int vocabCount = names == null ? 0 : names.size();
+        int questionCount = titles == null ? 0 : titles.size();
+        if (vocabCount == 0 && questionCount == 0) {
             refs.setText("未被引用");
         } else {
-            refs.setText("被 " + names.size() + " 个词汇引用："
-                    + String.join("、", names));
+            List<String> all = new ArrayList<>();
+            if (names != null) all.addAll(names);
+            if (titles != null) all.addAll(titles);
+            refs.setText("被 " + vocabCount + " 个词汇、" + questionCount
+                    + " 道题目引用：" + String.join("、", all));
         }
         row.setOnClickListener(v -> showEditCode(item));
         more.setOnClickListener(v -> showMenu(more, item));
@@ -226,8 +248,12 @@ public class AudioManagementActivity extends ForgeActivity {
 
     private void confirmDelete(Item item) {
         List<String> names = references.get(item.relativePath());
-        if (names != null && !names.isEmpty()) {
-            toast("被 " + names.size() + " 个词汇引用，请先移除引用");
+        List<String> titles = questionReferences.get(item.relativePath());
+        int vocabCount = names == null ? 0 : names.size();
+        int questionCount = titles == null ? 0 : titles.size();
+        if (vocabCount > 0 || questionCount > 0) {
+            toast("被 " + vocabCount + " 个词汇、" + questionCount
+                    + " 道题目引用，请先移除引用");
             return;
         }
         ForgeDialog dialog = new ForgeDialog(this);

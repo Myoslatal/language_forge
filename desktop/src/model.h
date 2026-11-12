@@ -16,14 +16,23 @@ struct Stats {
   int questions = 0;
 };
 
+struct QuestionSegment {
+  std::string kind = "word";
+  std::string vocabId;
+  std::string text;
+};
+
 struct Question {
   std::string id;
   std::string name;
   std::string type = "translation_choice";
   std::vector<std::string> parts;
+  std::vector<QuestionSegment> segments;
   std::string sentence;
   std::string audio;
   long long audioDuration = 0;
+  long long audioStart = 0;
+  long long audioEnd = 0;
   std::vector<std::string> options;
   int correctIndex = -1;
 };

@@ -481,3 +481,10 @@ state, so several instances in one layout do not clash during Activity recreatio
 * Project metadata, structure, question names/order, vocabulary metadata, custom-text
   images, pronunciation audio and project fonts are disk-backed; question content/media is
   not persisted yet, and learning/question editing are placeholders.
+## Question punctuation, audio trim and references
+
+Translation-choice questions store ordered segments (word vocab id or punct text);
+parts remains the derived word-id list. The question editor inserts 14 punctuation marks,
+moves/deletes punctuation tokens, previews the rendered sentence, and trims whole-audio with
+audioStart/audioEnd. Audio management scans both vocabulary and question audio, shows
+vocabulary/question reference counts, and blocks deletion while either reference exists.

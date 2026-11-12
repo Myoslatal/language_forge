@@ -112,6 +112,37 @@ final class ProjectStructure {
                                         }
                                         question.correctIndex =
                                                 questionObject.optInt("correctIndex", -1);
+                                        JSONArray segments = questionObject.optJSONArray("segments");
+                                        if (segments != null) {
+                                            for (int s = 0; s < segments.length(); s++) {
+                                                JSONObject segment = segments.optJSONObject(s);
+                                                if (segment == null) continue;
+                                                String kind = segment.optString("kind", "");
+                                                if ("word".equals(kind)) {
+                                                    String vocabId = segment.optString("vocabId", "");
+                                                    if (!vocabId.isEmpty()) {
+                                                        question.segments.add(
+                                                                Question.Segment.word(vocabId));
+                                                    }
+                                                } else if ("punct".equals(kind)) {
+                                                    String text = segment.optString("text", "");
+                                                    if (!text.isEmpty()) {
+                                                        question.segments.add(
+                                                                Question.Segment.punct(text));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (question.segments.isEmpty()) {
+                                            for (String part : question.parts) {
+                                                question.segments.add(Question.Segment.word(part));
+                                            }
+                                        }
+                                        question.audioStart = Math.max(0,
+                                                questionObject.optLong("audioStart", 0));
+                                        question.audioEnd = Math.max(question.audioStart,
+                                                questionObject.optLong("audioEnd",
+                                                        question.audioDuration));
                                         course.questions.add(question);
                                     }
                                 }
@@ -170,6 +201,30 @@ final class ProjectStructure {
                             for (String option : question.options) options.put(option);
                             questionObject.put("options", options);
                             questionObject.put("correctIndex", question.correctIndex);
+                            JSONArray segments = new JSONArray();
+                            for (Question.Segment segment : question.segments) {
+                                JSONObject object = new JSONObject();
+                                if (segment.word) {
+                                    object.put("kind", "word");
+                                    object.put("vocabId", segment.vocabId);
+                                } else {
+                                    object.put("kind", "punct");
+                                    object.put("text", segment.text);
+                                }
+                                segments.put(object);
+                            }
+                            questionObject.put("segments", segments);
+                            JSONArray derivedParts = new JSONArray();
+                            for (Question.Segment segment : question.segments) {
+                                if (segment.word) derivedParts.put(segment.vocabId);
+                            }
+                            question.parts.clear();
+                            for (Question.Segment segment : question.segments) {
+                                if (segment.word) question.parts.add(segment.vocabId);
+                            }
+                            questionObject.put("parts", derivedParts);
+                            questionObject.put("audioStart", question.audioStart);
+                            questionObject.put("audioEnd", question.audioEnd);
                             questionArray.put(questionObject);
                         }
                         courseObject.put("questions", questionArray);
@@ -323,10 +378,33 @@ final class ProjectStructure {
         final String id;
         String name;
         String type = TYPE_TRANSLATION_CHOICE;
+        static final class Segment {
+            final boolean word;
+            final String vocabId;
+            final String text;
+
+            private Segment(boolean word, String vocabId, String text) {
+                this.word = word;
+                this.vocabId = vocabId;
+                this.text = text;
+            }
+
+            static Segment word(String vocabId) {
+                return new Segment(true, vocabId, "");
+            }
+
+            static Segment punct(String text) {
+                return new Segment(false, "", text);
+            }
+        }
+
         final List<String> parts = new ArrayList<>();
+        final List<Segment> segments = new ArrayList<>();
         String sentence = "";
         String audio = "";
         long audioDuration;
+        long audioStart;
+        long audioEnd;
         final List<String> options = new ArrayList<>();
         int correctIndex = -1;
 

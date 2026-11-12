@@ -1101,15 +1101,19 @@ struct App {
   std::string questionSentence(const Question& question) {
     std::string sentence;
     if (vocabulary) {
-      for (const auto& part : question.parts) {
-        for (const auto& entry : vocabulary->entries) {
-          if (entry.id != part) continue;
-          const std::string name = displayName(entry, vocabulary->entries);
-          if (!name.empty()) {
-            if (!sentence.empty()) sentence += " ";
-            sentence += name;
+      for (const auto& segment : question.segments) {
+        if (segment.kind == "word") {
+          for (const auto& entry : vocabulary->entries) {
+            if (entry.id != segment.vocabId) continue;
+            const std::string name = displayName(entry, vocabulary->entries);
+            if (!name.empty()) {
+              if (!sentence.empty()) sentence += " ";
+              sentence += name;
+            }
+            break;
           }
-          break;
+        } else if (segment.kind == "punct") {
+          sentence += segment.text;
         }
       }
     }
@@ -1136,6 +1140,13 @@ struct App {
       }
       if (!found) { showToast("题目不存在"); return; }
       editQuestion = *found;
+      if (editQuestion.segments.empty()) {
+        for (const auto& part : editQuestion.parts) editQuestion.segments.push_back({"word", part, ""});
+      }
+      if (editQuestion.audioEnd <= editQuestion.audioStart) {
+        editQuestion.audioStart = 0;
+        editQuestion.audioEnd = editQuestion.audioDuration;
+      }
       while (editQuestion.options.size() < 4) editQuestion.options.push_back("");
     }
     questionCorrectIndex = editQuestion.correctIndex;
@@ -1174,8 +1185,23 @@ struct App {
         showToast("音频文件缺失，请重录或移除");
         return;
       }
+      if (editQuestion.audioStart < 0 || editQuestion.audioEnd <= editQuestion.audioStart ||
+          editQuestion.audioEnd > editQuestion.audioDuration ||
+          editQuestion.audioEnd - editQuestion.audioStart < 100) {
+        showToast("音频裁剪区间无效（至少 100ms）");
+        return;
+      }
     }
     editQuestion.type = "translation_choice";
+    editQuestion.parts.clear();
+    for (const auto& segment : editQuestion.segments) {
+      if (segment.kind == "word") editQuestion.parts.push_back(segment.vocabId);
+    }
+    editQuestion.sentence = questionSentence(editQuestion);
+    editQuestion.audioStart = std::max(0LL, editQuestion.audioStart);
+    editQuestion.audioEnd = std::max(editQuestion.audioStart,
+                                     std::min(editQuestion.audioEnd,
+                                              editQuestion.audioDuration));
     editQuestion.options.clear();
     for (int i = 0; i < 4; ++i) {
       editQuestion.options.push_back(trim(std::string(questionOptions[i])));
@@ -1546,6 +1572,8 @@ struct App {
       }
       editQuestion.audio = "resources/audio/" + utf8(questionTarget.filename());
       editQuestion.audioDuration = static_cast<int>(recordBuffer.size() / 2 * 1000 / 44100);
+      editQuestion.audioStart = 0;
+      editQuestion.audioEnd = editQuestion.audioDuration;
       questionDirty = true;
       showToast("整句录音完成");
       return;
@@ -2262,38 +2290,60 @@ void renderQuestionEditor(App& app) {
   if (right > 0) ImGui::SetCursorPosX(right);
   if (ImGui::Button("保存题目", ImVec2(120, 34))) app.saveQuestion();
   ImGui::Spacing();
-  ImGui::TextUnformatted("句子词汇（按顺序）");
-  if (app.editQuestion.parts.empty()) ImGui::TextDisabled("尚未选择词汇");
-  for (std::size_t i = 0; i < app.editQuestion.parts.size(); ++i) {
-    const std::string id = app.editQuestion.parts[i];
-    std::string name = id;
-    if (app.vocabulary) {
+  ImGui::TextUnformatted("句子词汇与标点（按顺序）");
+  if (app.editQuestion.segments.empty()) ImGui::TextDisabled("尚未选择词汇");
+  for (std::size_t i = 0; i < app.editQuestion.segments.size(); ++i) {
+    auto& segment = app.editQuestion.segments[i];
+    std::string name = segment.text;
+    if (segment.kind == "word" && app.vocabulary) {
+      name = segment.vocabId;
       for (const auto& entry : app.vocabulary->entries) {
-        if (entry.id == id) { name = displayName(entry, app.vocabulary->entries); break; }
+        if (entry.id == segment.vocabId) {
+          name = displayName(entry, app.vocabulary->entries);
+          break;
+        }
       }
     }
     ImGui::PushID(static_cast<int>(i));
-    ImGui::Text("%zu. %s", i + 1, name.c_str());
+    if (segment.kind == "punct") {
+      ImGui::TextColored(ImVec4(0.2f, 0.5f, 0.8f, 1), "%zu. 标点 %s", i + 1, name.c_str());
+    } else {
+      ImGui::Text("%zu. %s", i + 1, name.c_str());
+    }
     ImGui::SameLine(360);
     if (ImGui::Button("↑", ImVec2(30, 24)) && i > 0) {
-      std::swap(app.editQuestion.parts[i], app.editQuestion.parts[i - 1]);
+      std::swap(app.editQuestion.segments[i], app.editQuestion.segments[i - 1]);
       app.questionDirty = true;
     }
     ImGui::SameLine();
-    if (ImGui::Button("↓", ImVec2(30, 24)) && i + 1 < app.editQuestion.parts.size()) {
-      std::swap(app.editQuestion.parts[i], app.editQuestion.parts[i + 1]);
+    if (ImGui::Button("↓", ImVec2(30, 24)) && i + 1 < app.editQuestion.segments.size()) {
+      std::swap(app.editQuestion.segments[i], app.editQuestion.segments[i + 1]);
       app.questionDirty = true;
     }
     ImGui::SameLine();
     if (ImGui::Button("×", ImVec2(30, 24))) {
-      app.editQuestion.parts.erase(app.editQuestion.parts.begin() + i);
+      app.editQuestion.segments.erase(app.editQuestion.segments.begin() + i);
       app.questionDirty = true;
     }
     ImGui::PopID();
   }
   if (ImGui::Button("选择词汇", ImVec2(110, 30))) app.openQuestionPicker();
   ImGui::SameLine();
+  if (ImGui::Button("插入标点", ImVec2(100, 30))) ImGui::OpenPopup("##question_punct");
+  ImGui::SameLine();
   ImGui::TextDisabled("可多选；单个词也可成题。");
+  if (ImGui::BeginPopup("##question_punct")) {
+    const char* marks[] = {"，", "。", "、", "？", "！", "；", "：", "“", "”", "（", "）", "…", "—", "/"};
+    for (const char* mark : marks) {
+      if (ImGui::Button(mark, ImVec2(38, 28))) {
+        app.editQuestion.segments.push_back({"punct", "", mark});
+        app.questionDirty = true;
+        ImGui::CloseCurrentPopup();
+      }
+      if (mark != marks[13]) ImGui::SameLine();
+    }
+    ImGui::EndPopup();
+  }
   ImGui::Spacing();
   ImGui::TextWrapped("句子：%s", app.questionSentence(app.editQuestion).c_str());
   ImGui::Separator();
@@ -2307,8 +2357,11 @@ void renderQuestionEditor(App& app) {
     int duration = static_cast<int>(app.editQuestion.audioDuration);
     ImGui::TextDisabled("%s · %s", app.editQuestion.audio.c_str(),
                         formatDuration(duration).c_str());
+    int startMs = static_cast<int>(std::max(0LL, app.editQuestion.audioStart));
+    int endMs = static_cast<int>(app.editQuestion.audioEnd <= 0
+                                     ? duration : app.editQuestion.audioEnd);
     if (ImGui::Button("播放", ImVec2(80, 30))) {
-      app.playAudioFile(app.editQuestion.audio, 0, duration);
+      app.playAudioFile(app.editQuestion.audio, startMs, endMs);
     }
     ImGui::SameLine();
     if (ImGui::Button("重录", ImVec2(80, 30))) {
@@ -2318,8 +2371,23 @@ void renderQuestionEditor(App& app) {
     if (ImGui::Button("移除", ImVec2(80, 30))) {
       app.editQuestion.audio.clear();
       app.editQuestion.audioDuration = 0;
+      app.editQuestion.audioStart = 0;
+      app.editQuestion.audioEnd = 0;
       app.questionDirty = true;
     }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("开始", &startMs, 0, std::max(0, duration))) {
+      app.editQuestion.audioStart = std::min<long long>(startMs,
+          std::max<long long>(0, endMs - 100));
+      app.questionDirty = true;
+    }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("结束", &endMs, 0, std::max(0, duration))) {
+      app.editQuestion.audioEnd = std::max<long long>(endMs,
+          app.editQuestion.audioStart + 100);
+      app.questionDirty = true;
+    }
+    ImGui::TextDisabled("裁剪：%dms → %dms（至少 100ms）", startMs, endMs);
   }
   ImGui::Separator();
   ImGui::TextUnformatted("四个选项（唯一正确答案）");
@@ -3689,7 +3757,16 @@ int runSmoke(App& app, const fs::path& outputDir) {
       if (entry.text == "e") secondId = entry.id;
     }
     app.openQuestionEditor("");
+    app.editQuestion.segments = {{"word", firstId, ""}, {"punct", "", "，"}};
+    app.editQuestion.segments.push_back({"word", secondId, ""});
+    app.editQuestion.segments.push_back({"punct", "", "。"});
     app.editQuestion.parts = {firstId, secondId};
+    if (Course* oldCourse = app.selectedCourse(); oldCourse && !oldCourse->questions.empty()) {
+      oldCourse->questions[0].parts = {firstId};
+      oldCourse->questions[0].segments.clear();
+      oldCourse->questions[0].name = "旧词题";
+      app.persist();
+    }
     std::snprintf(app.questionOptions[0], sizeof(app.questionOptions[0]), "%s", "人 者 person");
     std::snprintf(app.questionOptions[1], sizeof(app.questionOptions[1]), "%s", "字母E");
     std::snprintf(app.questionOptions[2], sizeof(app.questionOptions[2]), "%s", "错误选项");
@@ -3699,13 +3776,19 @@ int runSmoke(App& app, const fs::path& outputDir) {
     fs::path audioDir = app.currentProjectDirectory() / "resources" / "audio";
     fs::create_directories(audioDir, audioEc);
     fs::path questionAudio = audioDir / "question_smoke_audio.wav";
-    std::vector<Uint8> silence(44100, 0);
+    std::vector<Uint8> silence(88200, 0);
     if (writeWavFile(questionAudio, silence, 44100, 1)) {
       app.editQuestion.audio = "resources/audio/question_smoke_audio.wav";
       app.editQuestion.audioDuration = 1000;
+      app.editQuestion.audioStart = 200;
+      app.editQuestion.audioEnd = 800;
+      app.ensureAudioLoaded();
+      if (app.audioStore) app.audioStore->registerFile(questionAudio);
     }
     renderFrame(app);
     ok = saveScreenshot(app, outputDir / "question-editor.png") && ok;
+    ok = saveScreenshot(app, outputDir / "question-punctuation.png") && ok;
+    ok = saveScreenshot(app, outputDir / "question-audio-trim.png") && ok;
     app.saveQuestion();
     renderFrame(app);
     ok = saveScreenshot(app, outputDir / "question-list.png") && ok;
@@ -3721,11 +3804,17 @@ int runSmoke(App& app, const fs::path& outputDir) {
           for (const auto& question : course.value("questions", json::array())) {
             const auto partsValue = question.value("parts", json::array());
             const auto optionsValue = question.value("options", json::array());
-            if (!partsValue.empty()) {
-              savedQuestionOk = partsValue.size() == 2 && optionsValue.size() == 4 &&
+            const auto segmentsValue = question.value("segments", json::array());
+            if (!segmentsValue.empty()) {
+              savedQuestionOk = partsValue.size() == 2 && segmentsValue.size() == 4 &&
+                                optionsValue.size() == 4 &&
                                 question.value("correctIndex", -1) == 1 &&
+                                question.value("audioStart", -1) == 200 &&
+                                question.value("audioEnd", -1) == 800 &&
                                 !question.value("audio", "").empty();
               savedQuestionId = question.value("id", "");
+            } else if (partsValue.size() == 1 && question.value("segments", json::array()).empty()) {
+              oldCompatible = true;
             } else if (!question.value("name", "").empty()) {
               oldCompatible = true;
             }
@@ -3737,6 +3826,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
     if (!savedQuestionId.empty()) app.openQuestionEditor(savedQuestionId);
     renderFrame(app);
     ok = saveScreenshot(app, outputDir / "question-editor-reopen.png") && ok;
+    app.screen = App::Screen::Audios;
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "audio-question-ref.png") && ok;
     app.screen = App::Screen::Course;
   }
   const fs::path exportPath = outputDir / "export.conlang";
@@ -4723,7 +4815,17 @@ void renderPicker(App& app) {
   ImGui::SameLine();
   if (ImGui::Button("确定", ImVec2(120, 34))) {
     if (app.pickerForQuestion) {
+      std::vector<QuestionSegment> punctuation;
+      for (const auto& segment : app.editQuestion.segments) {
+        if (segment.kind == "punct") punctuation.push_back(segment);
+      }
+      app.editQuestion.segments.clear();
       app.editQuestion.parts = app.pickerSelected;
+      for (const auto& id : app.pickerSelected) {
+        app.editQuestion.segments.push_back({"word", id, ""});
+      }
+      for (const auto& segment : punctuation) app.editQuestion.segments.push_back(segment);
+      if (!punctuation.empty()) app.showToast("已保留标点并移到新词序列末尾");
       app.questionDirty = true;
     } else {
       app.editEntry.parts = app.pickerSelected;
@@ -5189,9 +5291,21 @@ void renderAudios(App& app) {
   app.ensureAudioLoaded();
   app.ensureVocabularyLoaded();
   std::map<std::string, std::vector<std::string>> references;
+  std::map<std::string, std::vector<std::string>> questionReferences;
   if (app.vocabulary) {
     for (const auto& entry : app.vocabulary->entries) {
       if (!entry.audio.empty()) references[entry.audio].push_back(displayName(entry, app.vocabulary->entries));
+    }
+  }
+  for (const auto& chapter : app.structure.chapters) {
+    for (const auto& unit : chapter.units) {
+      for (const auto& course : unit.courses) {
+        for (const auto& question : course.questions) {
+          if (question.audio.empty()) continue;
+          questionReferences[question.audio].push_back(
+              question.sentence.empty() ? question.name : question.sentence);
+        }
+      }
     }
   }
   std::vector<fs::path> unregistered;
@@ -5280,16 +5394,28 @@ void renderAudios(App& app) {
                         static_cast<unsigned long long>(size));
     ImGui::TextDisabled("编码：%s", row.code.empty() ? "未设置" : row.code.c_str());
     const auto refIt = references.find(row.file);
-    if (refIt != references.end() && !refIt->second.empty()) {
-      std::string names;
-      for (const auto& name : refIt->second) {
-        if (!names.empty()) names += "、";
-        names += name;
-      }
-      ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.2f, 1.0f), "被 %zu 个词汇引用：%s",
-                         refIt->second.size(), names.c_str());
-    } else {
+    const auto questionIt = questionReferences.find(row.file);
+    const std::size_t vocabCount = refIt == references.end() ? 0 : refIt->second.size();
+    const std::size_t questionCount = questionIt == questionReferences.end() ? 0 : questionIt->second.size();
+    if (vocabCount == 0 && questionCount == 0) {
       ImGui::TextDisabled("未被引用");
+    } else {
+      std::string names;
+      if (refIt != references.end()) {
+        for (const auto& name : refIt->second) {
+          if (!names.empty()) names += "、";
+          names += name;
+        }
+      }
+      if (questionIt != questionReferences.end()) {
+        for (const auto& name : questionIt->second) {
+          if (!names.empty()) names += "、";
+          names += name;
+        }
+      }
+      ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.2f, 1.0f),
+                         "被 %zu 个词汇、%zu 道题目引用：%s", vocabCount, questionCount,
+                         names.c_str());
     }
     ImGui::EndGroup();
     ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 48, 12));
@@ -5302,9 +5428,12 @@ void renderAudios(App& app) {
       ImGui::Separator();
       if (ImGui::MenuItem("删除")) {
         const auto refs = references.find(row.file);
-        if (refs != references.end() && !refs->second.empty()) {
-          app.showToast("被 " + std::to_string(refs->second.size()) +
-                        " 个词汇引用，请先移除引用");
+        const auto questionRefs = questionReferences.find(row.file);
+        const std::size_t vocabCount = refs == references.end() ? 0 : refs->second.size();
+        const std::size_t questionCount = questionRefs == questionReferences.end() ? 0 : questionRefs->second.size();
+        if (vocabCount > 0 || questionCount > 0) {
+          app.showToast("被 " + std::to_string(vocabCount) + " 个词汇、" +
+                        std::to_string(questionCount) + " 道题目引用，请先移除引用");
         } else {
           app.openModalConfirm(App::ModalKind::ConfirmAudio, "删除音频",
                                "确定删除「" + row.name + "」吗？", row.id, row.file);

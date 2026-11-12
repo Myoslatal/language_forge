@@ -95,13 +95,27 @@
                 android:layout_marginTop="8dp"
                 android:orientation="vertical" />
 
-            <io.github.myoslatal.languageforge.uikit.ForgeButton
-                android:id="@+id/btn_choose_question_parts"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="选择词汇"
-                app:forgeVariant="secondary" />
+                android:orientation="horizontal">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_choose_question_parts"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="选择词汇"
+                    app:forgeVariant="secondary" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_insert_punct"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="插入标点"
+                    app:forgeVariant="ghost" />
+            </LinearLayout>
 
             <TextView
                 style="@style/Forge.Text.SectionTitle"
@@ -147,6 +161,36 @@
                     android:text="移除"
                     app:forgeVariant="ghost" />
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/question_audio_trim"
+                style="@style/Forge.Text.Hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="裁剪：未录制" />
+
+            <SeekBar
+                android:id="@+id/question_audio_start"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="1"
+                android:progress="0" />
+
+            <SeekBar
+                android:id="@+id/question_audio_end"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="1"
+                android:progress="1" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_question_trim_play"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="试听裁剪"
+                app:forgeVariant="ghost" />
 
             <TextView
                 style="@style/Forge.Text.SectionTitle"

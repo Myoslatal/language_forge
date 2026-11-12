@@ -29,6 +29,18 @@ namespace {
 
 using json = nlohmann::json;
 
+json segmentsToJson(const std::vector<QuestionSegment>& segments) {
+  json result = json::array();
+  for (const auto& segment : segments) {
+    if (segment.kind == "word" && !segment.vocabId.empty()) {
+      result.push_back({{"kind", "word"}, {"vocabId", segment.vocabId}});
+    } else if (segment.kind == "punct" && !segment.text.empty()) {
+      result.push_back({{"kind", "punct"}, {"text", segment.text}});
+    }
+  }
+  return result;
+}
+
 std::int64_t nowMillis() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::system_clock::now().time_since_epoch())
@@ -145,9 +157,12 @@ json structureToJson(const Structure& structure) {
                                {"name", question.name},
                                {"type", question.type},
                                {"parts", question.parts},
+                               {"segments", segmentsToJson(question.segments)},
                                {"sentence", question.sentence},
                                {"audio", question.audio},
                                {"audioDuration", question.audioDuration},
+                               {"audioStart", question.audioStart},
+                               {"audioEnd", question.audioEnd},
                                {"options", question.options},
                                {"correctIndex", question.correctIndex}});
         }
@@ -200,7 +215,22 @@ Structure structureFromJson(const json& value) {
                 question.sentence = questionValue.value("sentence", "");
                 question.audio = questionValue.value("audio", "");
                 question.audioDuration = questionValue.value("audioDuration", 0LL);
+                question.audioStart = questionValue.value("audioStart", 0LL);
+                question.audioEnd = questionValue.value("audioEnd", question.audioDuration);
                 question.correctIndex = questionValue.value("correctIndex", -1);
+                if (questionValue.contains("segments") && questionValue["segments"].is_array()) {
+                  for (const auto& segment : questionValue["segments"]) {
+                    if (!segment.is_object()) continue;
+                    QuestionSegment parsed;
+                    parsed.kind = segment.value("kind", "word");
+                    parsed.vocabId = segment.value("vocabId", "");
+                    parsed.text = segment.value("text", "");
+                    if ((parsed.kind == "word" && !parsed.vocabId.empty()) ||
+                        (parsed.kind == "punct" && !parsed.text.empty())) {
+                      question.segments.push_back(std::move(parsed));
+                    }
+                  }
+                }
                 if (questionValue.contains("parts") && questionValue["parts"].is_array()) {
                   for (const auto& part : questionValue["parts"]) {
                     if (part.is_string()) question.parts.push_back(part.get<std::string>());
@@ -209,6 +239,11 @@ Structure structureFromJson(const json& value) {
                 if (questionValue.contains("options") && questionValue["options"].is_array()) {
                   for (const auto& option : questionValue["options"]) {
                     if (option.is_string()) question.options.push_back(option.get<std::string>());
+                  }
+                }
+                if (question.segments.empty()) {
+                  for (const auto& part : question.parts) {
+                    question.segments.push_back({"word", part, ""});
                   }
                 }
                 if (question.id.empty()) question.id = Store::newUuid();
