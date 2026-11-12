@@ -3,11 +3,12 @@
 #include <filesystem>
 #include <string>
 
-enum class LexiconImportMode { Skip, Overwrite };
+enum class LexiconImportMode { Skip, Overwrite, Merge };
 
 struct LexiconImportSummary {
   int added = 0;
   int updated = 0;
+  int merged = 0;
   int duplicates = 0;
   int invalid = 0;
   int newPos = 0;

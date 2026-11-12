@@ -205,7 +205,7 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 
 ## Lexicon JSONL import
 
-- **导入词表** in `VocabularyListActivity` first asks **跳过重复 / 覆盖合并**, then uses
+- **导入词表** in `VocabularyListActivity` first asks **跳过重复 / 覆盖合并 / 合并释义**, then uses
   SAF `ACTION_OPEN_DOCUMENT` with `application/json`, `application/x-ndjson`,
   `text/plain`, `*/*`; filenames must end in `.jsonl`, `.json` or `.txt`. The stream is
   parsed on a background executor as UTF-8 (BOM/blank lines tolerated).
@@ -218,14 +218,19 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 - Duplicate text (case-insensitive/trimmed) is skipped against existing entries and earlier
   file rows; bad JSON/blank-text/empty-definition rows are counted invalid; `_meta` is skipped.
   The result dialog reports added / duplicate / invalid / new POS counts.
-- Overwrite merge matches existing text (trimmed, case-insensitive) and updates the entry in
-  place: id/codes/media are preserved, non-empty `pronunciation` replaces `phonetic`, and each
-  imported POS group replaces the same `posId` or is appended; `meanings` is re-aggregated.
-  The summary adds **更新 N 条**; internal file duplicates are still counted as duplicates.
-- `pos.json` and `vocabulary.json` are saved through their atomic writers. The list searches
-  display name, codes, phonetic, meanings and POS names/codes; it inflates only the current
-  **50-row page** with prev/next controls, total/pages text and search resetting to page 1. The
-  badge remains the total count. The picker still caps at 200 matching rows.
+- Overwrite matches existing text (trimmed, case-insensitive) and updates in place: id/codes/
+  media are preserved, non-empty pronunciation replaces the sound list, POS groups replace by
+  posId or append, and meanings re-aggregate. Merge keeps the existing entry and appends
+  deduplicated meanings/phonetics, adding missing POS groups; id/codes/media stay. All modes
+  ensure the text is present in codes. File-internal duplicates are counted as duplicates in
+  skip/overwrite, but merged into the first row (and counted as merged) in merge mode. The
+  summary shows added/updated/merged/duplicate/invalid/new POS.
+- phonetics is a string array (legacy single phonetic is converted on load); the editor supports
+  add/remove phonetic rows, and lists/picker display all with “音标：a / b” and search every
+  value. Saving writes phonetics and phonetic=first for old readers.
+- pos.json and vocabulary.json are saved through their atomic writers. The list and Picker both
+  paginate at **50 rows** with prev/next plus a SeekBar jump-to-page slider; search resets to
+  page 1. The list badge remains the total; the picker keeps selections across pages.
 
 ## Custom-text images (Phase 2A)
 

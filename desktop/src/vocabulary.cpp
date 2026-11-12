@@ -109,6 +109,19 @@ VocabEntry entryFromJson(const json& value) {
   entry.codes = stringArray(value.value("codes", json::array()));
   entry.text = value.value("text", "");
   entry.phonetic = trim(value.value("phonetic", ""));
+  entry.phonetics = stringArray(value.value("phonetics", json::array()));
+  {
+    std::vector<std::string> unique;
+    for (const auto& item : entry.phonetics) {
+      const std::string clean = trim(item);
+      if (!clean.empty() && std::find(unique.begin(), unique.end(), clean) == unique.end()) {
+        unique.push_back(clean);
+      }
+    }
+    if (unique.empty() && !entry.phonetic.empty()) unique.push_back(entry.phonetic);
+    entry.phonetics = std::move(unique);
+    entry.phonetic = entry.phonetics.empty() ? "" : entry.phonetics.front();
+  }
   entry.codepoints = stringArray(value.value("codepoints", json::array()));
   entry.parts = stringArray(value.value("parts", json::array()));
   entry.image = value.value("image", "");
@@ -131,6 +144,12 @@ VocabEntry entryFromJson(const json& value) {
 }
 
 json entryToJson(const VocabEntry& entry) {
+  std::vector<std::string> outputPhonetics = entry.phonetics;
+  if (outputPhonetics.empty() && !trim(entry.phonetic).empty()) {
+    outputPhonetics.push_back(trim(entry.phonetic));
+  }
+  const std::string outputPhonetic =
+      outputPhonetics.empty() ? "" : trim(outputPhonetics.front());
   json posArray = json::array();
   for (const auto& group : entry.posMeanings) {
     if (group.posId.empty()) continue;
@@ -143,7 +162,8 @@ json entryToJson(const VocabEntry& entry) {
       {"posMeanings", posArray},
       {"codes", entry.codes},
       {"text", entry.text},
-      {"phonetic", trim(entry.phonetic)},
+      {"phonetic", outputPhonetic},
+      {"phonetics", outputPhonetics},
       {"codepoints", entry.codepoints},
       {"parts", entry.parts},
       {"image", entry.image},

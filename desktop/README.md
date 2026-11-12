@@ -232,22 +232,25 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
 
 ## Lexicon JSONL import
 
-- The Vocabulary page has **导入词表** (skip) and **覆盖合并** (overwrite); the file browser
+- The Vocabulary page has **导入词表** (skip), **覆盖合并**, and **合并释义**; the file browser
   accepts `.jsonl/.json/.txt` and imports through `lexicon.cpp` into `pos.json` +
   `vocabulary.json`. The first non-empty line is the Lexicon `_meta` (15 types in the sample);
   `rendered`/string `entry` becomes text, `pronunciation` becomes phonetic, and
   `definition`/`detail` become the POS meanings and aggregate. POS are matched by code then
   name and created in meta order when absent. Overwrite matches text (trimmed/case-insensitive)
-  and updates in place, preserving id/codes/media; non-empty pronunciation replaces phonetic,
-  POS groups replace by posId or append, and meanings re-aggregate.
+  and updates in place, preserving id/codes/media; non-empty pronunciation replaces the sound
+  list, POS groups replace by posId or append, and meanings re-aggregate. Merge keeps the entry
+  and appends deduplicated meanings/phonetics, adding missing POS groups; all modes ensure the
+  text is present in codes. File-internal duplicates merge into the first row in merge mode.
 - Duplicate text is skipped (case-insensitive/trimmed), as are file-internal duplicates; bad
   JSON and empty-text/empty-definition rows are counted invalid. A toast reports added /
   duplicates / invalid / new POS.
-- The vocabulary list has a search field over display name, codes, phonetic, meanings and POS
-  names/codes and renders 50 rows per page with prev/next, total/pages text and search resetting
-  to page 1. The picker still caps at 200 rows and reports the match count. Smoke imports the
-  full `/tmp/lexicon-sample.jsonl` sample, checks nız/id9/POS 15, duplicate/bad-line and
-  overwrite merge behavior, captures `vocab-import.png` and `vocab-import-editor.png`.
+- The vocabulary list and picker both paginate at 50 rows with prev/next and an ImGui SliderInt
+  jump-to-page slider; search resets to page 1 and picker selections persist across pages.
+  Lists/picker show all phonetics joined by “ / ” and search every value. Smoke imports the full
+  sample, checks merge/duplicate/overwrite, multi-phonetic data, page/slider and picker state,
+  and captures vocab-merge.png, vocab-multi-phonetic.png, vocab-page-slider.png and
+  vocab-picker-page.png.
 
 ## Notes
 

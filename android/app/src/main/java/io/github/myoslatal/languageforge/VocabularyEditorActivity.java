@@ -83,7 +83,8 @@ public class VocabularyEditorActivity extends ForgeActivity {
     private final List<String> selectedPartIds = new ArrayList<>();
     private ForgeSelect typeSelect;
     private ForgeTextField textField;
-    private ForgeTextField phoneticField;
+    private LinearLayout phoneticsContainer;
+    private final List<ForgeTextField> phoneticFields = new ArrayList<>();
     private LinearLayout textContainer;
     private LinearLayout unicodeContainer;
     private LinearLayout comboContainer;
@@ -169,6 +170,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         findViewById(R.id.btn_add_meaning).setOnClickListener(v -> addMeaningRow(""));
         findViewById(R.id.btn_add_code).setOnClickListener(v -> addCodeRow(""));
         findViewById(R.id.btn_add_codepoint).setOnClickListener(v -> addCodepointRow(""));
+        findViewById(R.id.btn_add_phonetic).setOnClickListener(v -> addPhoneticRow(""));
         findViewById(R.id.btn_pick_parts).setOnClickListener(v -> pickParts());
         findViewById(R.id.btn_import_image).setOnClickListener(v -> pickImage());
         findViewById(R.id.btn_reimport_image).setOnClickListener(v -> pickImage());
@@ -224,7 +226,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         comboSelected = findViewById(R.id.combo_selected);
         typeSelect = findViewById(R.id.vocab_type);
         textField = findViewById(R.id.vocab_text);
-        phoneticField = findViewById(R.id.vocab_phonetic);
+        phoneticsContainer = findViewById(R.id.phonetics_container);
         textContainer = findViewById(R.id.text_container);
         unicodeContainer = findViewById(R.id.unicode_container);
         comboContainer = findViewById(R.id.combo_container);
@@ -292,6 +294,15 @@ public class VocabularyEditorActivity extends ForgeActivity {
         }
         renderPosOptions();
         renderMeanings();
+        phoneticsContainer.removeAllViews();
+        phoneticFields.clear();
+        if (existing != null && !existing.phonetics.isEmpty()) {
+            for (String phonetic : existing.phonetics) {
+                addPhoneticRow(phonetic);
+            }
+        } else {
+            addPhoneticRow("");
+        }
         if (existing == null) {
             addCodeRow("");
             addCodepointRow("");
@@ -305,7 +316,6 @@ public class VocabularyEditorActivity extends ForgeActivity {
             }
         }
         textField.setText(existing.text);
-        phoneticField.setText(existing.phonetic);
         if (existing.codepoints.isEmpty()) {
             addCodepointRow("");
         } else {
@@ -573,6 +583,31 @@ public class VocabularyEditorActivity extends ForgeActivity {
         row.addView(remove, new LinearLayout.LayoutParams(dp(32), dp(32)));
         meaningsContainer.addView(row);
         meaningFields.add(field);
+    }
+
+    private void addPhoneticRow(String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, 0, 0, dp(6));
+        ForgeTextField field = new ForgeTextField(this);
+        field.setLabel("音标");
+        field.setHint("例如：/ˈæp.əl/");
+        field.setText(value);
+        row.addView(field, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        ForgeButton remove = removeButton("删除音标");
+        remove.setOnClickListener(v -> {
+            if (phoneticFields.size() <= 1) {
+                toast("至少保留一个音标输入框");
+                return;
+            }
+            phoneticsContainer.removeView(row);
+            phoneticFields.remove(field);
+        });
+        row.addView(remove, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        phoneticsContainer.addView(row);
+        phoneticFields.add(field);
     }
 
     private void addCodeRow(String value) {
@@ -1434,7 +1469,8 @@ public class VocabularyEditorActivity extends ForgeActivity {
         String type = selectedType();
 
         String text = "";
-        String phonetic = VocabularyStore.clean(textOf(phoneticField), VocabularyStore.MAX_PHONETIC);
+        List<String> phonetics = collect(phoneticFields, VocabularyStore.MAX_PHONETIC);
+        String phonetic = phonetics.isEmpty() ? "" : phonetics.get(0);
         List<String> codepoints = new ArrayList<>();
         List<String> parts = new ArrayList<>();
         if (VocabularyEntry.TYPE_TEXT.equals(type)) {
@@ -1586,6 +1622,8 @@ public class VocabularyEditorActivity extends ForgeActivity {
         target.codes.addAll(codes);
         target.text = text;
         target.phonetic = phonetic;
+        target.phonetics.clear();
+        target.phonetics.addAll(phonetics);
         target.codepoints.clear();
         target.codepoints.addAll(codepoints);
         target.parts.clear();

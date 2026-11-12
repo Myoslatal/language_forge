@@ -23,11 +23,12 @@ import java.util.UUID;
 /** Import a Lexicon JSONL vocabulary file into pos.json + vocabulary.json. */
 final class LexiconImporter {
 
-    enum Mode { SKIP, OVERWRITE }
+    enum Mode { SKIP, OVERWRITE, MERGE }
 
     static final class Summary {
         int added;
         int updated;
+        int merged;
         int duplicates;
         int invalid;
         int newPos;
@@ -148,10 +149,6 @@ final class LexiconImporter {
                 continue;
             }
             String normalized = normalizeText(text);
-            if (!seen.add(normalized)) {
-                summary.duplicates++;
-                continue;
-            }
 
             List<String> meanings = new ArrayList<>();
             addMeaning(meanings, object.optString("definition", ""));
@@ -164,55 +161,43 @@ final class LexiconImporter {
             String typeCode = object.optString("type", "").trim();
             PosEntry pos = typeCode.isEmpty()
                     ? null : posByCode.get(typeCode.toLowerCase(Locale.ROOT));
+            String importedPhonetic = VocabularyStore.clean(
+                    object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
+            if (!seen.add(normalized)) {
+                VocabularyEntry first = existingByText.get(normalized);
+                if (mode == Mode.MERGE && first != null) {
+                    mergeEntry(first, meanings, importedPhonetic, pos);
+                    summary.merged++;
+                } else {
+                    summary.duplicates++;
+                }
+                continue;
+            }
             VocabularyEntry existing = existingByText.get(normalized);
             if (existing != null) {
                 if (mode == Mode.SKIP) {
                     summary.duplicates++;
                     continue;
                 }
-                String importedPhonetic = VocabularyStore.clean(
-                        object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
-                if (!importedPhonetic.isEmpty()) {
-                    existing.phonetic = importedPhonetic;
-                }
-                if (pos != null) {
-                    VocabularyEntry.PosMeaning target = null;
-                    for (VocabularyEntry.PosMeaning group : existing.posMeanings) {
-                        if (group.posId.equals(pos.id)) {
-                            target = group;
-                            break;
-                        }
-                    }
-                    if (target == null) {
-                        target = new VocabularyEntry.PosMeaning();
-                        target.posId = pos.id;
-                        existing.posMeanings.add(target);
-                    }
-                    target.meanings.clear();
-                    target.meanings.addAll(meanings);
-                }
-                if (!existing.posMeanings.isEmpty()) {
-                    LinkedHashSet<String> aggregate = new LinkedHashSet<>();
-                    for (VocabularyEntry.PosMeaning group : existing.posMeanings) {
-                        aggregate.addAll(group.meanings);
-                    }
-                    existing.meanings.clear();
-                    existing.meanings.addAll(aggregate);
+                if (mode == Mode.MERGE) {
+                    mergeEntry(existing, meanings, importedPhonetic, pos);
+                    summary.merged++;
                 } else {
-                    existing.meanings.clear();
-                    existing.meanings.addAll(meanings);
+                    overwriteEntry(existing, meanings, importedPhonetic, pos);
+                    summary.updated++;
                 }
-                existing.updatedAt = System.currentTimeMillis();
-                summary.updated++;
                 continue;
             }
 
             VocabularyEntry entry = new VocabularyEntry(UUID.randomUUID().toString());
             entry.type = VocabularyEntry.TYPE_TEXT;
             entry.text = text;
-            entry.phonetic = VocabularyStore.clean(
-                    object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
+            if (!importedPhonetic.isEmpty()) {
+                entry.phonetics.add(importedPhonetic);
+                entry.phonetic = importedPhonetic;
+            }
             entry.meanings.addAll(meanings);
+            entry.codes.add(text);
             entry.createdAt = entry.updatedAt = System.currentTimeMillis();
             if (pos != null) {
                 VocabularyEntry.PosMeaning group = new VocabularyEntry.PosMeaning();
@@ -221,6 +206,7 @@ final class LexiconImporter {
                 entry.posMeanings.add(group);
             }
             vocabulary.entries.add(entry);
+            existingByText.put(normalized, entry);
             summary.added++;
         }
 
@@ -231,6 +217,97 @@ final class LexiconImporter {
             throw new IOException("无法写入 vocabulary.json");
         }
         return summary;
+    }
+
+    private static void addPhonetic(VocabularyEntry entry, String value) {
+        String clean = VocabularyStore.clean(value, VocabularyStore.MAX_PHONETIC);
+        if (clean.isEmpty()) return;
+        if (!entry.phonetics.contains(clean)) {
+            entry.phonetics.add(clean);
+        }
+        entry.phonetic = entry.phonetics.isEmpty() ? "" : entry.phonetics.get(0);
+    }
+
+    private static void ensureCode(VocabularyEntry entry, String text) {
+        if (!entry.codes.contains(text)) {
+            entry.codes.add(text);
+        }
+    }
+
+    private static void appendMeanings(List<String> target, List<String> values) {
+        for (String value : values) {
+            if (!target.contains(value)) {
+                target.add(value);
+            }
+        }
+    }
+
+    private static void mergeEntry(VocabularyEntry entry, List<String> meanings,
+                                   String phonetic, PosEntry pos) {
+        ensureCode(entry, entry.text);
+        addPhonetic(entry, phonetic);
+        if (pos != null) {
+            VocabularyEntry.PosMeaning target = null;
+            for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+                if (group.posId.equals(pos.id)) {
+                    target = group;
+                    break;
+                }
+            }
+            if (target == null) {
+                target = new VocabularyEntry.PosMeaning();
+                target.posId = pos.id;
+                entry.posMeanings.add(target);
+            }
+            appendMeanings(target.meanings, meanings);
+        } else {
+            appendMeanings(entry.meanings, meanings);
+        }
+        if (!entry.posMeanings.isEmpty()) {
+            LinkedHashSet<String> aggregate = new LinkedHashSet<>();
+            for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+                aggregate.addAll(group.meanings);
+            }
+            entry.meanings.clear();
+            entry.meanings.addAll(aggregate);
+        }
+        entry.updatedAt = System.currentTimeMillis();
+    }
+
+    private static void overwriteEntry(VocabularyEntry entry, List<String> meanings,
+                                       String phonetic, PosEntry pos) {
+        ensureCode(entry, entry.text);
+        if (!phonetic.isEmpty()) {
+            entry.phonetics.clear();
+            entry.phonetics.add(phonetic);
+            entry.phonetic = phonetic;
+        }
+        if (pos != null) {
+            VocabularyEntry.PosMeaning target = null;
+            for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+                if (group.posId.equals(pos.id)) {
+                    target = group;
+                    break;
+                }
+            }
+            if (target == null) {
+                target = new VocabularyEntry.PosMeaning();
+                target.posId = pos.id;
+                entry.posMeanings.add(target);
+            }
+            target.meanings.clear();
+            target.meanings.addAll(meanings);
+            LinkedHashSet<String> aggregate = new LinkedHashSet<>();
+            for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+                aggregate.addAll(group.meanings);
+            }
+            entry.meanings.clear();
+            entry.meanings.addAll(aggregate);
+        } else {
+            entry.meanings.clear();
+            entry.meanings.addAll(meanings);
+        }
+        entry.updatedAt = System.currentTimeMillis();
     }
 
     private static List<String> readLines(InputStream input) throws IOException {

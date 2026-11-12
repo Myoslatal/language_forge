@@ -160,13 +160,34 @@
                 android:layout_marginTop="6dp"
                 android:orientation="vertical" />
 
-            <io.github.myoslatal.languageforge.uikit.ForgeTextField
-                android:id="@+id/vocab_phonetic"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                app:forgeLabel="音标"
-                app:forgeHint="例如：/ˈæp.əl/" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    style="@style/Forge.Text.SectionTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="音标（可多个）" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_add_phonetic"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="＋ 添加音标"
+                    android:textSize="11sp"
+                    app:forgeVariant="ghost" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/phonetics_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
             <io.github.myoslatal.languageforge.uikit.ForgeSelect
                 android:id="@+id/vocab_type"

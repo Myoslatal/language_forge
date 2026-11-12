@@ -419,7 +419,9 @@ struct App {
   char pickerSearch[256] = {};
   char vocabSearch[256] = {};
   int vocabPage = 1;
-  bool lexiconOverwrite = false;
+  bool vocabScrollTop = false;
+  int pickerPage = 1;
+  LexiconImportMode lexiconMode = LexiconImportMode::Skip;
   char fontImportName[256] = {};
 
   enum class BrowserMode { ImportConlang, ExportConlang, ImportFont, ImportImage, ImportAudio,
@@ -1565,9 +1567,7 @@ struct App {
       ensureVocabularyLoaded();
       ensurePosLoaded();
       LexiconImportSummary summary;
-      if (!importLexiconJsonl(target, store->projectDirectory(folder),
-                              lexiconOverwrite ? LexiconImportMode::Overwrite
-                                               : LexiconImportMode::Skip,
+      if (!importLexiconJsonl(target, store->projectDirectory(folder), lexiconMode,
                               summary, error)) {
         showToast("导入失败：" + error);
         return;
@@ -3012,6 +3012,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
   bool phoneticOk = false;
   bool oldPhoneticCompat = false;
   bool lexiconOk = false;
+  bool lexiconMergeOk = false;
+  bool pickerCrossPageOk = false;
   bool lexiconDuplicateOk = false;
   bool lexiconOverwriteOk = false;
   bool lexiconBadLineOk = false;
@@ -3116,7 +3118,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
     std::string lexiconError;
     const bool firstImport = importLexiconJsonl(
         lexiconSample, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Skip, summary, lexiconError);
+        LexiconImportMode::Merge, summary, lexiconError);
     app.vocabulary->load();
     app.posStore->load();
     VocabEntry* niz = nullptr;
@@ -3131,14 +3133,22 @@ int runSmoke(App& app, const fs::path& outputDir) {
       for (const auto& meaning : niz->meanings) {
         if (meaning.find("人 者 person") != std::string::npos) hasDefinition = true;
       }
-      lexiconOk = firstImport && summary.invalid == 0 &&
-                  (summary.added >= 5000 || (summary.added == 0 && summary.duplicates == 5314)) &&
-                  app.posStore->entries.size() >= 15 && niz->phonetic == "nı z" &&
+      const bool freshMerge = summary.added >= 5000 && summary.merged >= 2 &&
+                              summary.duplicates == 0;
+      const bool repeatedMerge = summary.added == 0 && summary.merged >= 5000 &&
+                                 summary.duplicates == 0;
+      bool hasDefaultCode = std::find(niz->codes.begin(), niz->codes.end(), "nız") !=
+                            niz->codes.end();
+      bool hasPhonetic = std::find(niz->phonetics.begin(), niz->phonetics.end(), "nı z") !=
+                         niz->phonetics.end();
+      lexiconOk = firstImport && summary.invalid == 0 && (freshMerge || repeatedMerge) &&
+                  app.posStore->entries.size() >= 15 && hasPhonetic && hasDefaultCode &&
                   !niz->posMeanings.empty() && hasDefinition;
+      lexiconMergeOk = lexiconOk;
     }
     lexiconId9Ok = id9 && id9->type == "text" && id9->text == "ıu-vurg";
     std::string nizOriginalId = lexiconNizId;
-    if (niz) {
+    if (niz && summary.added >= 5000) {
       niz->codes = {"keep"};
       app.vocabulary->save();
       app.vocabulary->load();
@@ -3177,7 +3187,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                         nizAfter->codes.end();
         lexiconOverwriteOk = lexiconOverwriteOk && keptCode &&
                              nizAfter->id == nizOriginalId &&
-                             nizAfter->phonetic == "nı z";
+                             nizAfter->phonetic == "nı z" &&
+                             nizAfter->phonetics.size() == 1;
       } else {
         lexiconOverwriteOk = false;
       }
@@ -3197,6 +3208,61 @@ int runSmoke(App& app, const fs::path& outputDir) {
     }
     app.vocabSearch[0] = '\0';
     app.screen = App::Screen::Vocabulary;
+  }
+  if (app.vocabulary) {
+    VocabEntry* nizForMulti = nullptr;
+    for (auto& entry : app.vocabulary->entries) {
+      if (entry.id == lexiconNizId) nizForMulti = &entry;
+    }
+    if (nizForMulti) {
+      nizForMulti->phonetics = {"nı z", "ni z"};
+      nizForMulti->phonetic = "nı z";
+      app.vocabulary->save();
+      app.vocabulary->load();
+      app.editVocabulary(lexiconNizId);
+      std::snprintf(app.vocabSearch, sizeof(app.vocabSearch), "%s", "nı z");
+      app.screen = App::Screen::Vocabulary;
+      app.vocabPage = 1;
+      app.vocabScrollTop = true;
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-multi-phonetic.png") && ok;
+    }
+    app.vocabSearch[0] = '\0';
+    app.vocabPage = 1;
+    app.screen = App::Screen::Vocabulary;
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "vocab-merge.png") && ok;
+    app.vocabPage = 2;
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "vocab-page-slider.png") && ok;
+    const VocabEntry* appleForPicker = nullptr;
+    for (const auto& entry : app.vocabulary->entries) {
+      if (entry.text == "apple") appleForPicker = &entry;
+    }
+    if (appleForPicker) app.editVocabulary(appleForPicker->id);
+    app.openPicker();
+    std::vector<const VocabEntry*> pickerCandidates;
+    if (app.vocabulary) {
+      for (const auto& entry : app.vocabulary->entries) {
+        if (entry.id != app.editEntry.id) pickerCandidates.push_back(&entry);
+      }
+    }
+    if (pickerCandidates.size() >= 52) {
+      app.pickerSelected.clear();
+      app.pickerSelected.push_back(pickerCandidates[0]->id);
+      app.pickerSelected.push_back(pickerCandidates[1]->id);
+      app.pickerPage = 1;
+      renderFrame(app);
+      app.pickerSelected.push_back(pickerCandidates[50]->id);
+      app.pickerPage = 2;
+      renderFrame(app);
+      pickerCrossPageOk = app.pickerSelected.size() == 3;
+      app.editEntry.parts = app.pickerSelected;
+      app.editDirty = true;
+    }
+    ok = saveScreenshot(app, outputDir / "vocab-picker-page.png") && ok;
+    app.pickerOpen = false;
+    app.vocabPage = 1;
   }
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
@@ -3311,8 +3377,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
                           posOk && posDeleteOk && posMeaningsOk && oldVocabCompat &&
                           emptyGroupBlocked && posDeleteUnknown && phoneticOk && oldPhoneticCompat &&
-                          lexiconOk && lexiconDuplicateOk && lexiconBadLineOk && lexiconId9Ok &&
-                          lexiconOverwriteOk
+                          lexiconOk && lexiconMergeOk && lexiconDuplicateOk &&
+                          lexiconBadLineOk && lexiconId9Ok && lexiconOverwriteOk &&
+                          pickerCrossPageOk
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -3376,7 +3443,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " lexicon_duplicate=" << (lexiconDuplicateOk ? "true" : "false")
          << " lexicon_bad=" << (lexiconBadLineOk ? "true" : "false")
          << " lexicon_id9=" << (lexiconId9Ok ? "true" : "false")
-         << " lexicon_overwrite=" << (lexiconOverwriteOk ? "true" : "false") << std::endl;
+         << " lexicon_overwrite=" << (lexiconOverwriteOk ? "true" : "false")
+         << " lexicon_merge=" << (lexiconMergeOk ? "true" : "false")
+         << " picker_cross_page=" << (pickerCrossPageOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -3522,9 +3591,25 @@ void renderVocabularyEditor(App& app) {
     app.editEntry.codes.push_back("");
     app.editDirty = true;
   }
-  ImGui::TextUnformatted("音标（可选）");
-  ImGui::SetNextItemWidth(-1);
-  if (inputString("##phonetic", app.editEntry.phonetic, 200)) app.editDirty = true;
+  ImGui::TextUnformatted("音标（可多个）");
+  if (app.editEntry.phonetics.empty()) app.editEntry.phonetics.push_back("");
+  for (std::size_t i = 0; i < app.editEntry.phonetics.size(); ++i) {
+    ImGui::PushID(6100 + static_cast<int>(i));
+    ImGui::SetNextItemWidth(-80);
+    if (inputString("##phonetic", app.editEntry.phonetics[i], 200)) app.editDirty = true;
+    ImGui::SameLine();
+    if (ImGui::Button("删除", ImVec2(60, 28))) {
+      if (app.editEntry.phonetics.size() > 1) {
+        app.editEntry.phonetics.erase(app.editEntry.phonetics.begin() + i);
+        app.editDirty = true;
+      } else app.showToast("至少保留一个音标输入框");
+    }
+    ImGui::PopID();
+  }
+  if (ImGui::Button("＋ 添加音标", ImVec2(120, 28))) {
+    app.editEntry.phonetics.push_back("");
+    app.editDirty = true;
+  }
   ImGui::TextDisabled("不校验格式，例如 /ˈæp.əl/");
   ImGui::Separator();
 
@@ -3787,6 +3872,20 @@ std::string posMeaningSummary(App& app, const VocabEntry& entry) {
   return summary.empty() ? "未填写" : summary;
 }
 
+std::string phoneticsText(const VocabEntry& entry) {
+  std::string result;
+  if (!entry.phonetics.empty()) {
+    for (const auto& value : entry.phonetics) {
+      if (value.empty()) continue;
+      if (!result.empty()) result += " / ";
+      result += value;
+    }
+  } else if (!entry.phonetic.empty()) {
+    result = entry.phonetic;
+  }
+  return result;
+}
+
 std::string posBadgeText(App& app, const VocabEntry& entry) {
   app.ensurePosLoaded();
   std::string badges;
@@ -3802,6 +3901,10 @@ std::string posBadgeText(App& app, const VocabEntry& entry) {
 }
 
 void renderVocabulary(App& app) {
+  if (app.vocabScrollTop) {
+    ImGui::SetScrollY(0.0f);
+    app.vocabScrollTop = false;
+  }
   if (ImGui::Button("← 资源", ImVec2(100, 30))) app.screen = App::Screen::Resources;
   ImGui::SameLine();
   ImGui::TextDisabled("%s / 词汇表", app.project.name.c_str());
@@ -3810,19 +3913,24 @@ void renderVocabulary(App& app) {
   app.ensurePosLoaded();
   const std::size_t count = app.vocabulary ? app.vocabulary->entries.size() : 0;
   pageTitle("VOCABULARY", "词汇表", std::to_string(count) + " 条项目级词汇");
-  const float right = ImGui::GetWindowWidth() - 390;
+  const float right = ImGui::GetWindowWidth() - 430;
   if (right > 0) ImGui::SetCursorPosX(right);
-  if (ImGui::Button("导入词表", ImVec2(100, 34))) {
-    app.lexiconOverwrite = false;
+  if (ImGui::Button("导入词表", ImVec2(90, 34))) {
+    app.lexiconMode = LexiconImportMode::Skip;
     app.openBrowser(App::BrowserMode::ImportLexicon);
   }
   ImGui::SameLine();
-  if (ImGui::Button("覆盖合并", ImVec2(100, 34))) {
-    app.lexiconOverwrite = true;
+  if (ImGui::Button("覆盖合并", ImVec2(90, 34))) {
+    app.lexiconMode = LexiconImportMode::Overwrite;
     app.openBrowser(App::BrowserMode::ImportLexicon);
   }
   ImGui::SameLine();
-  if (ImGui::Button("＋ 新建词汇", ImVec2(130, 34))) app.startNewVocabulary();
+  if (ImGui::Button("合并释义", ImVec2(90, 34))) {
+    app.lexiconMode = LexiconImportMode::Merge;
+    app.openBrowser(App::BrowserMode::ImportLexicon);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("＋ 新建词汇", ImVec2(120, 34))) app.startNewVocabulary();
   ImGui::Spacing();
   ImGui::TextDisabled("搜索显示名 / 编码 / 音标 / 释义 / 词性");
   ImGui::SetNextItemWidth(-1);
@@ -3845,8 +3953,8 @@ void renderVocabulary(App& app) {
         match = true;
       if (!match && entry.text.size() && lowerText(entry.text).find(query) != std::string::npos)
         match = true;
-      if (!match && !entry.phonetic.empty() &&
-          lowerText(entry.phonetic).find(query) != std::string::npos) match = true;
+      if (!match && !phoneticsText(entry).empty() &&
+          lowerText(phoneticsText(entry)).find(query) != std::string::npos) match = true;
       if (!match) for (const auto& code : entry.codes)
         if (lowerText(code).find(query) != std::string::npos) match = true;
       if (!match) for (const auto& meaning : entry.meanings)
@@ -3885,6 +3993,12 @@ void renderVocabulary(App& app) {
   if (ImGui::Button("下一页 →", ImVec2(90, 28)) && app.vocabPage < pageCount) {
     app.vocabPage++;
   }
+  if (pageCount > 1) {
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("##vocab_page_slider", &app.vocabPage, 1, pageCount)) {
+      // Slider jumps immediately.
+    }
+  }
   const std::size_t start = static_cast<std::size_t>(app.vocabPage - 1) * kPageSize;
   const std::size_t shown = std::min<std::size_t>(kPageSize, matches.size() - start);
   for (std::size_t rowIndex = 0; rowIndex < shown; ++rowIndex) {
@@ -3912,9 +4026,10 @@ void renderVocabulary(App& app) {
       codes += code;
     }
     ImGui::TextDisabled("编码：%s", codes.empty() ? "未设置" : codes.c_str());
-    if (!entry.phonetic.empty()) {
+    const std::string allPhonetics = phoneticsText(entry);
+    if (!allPhonetics.empty()) {
       ImGui::SameLine();
-      ImGui::TextDisabled("音标：%s", entry.phonetic.c_str());
+      ImGui::TextDisabled("音标：%s", allPhonetics.c_str());
     }
     ImGui::SetCursorPosX(12);
     ImGui::TextDisabled("释义：%s", posMeaningSummary(app, entry).c_str());
@@ -4003,10 +4118,10 @@ void renderFonts(App& app) {
 
 void renderPicker(App& app) {
   if (!app.pickerOpen) return;
-  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 720) * 0.5f,
-                                 (ImGui::GetIO().DisplaySize.y - 560) * 0.5f),
+  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 760) * 0.5f,
+                                 (ImGui::GetIO().DisplaySize.y - 620) * 0.5f),
                           ImGuiCond_Always);
-  ImGui::SetNextWindowSize(ImVec2(720, 560), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(760, 620), ImGuiCond_Always);
   bool open = app.pickerOpen;
   if (!ImGui::Begin("选择词汇##picker", &open,
                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
@@ -4015,9 +4130,11 @@ void renderPicker(App& app) {
     app.pickerOpen = open;
     return;
   }
-  ImGui::TextDisabled("搜索编码 / 文本 / Unicode 码点 / 字符 / 释义 / 显示名");
+  ImGui::TextDisabled("搜索编码 / 文本 / 音标 / 释义 / 词性 / 显示名");
   ImGui::SetNextItemWidth(-120);
-  ImGui::InputText("##picker_search", app.pickerSearch, sizeof(app.pickerSearch));
+  if (ImGui::InputText("##picker_search", app.pickerSearch, sizeof(app.pickerSearch))) {
+    app.pickerPage = 1;
+  }
   ImGui::SameLine();
   ImGui::Text("已选 %zu", app.pickerSelected.size());
   ImGui::Spacing();
@@ -4029,77 +4146,94 @@ void renderPicker(App& app) {
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
   };
-  std::size_t pickerMatches = 0;
-  ImGui::BeginChild("##picker_list", ImVec2(0, 360), ImGuiChildFlags_Borders);
+  std::vector<const VocabEntry*> matches;
   if (app.vocabulary) {
-    constexpr std::size_t kPickerMaxRows = 200;
     for (const auto& entry : app.vocabulary->entries) {
       if (entry.id == app.editEntry.id) continue;
       const std::string name = displayName(entry, app.vocabulary->entries);
       bool match = query.empty();
+      if (!match && lower(name).find(query) != std::string::npos) match = true;
+      if (!match) for (const auto& code : entry.codes)
+        if (lower(code).find(query) != std::string::npos) match = true;
+      if (!match && lower(entry.text).find(query) != std::string::npos) match = true;
+      if (!match && lower(phoneticsText(entry)).find(query) != std::string::npos) match = true;
+      if (!match) for (const auto& meaning : entry.meanings)
+        if (lower(meaning).find(query) != std::string::npos) match = true;
+      if (!match && app.posStore) {
+        for (const auto& group : entry.posMeanings) {
+          const PosEntry* pos = app.posStore->find(group.posId);
+          if (pos && (lower(pos->name).find(query) != std::string::npos ||
+                      lower(pos->code).find(query) != std::string::npos)) match = true;
+        }
+      }
+      if (!match) for (const auto& cp : entry.codepoints) {
+        if (lower(cp).find(query) != std::string::npos ||
+            lower("0x" + cp).find(query) != std::string::npos ||
+            lower(codepointsToUtf8({cp})).find(query) != std::string::npos) match = true;
+      }
       if (!match) {
-        if (lower(name).find(query) != std::string::npos) match = true;
-        if (!match) for (const auto& code : entry.codes)
-          if (lower(code).find(query) != std::string::npos) match = true;
-        if (!match) if (lower(entry.text).find(query) != std::string::npos) match = true;
-        if (!match) for (const auto& meaning : entry.meanings)
-          if (lower(meaning).find(query) != std::string::npos) match = true;
-        if (!match && app.posStore) {
-          for (const auto& group : entry.posMeanings) {
-            const PosEntry* pos = app.posStore->find(group.posId);
-            if (pos && (lower(pos->name).find(query) != std::string::npos ||
-                        lower(pos->code).find(query) != std::string::npos)) match = true;
-          }
-        }
-        if (!match) for (const auto& cp : entry.codepoints) {
-          if (lower(cp).find(query) != std::string::npos ||
-              lower("0x" + cp).find(query) != std::string::npos ||
-              lower(codepointsToUtf8({cp})).find(query) != std::string::npos) match = true;
-        }
-        if (!match) {
-          for (const auto& code : entry.codes) {
-            const std::string normalized = normalizeCodepoint(code);
-            if (!normalized.empty() && lower(normalized).find(query) != std::string::npos) match = true;
-          }
+        for (const auto& code : entry.codes) {
+          const std::string normalized = normalizeCodepoint(code);
+          if (!normalized.empty() && lower(normalized).find(query) != std::string::npos) match = true;
         }
       }
-      if (!match) continue;
-      ++pickerMatches;
-      if (pickerMatches > kPickerMaxRows) continue;
-      bool selected = std::find(app.pickerSelected.begin(), app.pickerSelected.end(),
-                                entry.id) != app.pickerSelected.end();
-      ImGui::PushID(entry.id.c_str());
-      if (ImGui::Selectable(("##pick_" + entry.id).c_str(), selected, 0, ImVec2(0, 66))) {
-        auto it = std::find(app.pickerSelected.begin(), app.pickerSelected.end(), entry.id);
-        if (it == app.pickerSelected.end()) app.pickerSelected.push_back(entry.id);
-        else app.pickerSelected.erase(it);
-      }
-      ImGui::SameLine();
-      const char* typeLabel = entry.type == "text" ? "文本" : entry.type == "unicode"
-                                  ? "Unicode" : entry.type == "combo" ? "组合" : "自定义文字";
-      ImGui::TextDisabled("%s", typeLabel);
-      ImGui::SameLine();
-      pushVocabFont(app);
-      ImGui::TextUnformatted(name.c_str());
-      popVocabFont();
-      ImGui::SameLine();
-      std::string codes;
-      for (const auto& code : entry.codes) { if (!codes.empty()) codes += " / "; codes += code; }
-      ImGui::TextDisabled("%s", codes.c_str());
-      const std::string pickerBadges = posBadgeText(app, entry);
-      if (!pickerBadges.empty()) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.2f, 0.45f, 0.85f, 1.0f), "%s", pickerBadges.c_str());
-      }
-      ImGui::SameLine();
-      ImGui::TextDisabled("释义：%s", posMeaningSummary(app, entry).c_str());
-      ImGui::PopID();
+      if (match) matches.push_back(&entry);
     }
   }
-  ImGui::EndChild();
-  if (pickerMatches > 200) {
-    ImGui::TextDisabled("匹配 %zu 条，显示前 200 条；输入搜索缩小范围", pickerMatches);
+  constexpr int kPickerPageSize = 50;
+  int pageCount = static_cast<int>((matches.size() + kPickerPageSize - 1) / kPickerPageSize);
+  if (pageCount < 1) pageCount = 1;
+  if (app.pickerPage < 1) app.pickerPage = 1;
+  if (app.pickerPage > pageCount) app.pickerPage = pageCount;
+  ImGui::TextDisabled("第 %d / %d 页 · 共 %zu 个匹配", app.pickerPage, pageCount, matches.size());
+  if (ImGui::Button("← 上一页", ImVec2(90, 26)) && app.pickerPage > 1) app.pickerPage--;
+  ImGui::SameLine();
+  if (ImGui::Button("下一页 →", ImVec2(90, 26)) && app.pickerPage < pageCount) app.pickerPage++;
+  if (pageCount > 1) {
+    ImGui::SetNextItemWidth(-1);
+    ImGui::SliderInt("##picker_page_slider", &app.pickerPage, 1, pageCount);
   }
+  ImGui::BeginChild("##picker_list", ImVec2(0, 390), ImGuiChildFlags_Borders);
+  const std::size_t start = static_cast<std::size_t>(app.pickerPage - 1) * kPickerPageSize;
+  const std::size_t end = std::min<std::size_t>(start + kPickerPageSize, matches.size());
+  for (std::size_t index = start; index < end; ++index) {
+    const auto& entry = *matches[index];
+    const std::string name = displayName(entry, app.vocabulary->entries);
+    bool selected = std::find(app.pickerSelected.begin(), app.pickerSelected.end(),
+                              entry.id) != app.pickerSelected.end();
+    ImGui::PushID(entry.id.c_str());
+    if (ImGui::Selectable(("##pick_" + entry.id).c_str(), selected, 0, ImVec2(0, 66))) {
+      auto it = std::find(app.pickerSelected.begin(), app.pickerSelected.end(), entry.id);
+      if (it == app.pickerSelected.end()) app.pickerSelected.push_back(entry.id);
+      else app.pickerSelected.erase(it);
+    }
+    ImGui::SameLine();
+    const char* typeLabel = entry.type == "text" ? "文本" : entry.type == "unicode"
+                                ? "Unicode" : entry.type == "combo" ? "组合" : "自定义文字";
+    ImGui::TextDisabled("%s", typeLabel);
+    ImGui::SameLine();
+    pushVocabFont(app);
+    ImGui::TextUnformatted(name.c_str());
+    popVocabFont();
+    ImGui::SameLine();
+    std::string codes;
+    for (const auto& code : entry.codes) { if (!codes.empty()) codes += " / "; codes += code; }
+    ImGui::TextDisabled("%s", codes.c_str());
+    const std::string pickerPhonetics = phoneticsText(entry);
+    if (!pickerPhonetics.empty()) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("音标：%s", pickerPhonetics.c_str());
+    }
+    const std::string pickerBadges = posBadgeText(app, entry);
+    if (!pickerBadges.empty()) {
+      ImGui::SameLine();
+      ImGui::TextColored(ImVec4(0.2f, 0.45f, 0.85f, 1.0f), "%s", pickerBadges.c_str());
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("释义：%s", posMeaningSummary(app, entry).c_str());
+    ImGui::PopID();
+  }
+  ImGui::EndChild();
   ImGui::Spacing();
   if (ImGui::Button("取消", ImVec2(110, 34))) {
     app.pickerOpen = false;

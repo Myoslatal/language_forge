@@ -167,6 +167,13 @@
                     app:forgeVariant="ghost" />
             </LinearLayout>
 
+            <SeekBar
+                android:id="@+id/vocabulary_page_seek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="1"
+                android:progress="0" />
+
             <TextView
                 android:id="@+id/vocabulary_no_match"
                 style="@style/Forge.Text.Hint"

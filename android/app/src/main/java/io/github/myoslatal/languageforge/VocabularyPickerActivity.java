@@ -9,6 +9,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -40,6 +41,10 @@ public class VocabularyPickerActivity extends ForgeActivity {
     private LinearLayout emptyState;
     private ForgeBadge count;
     private ForgeTextField search;
+    private TextView pageLabel;
+    private SeekBar pageSeek;
+    private boolean updatingPageSeek;
+    private int page = 1;
     private final List<String> selectedIds = new ArrayList<>();
     private String query = "";
 
@@ -65,6 +70,36 @@ public class VocabularyPickerActivity extends ForgeActivity {
         emptyState = findViewById(R.id.picker_empty);
         count = findViewById(R.id.picker_count);
         search = findViewById(R.id.picker_search);
+        pageLabel = findViewById(R.id.picker_page);
+        pageSeek = findViewById(R.id.picker_page_seek);
+        pageSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser || updatingPageSeek) {
+                    return;
+                }
+                page = progress + 1;
+                render();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        findViewById(R.id.btn_picker_prev).setOnClickListener(v -> {
+            if (page > 1) {
+                page--;
+                render();
+            }
+        });
+        findViewById(R.id.btn_picker_next).setOnClickListener(v -> {
+            page++;
+            render();
+        });
 
         findViewById(R.id.btn_picker_back).setOnClickListener(v -> {
             setResult(RESULT_CANCELED);
@@ -84,6 +119,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 query = s == null ? "" : s.toString();
+                page = 1;
                 render();
             }
 
@@ -96,26 +132,30 @@ public class VocabularyPickerActivity extends ForgeActivity {
 
     private void render() {
         list.removeAllViews();
-        int matched = 0;
-        int shown = 0;
+        List<VocabularyEntry> matches = new ArrayList<>();
         for (VocabularyEntry entry : store.entries) {
-            if (entry.id.equals(excludeId) || !matches(entry, query)) {
-                continue;
+            if (!entry.id.equals(excludeId) && matches(entry, query)) {
+                matches.add(entry);
             }
-            matched++;
-            if (shown >= 200) {
-                continue;
-            }
-            addRow(entry);
-            shown++;
         }
-        emptyState.setVisibility(matched == 0 ? View.VISIBLE : View.GONE);
-        if (matched > 200) {
-            count.setText("已选 " + selectedIds.size() + " 个 · 匹配 " + matched
-                    + " 条，显示前 200 条");
-        } else {
-            count.setText("已选 " + selectedIds.size() + " 个");
+        int pageCount = Math.max(1, (matches.size() + 49) / 50);
+        if (page < 1) page = 1;
+        if (page > pageCount) page = pageCount;
+        int start = (page - 1) * 50;
+        int end = Math.min(matches.size(), start + 50);
+        for (int i = start; i < end; i++) {
+            addRow(matches.get(i));
         }
+        emptyState.setVisibility(matches.isEmpty() ? View.VISIBLE : View.GONE);
+        count.setText("已选 " + selectedIds.size() + " 个");
+        pageLabel.setText("第 " + page + " / " + pageCount + " 页 · 共 "
+                + matches.size() + " 个匹配");
+        updatingPageSeek = true;
+        pageSeek.setMax(Math.max(0, pageCount - 1));
+        pageSeek.setProgress(page - 1);
+        pageSeek.setEnabled(pageCount > 1);
+        pageSeek.setVisibility(pageCount > 1 ? View.VISIBLE : View.GONE);
+        updatingPageSeek = false;
     }
 
     private void addRow(VocabularyEntry entry) {
@@ -135,11 +175,13 @@ public class VocabularyPickerActivity extends ForgeActivity {
                     base == null ? Typeface.NORMAL : base.getStyle()));
         }
         type.setText(VocabularyEntry.typeLabel(entry.type));
-        if (!entry.codes.isEmpty()) {
-            codes.setText("编码：" + VocabularyStore.joinSummary(entry.codes));
-        } else {
-            codes.setText("编码：—");
+        String codesText = entry.codes.isEmpty()
+                ? "编码：—" : "编码：" + VocabularyStore.joinSummary(entry.codes);
+        String phoneticText = phoneticText(entry);
+        if (!phoneticText.isEmpty()) {
+            codesText += " · 音标：" + phoneticText;
         }
+        codes.setText(codesText);
         meanings.setText("释义：" + posMeaningSummary(entry));
         posBadges.removeAllViews();
         for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
@@ -234,5 +276,16 @@ public class VocabularyPickerActivity extends ForgeActivity {
 
     private void toast(CharSequence message) {
         ForgeToast.show(this, message, 24);
+    }
+
+    private String phoneticText(VocabularyEntry entry) {
+        StringBuilder builder = new StringBuilder();
+        for (String phonetic : entry.phonetics) {
+            if (phonetic == null || phonetic.isEmpty()) continue;
+            if (builder.length() > 0) builder.append(" / ");
+            builder.append(phonetic);
+        }
+        if (builder.length() == 0 && entry.phonetic != null) builder.append(entry.phonetic);
+        return builder.toString();
     }
 }

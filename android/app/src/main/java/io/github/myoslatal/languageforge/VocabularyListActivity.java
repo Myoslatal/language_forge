@@ -14,6 +14,7 @@ import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -58,10 +59,12 @@ public class VocabularyListActivity extends ForgeActivity {
     private TextView noMatch;
     private LinearLayout pager;
     private TextView pageLabel;
+    private SeekBar pageSeek;
+    private boolean updatingPageSeek;
     private int page = 1;
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private ActivityResultLauncher<String[]> lexiconPicker;
-    private boolean pendingOverwrite;
+    private LexiconImporter.Mode pendingMode = LexiconImporter.Mode.SKIP;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -90,7 +93,7 @@ public class VocabularyListActivity extends ForgeActivity {
         View.OnClickListener newEntry = v -> openEditor(null);
         findViewById(R.id.btn_new_vocabulary).setOnClickListener(newEntry);
         findViewById(R.id.btn_empty_vocabulary).setOnClickListener(newEntry);
-        findViewById(R.id.btn_import_lexicon).setOnClickListener(v -> showImportModeDialog());
+        findViewById(R.id.btn_import_lexicon).setOnClickListener(this::showImportModeDialog);
         searchField.getEditText().addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -145,6 +148,25 @@ public class VocabularyListActivity extends ForgeActivity {
         noMatch = findViewById(R.id.vocabulary_no_match);
         pager = findViewById(R.id.vocabulary_pager);
         pageLabel = findViewById(R.id.vocabulary_page);
+        pageSeek = findViewById(R.id.vocabulary_page_seek);
+        pageSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser || updatingPageSeek) {
+                    return;
+                }
+                page = progress + 1;
+                render();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
     }
 
     private void render() {
@@ -174,6 +196,12 @@ public class VocabularyListActivity extends ForgeActivity {
         boolean noResults = total > 0 && !query.isEmpty() && matches.isEmpty();
         noMatch.setVisibility(noResults ? View.VISIBLE : View.GONE);
         pager.setVisibility(matches.isEmpty() ? View.GONE : View.VISIBLE);
+        updatingPageSeek = true;
+        pageSeek.setMax(Math.max(0, pageCount - 1));
+        pageSeek.setProgress(page - 1);
+        pageSeek.setEnabled(pageCount > 1);
+        pageSeek.setVisibility(pageCount > 1 ? View.VISIBLE : View.GONE);
+        updatingPageSeek = false;
         if (!matches.isEmpty()) {
             visibleHint.setVisibility(View.VISIBLE);
             visibleHint.setText((query.isEmpty() ? "共 " : "匹配 ") + matches.size()
@@ -193,6 +221,9 @@ public class VocabularyListActivity extends ForgeActivity {
         }
         if (entry.text != null && entry.text.toLowerCase(Locale.ROOT).contains(query)) {
             return true;
+        }
+        for (String phonetic : entry.phonetics) {
+            if (phonetic.toLowerCase(Locale.ROOT).contains(query)) return true;
         }
         if (entry.phonetic != null && entry.phonetic.toLowerCase(Locale.ROOT).contains(query)) {
             return true;
@@ -237,8 +268,8 @@ public class VocabularyListActivity extends ForgeActivity {
         applyTypeface(name);
         type.setText(VocabularyEntry.typeLabel(entry.type));
         codes.setText("编码：" + VocabularyStore.joinSummary(entry.codes));
-        phonetic.setText("音标：" + entry.phonetic);
-        phonetic.setVisibility(entry.phonetic == null || entry.phonetic.isEmpty()
+        phonetic.setText("音标：" + phoneticText(entry));
+        phonetic.setVisibility(phoneticText(entry).isEmpty()
                 ? View.GONE : View.VISIBLE);
         meanings.setText("释义：" + posMeaningSummary(entry));
         posBadges.removeAllViews();
@@ -336,22 +367,20 @@ public class VocabularyListActivity extends ForgeActivity {
         dialog.show();
     }
 
-    private void showImportModeDialog() {
-        ForgeDialog dialog = new ForgeDialog(this);
-        dialog.setTitle("导入方式");
-        dialog.setBodyText("选择重复词汇的处理方式：\n"
-                + "跳过重复：保留现有词汇。\n"
-                + "覆盖合并：按文本匹配，更新音标、词性释义与聚合释义，保留 id、编码和媒体。");
-        dialog.setNegativeButton("跳过重复", (d, which) -> openLexiconPicker(false));
-        dialog.setPositiveButton("覆盖合并", (d, which) -> openLexiconPicker(true));
-        dialog.show();
+    private void showImportModeDialog(View anchor) {
+        ForgeMenu menu = new ForgeMenu(this);
+        menu.addHeader("导入方式");
+        menu.addItem("跳过重复", () -> openLexiconPicker(LexiconImporter.Mode.SKIP));
+        menu.addItem("覆盖合并", () -> openLexiconPicker(LexiconImporter.Mode.OVERWRITE));
+        menu.addItem("合并释义", () -> openLexiconPicker(LexiconImporter.Mode.MERGE));
+        menu.show(anchor);
     }
 
-    private void openLexiconPicker(boolean overwrite) {
+    private void openLexiconPicker(LexiconImporter.Mode mode) {
         if (lexiconPicker == null) {
             return;
         }
-        pendingOverwrite = overwrite;
+        pendingMode = mode;
         lexiconPicker.launch(new String[]{
                 "application/json", "application/x-ndjson", "text/plain", "*/*"
         });
@@ -370,9 +399,8 @@ public class VocabularyListActivity extends ForgeActivity {
         toast("正在导入词表…");
         ioExecutor.execute(() -> {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
-                LexiconImporter.Summary summary = LexiconImporter.importFrom(
-                        input, projectDirectory,
-                        pendingOverwrite ? LexiconImporter.Mode.OVERWRITE : LexiconImporter.Mode.SKIP);
+                LexiconImporter.Summary summary =
+                        LexiconImporter.importFrom(input, projectDirectory, pendingMode);
                 runOnUiThread(() -> {
                     store.load();
                     posStore.load();
@@ -404,6 +432,7 @@ public class VocabularyListActivity extends ForgeActivity {
         dialog.setTitle("导入词表");
         dialog.setBodyText("新增 " + summary.added + " 条\n"
                 + "更新 " + summary.updated + " 条\n"
+                + "合并 " + summary.merged + " 条\n"
                 + "跳过重复 " + summary.duplicates + " 条\n"
                 + "跳过无效 " + summary.invalid + " 条\n"
                 + "新增词性 " + summary.newPos + " 个");
@@ -422,5 +451,16 @@ public class VocabularyListActivity extends ForgeActivity {
 
     private void toast(CharSequence message) {
         ForgeToast.show(this, message, 24);
+    }
+
+    private String phoneticText(VocabularyEntry entry) {
+        StringBuilder builder = new StringBuilder();
+        for (String phonetic : entry.phonetics) {
+            if (phonetic == null || phonetic.isEmpty()) continue;
+            if (builder.length() > 0) builder.append(" / ");
+            builder.append(phonetic);
+        }
+        if (builder.length() == 0 && entry.phonetic != null) builder.append(entry.phonetic);
+        return builder.toString();
     }
 }

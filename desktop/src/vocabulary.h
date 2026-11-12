@@ -22,6 +22,7 @@ struct VocabEntry {
   std::vector<std::string> codes;
   std::string text;
   std::string phonetic;
+  std::vector<std::string> phonetics;
   std::vector<std::string> codepoints;
   std::vector<std::string> parts;
   std::string image;

@@ -82,7 +82,48 @@
                 android:id="@+id/picker_search"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:forgeHint="搜索编码、文本、Unicode 码点或释义" />
+                app:forgeHint="搜索编码、文本、音标、Unicode 码点或释义" />
+
+            <LinearLayout
+                android:id="@+id/picker_pager"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_picker_prev"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="上一页"
+                    android:textSize="11sp"
+                    app:forgeVariant="ghost" />
+
+                <TextView
+                    android:id="@+id/picker_page"
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="第 1 / 1 页 · 共 0 个匹配" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_picker_next"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="下一页"
+                    android:textSize="11sp"
+                    app:forgeVariant="ghost" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/picker_page_seek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="1"
+                android:progress="0" />
 
             <LinearLayout
                 android:id="@+id/picker_empty"

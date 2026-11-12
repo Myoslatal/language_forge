@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -285,6 +286,19 @@ final class VocabularyStore {
         readStrings(object.optJSONArray("codes"), entry.codes, MAX_CODE);
         entry.text = clean(object.optString("text", ""), MAX_TEXT);
         entry.phonetic = clean(object.optString("phonetic", ""), MAX_PHONETIC);
+        readStrings(object.optJSONArray("phonetics"), entry.phonetics, MAX_PHONETIC);
+        LinkedHashSet<String> uniquePhonetics = new LinkedHashSet<>();
+        for (String value : entry.phonetics) {
+            if (!value.isEmpty()) {
+                uniquePhonetics.add(value);
+            }
+        }
+        if (uniquePhonetics.isEmpty() && !entry.phonetic.isEmpty()) {
+            uniquePhonetics.add(entry.phonetic);
+        }
+        entry.phonetics.clear();
+        entry.phonetics.addAll(uniquePhonetics);
+        entry.phonetic = entry.phonetics.isEmpty() ? "" : entry.phonetics.get(0);
         readStrings(object.optJSONArray("codepoints"), entry.codepoints, MAX_CODEPOINT);
         readStrings(object.optJSONArray("parts"), entry.parts, 64);
         entry.image = clean(object.optString("image", ""), 500);
@@ -318,6 +332,7 @@ final class VocabularyStore {
         object.put("codes", toArray(entry.codes));
         object.put("text", entry.text);
         object.put("phonetic", entry.phonetic);
+        object.put("phonetics", toArray(entry.phonetics));
         object.put("codepoints", toArray(entry.codepoints));
         object.put("parts", toArray(entry.parts));
         object.put("image", entry.image);
