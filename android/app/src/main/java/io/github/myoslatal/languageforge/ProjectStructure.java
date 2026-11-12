@@ -87,10 +87,32 @@ final class ProjectStructure {
                                         if (questionObject == null) {
                                             continue;
                                         }
-                                        course.questions.add(new Question(
+                                        Question question = new Question(
                                                 cleanId(questionObject.optString("id")),
                                                 cleanName(questionObject.optString("name"),
-                                                        "未命名题目")));
+                                                        "未命名题目"));
+                                        String type = questionObject.optString("type", "").trim();
+                                        if (!type.isEmpty()) question.type = type;
+                                        question.sentence = questionObject.optString("sentence", "");
+                                        question.audio = questionObject.optString("audio", "");
+                                        question.audioDuration =
+                                                Math.max(0, questionObject.optLong("audioDuration", 0));
+                                        JSONArray parts = questionObject.optJSONArray("parts");
+                                        if (parts != null) {
+                                            for (int p = 0; p < parts.length(); p++) {
+                                                String part = parts.optString(p, "").trim();
+                                                if (!part.isEmpty()) question.parts.add(part);
+                                            }
+                                        }
+                                        JSONArray options = questionObject.optJSONArray("options");
+                                        if (options != null) {
+                                            for (int o = 0; o < options.length(); o++) {
+                                                question.options.add(options.optString(o, ""));
+                                            }
+                                        }
+                                        question.correctIndex =
+                                                questionObject.optInt("correctIndex", -1);
+                                        course.questions.add(question);
                                     }
                                 }
                                 unit.courses.add(course);
@@ -137,6 +159,17 @@ final class ProjectStructure {
                             JSONObject questionObject = new JSONObject();
                             questionObject.put("id", question.id);
                             questionObject.put("name", question.name);
+                            questionObject.put("type", question.type);
+                            JSONArray parts = new JSONArray();
+                            for (String part : question.parts) parts.put(part);
+                            questionObject.put("parts", parts);
+                            questionObject.put("sentence", question.sentence);
+                            questionObject.put("audio", question.audio);
+                            questionObject.put("audioDuration", question.audioDuration);
+                            JSONArray options = new JSONArray();
+                            for (String option : question.options) options.put(option);
+                            questionObject.put("options", options);
+                            questionObject.put("correctIndex", question.correctIndex);
                             questionArray.put(questionObject);
                         }
                         courseObject.put("questions", questionArray);
@@ -194,8 +227,17 @@ final class ProjectStructure {
     Question addQuestion(Course course, String name) {
         Question question = new Question(UUID.randomUUID().toString(),
                 cleanName(name, "未命名题目"));
+        question.type = Question.TYPE_TRANSLATION_CHOICE;
         course.questions.add(question);
         return question;
+    }
+
+    Question findQuestion(Course course, String questionId) {
+        if (course == null || questionId == null) return null;
+        for (Question question : course.questions) {
+            if (question.id.equals(questionId)) return question;
+        }
+        return null;
     }
 
     int unitCount() {
@@ -276,8 +318,17 @@ final class ProjectStructure {
     }
 
     static final class Question {
+        static final String TYPE_TRANSLATION_CHOICE = "translation_choice";
+
         final String id;
-        final String name;
+        String name;
+        String type = TYPE_TRANSLATION_CHOICE;
+        final List<String> parts = new ArrayList<>();
+        String sentence = "";
+        String audio = "";
+        long audioDuration;
+        final List<String> options = new ArrayList<>();
+        int correctIndex = -1;
 
         Question(String id, String name) {
             this.id = id;

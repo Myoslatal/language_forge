@@ -141,7 +141,15 @@ json structureToJson(const Structure& structure) {
       for (const auto& course : unit.courses) {
         json questions = json::array();
         for (const auto& question : course.questions) {
-          questions.push_back({{"id", question.id}, {"name", question.name}});
+          questions.push_back({{"id", question.id},
+                               {"name", question.name},
+                               {"type", question.type},
+                               {"parts", question.parts},
+                               {"sentence", question.sentence},
+                               {"audio", question.audio},
+                               {"audioDuration", question.audioDuration},
+                               {"options", question.options},
+                               {"correctIndex", question.correctIndex}});
         }
         courses.push_back(
             {{"id", course.id}, {"name", course.name}, {"questions", questions}});
@@ -188,6 +196,21 @@ Structure structureFromJson(const json& value) {
                 Question question;
                 question.id = questionValue.value("id", "");
                 question.name = questionValue.value("name", "未命名题目");
+                question.type = questionValue.value("type", "translation_choice");
+                question.sentence = questionValue.value("sentence", "");
+                question.audio = questionValue.value("audio", "");
+                question.audioDuration = questionValue.value("audioDuration", 0LL);
+                question.correctIndex = questionValue.value("correctIndex", -1);
+                if (questionValue.contains("parts") && questionValue["parts"].is_array()) {
+                  for (const auto& part : questionValue["parts"]) {
+                    if (part.is_string()) question.parts.push_back(part.get<std::string>());
+                  }
+                }
+                if (questionValue.contains("options") && questionValue["options"].is_array()) {
+                  for (const auto& option : questionValue["options"]) {
+                    if (option.is_string()) question.options.push_back(option.get<std::string>());
+                  }
+                }
                 if (question.id.empty()) question.id = Store::newUuid();
                 if (question.name.empty()) question.name = "未命名题目";
                 course.questions.push_back(std::move(question));

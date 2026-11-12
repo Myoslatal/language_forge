@@ -10,7 +10,10 @@ and vendored miniz/nlohmann/json. No Electron, no web runtime, and no network ac
 - Project structure: chapters → units → courses tree, expand/collapse, create/rename/move/delete
   with confirmation; every change writes `structure.json`.
 - Course editor: question list with 01/02 numbering, create, move up/down, delete, and a
-  resource-management placeholder page.
+  resource-management placeholder page. Question rows open the translation-choice editor:
+  ordered vocabulary parts (picker), whole-sentence WAV recording/playback/removal, four
+  options with a unique correct answer, validation, and structure.json persistence; old
+  name-only questions load compatibly.
 - Project-level `.conlang` ZIP import/export using the built-in ImGui file browser (no native
   file dialogs). Supports root or single top-level-folder ZIPs, Zip Slip protection, unique
   import directories, and preserves every file in the project directory.

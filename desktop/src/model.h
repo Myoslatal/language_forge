@@ -19,6 +19,13 @@ struct Stats {
 struct Question {
   std::string id;
   std::string name;
+  std::string type = "translation_choice";
+  std::vector<std::string> parts;
+  std::string sentence;
+  std::string audio;
+  long long audioDuration = 0;
+  std::vector<std::string> options;
+  int correctIndex = -1;
 };
 
 struct Course {

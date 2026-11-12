@@ -32,6 +32,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
     public static final String EXTRA_FOLDER_NAME = "folderName";
     public static final String EXTRA_EXCLUDE_ID = "excludeId";
     public static final String EXTRA_SELECTED_IDS = "selectedIds";
+    public static final String EXTRA_TITLE = "title";
 
     private VocabularyStore store;
     private PosStore posStore;
@@ -62,6 +63,14 @@ public class VocabularyPickerActivity extends ForgeActivity {
         posStore = new PosStore(projectDirectory);
         vocabTypeface = new FontStore(projectDirectory).activeTypeface();
         excludeId = getIntent().getStringExtra(EXTRA_EXCLUDE_ID);
+        ArrayList<String> initialIds = getIntent().getStringArrayListExtra(EXTRA_SELECTED_IDS);
+        if (initialIds != null) {
+            for (String id : initialIds) {
+                if (id != null && !id.isEmpty() && !selectedIds.contains(id)) {
+                    selectedIds.add(id);
+                }
+            }
+        }
 
         setContentView(R.layout.activity_vocabulary_picker);
         applyTopInset(findViewById(R.id.picker_topbar));
@@ -70,6 +79,10 @@ public class VocabularyPickerActivity extends ForgeActivity {
         emptyState = findViewById(R.id.picker_empty);
         count = findViewById(R.id.picker_count);
         search = findViewById(R.id.picker_search);
+        String title = getIntent().getStringExtra(EXTRA_TITLE);
+        if (title != null && !title.isEmpty()) {
+            ((TextView) findViewById(R.id.picker_title)).setText(title);
+        }
         pageLabel = findViewById(R.id.picker_page);
         pageSeek = findViewById(R.id.picker_page_seek);
         pageSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {

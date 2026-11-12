@@ -84,7 +84,7 @@ public class CourseEditorActivity extends ForgeActivity {
         ((TextView) findViewById(R.id.course_editor_subtitle)).setText(
                 chapter.name + " · " + unit.name);
         findViewById(R.id.btn_course_back).setOnClickListener(v -> finish());
-        View.OnClickListener newQuestion = v -> showCreateQuestionDialog();
+        View.OnClickListener newQuestion = v -> openQuestionEditor(null);
         findViewById(R.id.btn_new_question).setOnClickListener(newQuestion);
         findViewById(R.id.btn_empty_question).setOnClickListener(newQuestion);
         findViewById(R.id.btn_course_resources).setOnClickListener(v -> openResources());
@@ -146,11 +146,16 @@ public class CourseEditorActivity extends ForgeActivity {
                 .inflate(R.layout.item_question, questionList, false);
         TextView number = row.findViewById(R.id.question_index);
         TextView name = row.findViewById(R.id.question_name);
+        TextView type = row.findViewById(R.id.question_type);
         ForgeButton more = row.findViewById(R.id.question_more);
 
         number.setText(String.format(Locale.ROOT, "%02d", index + 1));
-        name.setText(question.name);
-        row.setOnClickListener(v -> toast("题目编辑后续实现"));
+        String title = question.sentence == null || question.sentence.isEmpty()
+                ? question.name : question.sentence;
+        name.setText(title);
+        type.setText(ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(question.type)
+                ? "选择正确翻译" : "题目");
+        row.setOnClickListener(v -> openQuestionEditor(question.id));
         more.setOnClickListener(v -> showQuestionMenu(more, question));
         questionList.addView(row);
     }
@@ -169,23 +174,24 @@ public class CourseEditorActivity extends ForgeActivity {
         menu.show(anchor);
     }
 
-    private void showCreateQuestionDialog() {
-        ForgeDialog dialog = new ForgeDialog(this);
-        dialog.setTitle("新建题目");
-        ForgeTextField field = new ForgeTextField(this);
-        field.setLabel("题目名称");
-        field.setHint("例如：第 1 题 · 听音选词");
-        dialog.setBodyView(field);
-        dialog.setNegativeButton("取消", null);
-        dialog.setPositiveButton("创建", (d, which) -> {
-            structure.addQuestion(course,
-                    ProjectStructure.cleanName(textOf(field), "未命名题目"));
-            if (!persist()) {
-                return;
-            }
-            render();
-        });
-        dialog.show();
+    private void openQuestionEditor(String questionId) {
+        Intent intent = new Intent(this, QuestionEditorActivity.class);
+        intent.putExtra(QuestionEditorActivity.EXTRA_FOLDER_NAME,
+                projectDirectory.getName());
+        intent.putExtra(QuestionEditorActivity.EXTRA_CHAPTER_ID, chapterId);
+        intent.putExtra(QuestionEditorActivity.EXTRA_UNIT_ID, unitId);
+        intent.putExtra(QuestionEditorActivity.EXTRA_COURSE_ID, courseId);
+        if (questionId != null) {
+            intent.putExtra(QuestionEditorActivity.EXTRA_QUESTION_ID, questionId);
+        }
+        startActivity(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        structure = ProjectStructure.load(projectDirectory);
+        if (resolveCourse()) render();
     }
 
     private void moveQuestion(ProjectStructure.Question question, int delta) {

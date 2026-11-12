@@ -131,14 +131,19 @@ Course rows (and the course ⋯ → **编辑课程** menu) open `CourseEditorAct
 `folderName`, `chapterId`, `unitId` and `courseId`; the activity validates the project
 directory and all three IDs before showing anything.
 
-* Each course in `structure.json` has a `questions` array:
-  `{"id":"...","name":"..."}`. IDs are UUIDs, names are trimmed and capped at 60
-  characters; a missing `questions` field (older files) loads as an empty list.
+* Each course in `structure.json` has a `questions` array. The first question type
+  `translation_choice` adds `type`, ordered `parts` vocabulary ids, cached `sentence`,
+  `audio`, `audioDuration`, exactly four `options`, and `correctIndex`. Old id/name-only
+  questions still load with empty parts/options and can be completed and saved. IDs are UUIDs;
+  names are trimmed/capped and use the sentence, old name, first option, then “未命名题目”.
   New/updated files include `"questions":[]` even when empty.
 * The course editor top bar shows the course name, **章节名 · 单元名**, and an
   `N 道题目` badge. The body lists numbered questions (`01`, `02`, …), each with a
   question label and a ⋯ menu: move up/down, divider, delete (red). Boundary moves toast
-  “已经在最前/最后”; row taps toast “题目编辑后续实现”.
+  “已经在最前/最后”. Rows and **＋ 新建题目** open `QuestionEditorActivity`: ordered vocabulary
+  selection through the paged picker, whole-sentence recording/playback/removal, four required
+  options with one radio-selected correct answer, and validation for parts/options/correct
+  answer/audio existence.
 * **＋ 新建题目** uses a `ForgeDialog` + `ForgeTextField`; an empty name becomes
   “未命名题目”. Delete asks for confirmation. Every create/move/delete writes
   `structure.json` via the same temp-file + atomic move path and reloads from disk on
