@@ -71,7 +71,7 @@ PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 | F1 | fonts/images/audio import/ref/delete guards | PASS | smoke font/image/audio flags |
 | F2 | .conlang export/import including question audio | PASS | smoke zip/import/browser export/import |
 | G1 | light/dark theme persistence | PASS | smoke theme/UI screenshots; no user desktop Xvfb |
-| G2 | no microphone / permission denied degradation | N/A | API29 emulator has virtual mic and recording succeeded; no physical no-device test |
+| G2 | no microphone / permission denied degradation | N/A | API29 emulator has virtual mic and recording succeeded; no physical no-device test — tracked as RD-02 in [REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md) |
 | G3 | API29 audio refs/delete protection + old name-only | PASS | refs 被 0 个词汇、1 道题目引用：nız，; delete toast + file remained; old-name opened/blank no crash, completed one word+options+correct saved; /tmp/api29-audio-delete.png, /tmp/api29-old-name.png |
 
 ## Key JSON
@@ -90,7 +90,7 @@ Desktop after real UI punctuation save:
 - API29 audio reference delete protection + old name-only: PASS (refs text, delete toast/file remain; old name-only opened and completed/saved).
 - UI fix: audio card 打开 button was not hit-testing under Xvfb at its position; added a real header entry 音频管理 on Resources page; both use app.openAudios().
 - UI fix: duplicate ImGui IDs from two 保存题目 buttons produced a Dear ImGui conflict window; labels now use distinct ## IDs.
-- N/A: real no-microphone hardware; API29 virtual mic records. Xvfb has no desktop user but smoke/UI worked.
+- N/A: real no-microphone hardware; API29 virtual mic records. Xvfb has no desktop user but smoke/UI worked. Real-device follow-ups: [REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md).
 
 ## Screenshots
 Android: /tmp/question-punctuation.png, /tmp/question-audio-trim.png, /tmp/audio-question-ref.png, /tmp/audio-question-ref-delete.png, /tmp/question-api29-punct-trim.png

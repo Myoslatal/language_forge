@@ -20,5 +20,10 @@ PASS 11 / FAIL 0 / N/A 2 (audio audibility, physical microphone)
 - Audio audibility: headless emulator/Xvfb has no audible output; MediaPlayer/SDL_mixer calls and no-crash verified.
 - Physical microphone hardware: not available.
 
+Real-device follow-ups are recorded with steps/expected results in [REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md):
+- audio audibility → RD-03 (Android), RD-05 (desktop)
+- physical microphone → RD-01 (Android), RD-04 (desktop)
+- headless-only limitation is not a functional failure.
+
 ## Known limitation
 - Desktop hints-off screenshot is from a JSON-injected state; desktop editor checkbox itself was clicked and JSON true/false verified separately.
