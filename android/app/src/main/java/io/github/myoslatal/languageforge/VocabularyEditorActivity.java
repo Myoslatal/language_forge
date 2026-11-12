@@ -83,6 +83,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
     private final List<String> selectedPartIds = new ArrayList<>();
     private ForgeSelect typeSelect;
     private ForgeTextField textField;
+    private ForgeTextField phoneticField;
     private LinearLayout textContainer;
     private LinearLayout unicodeContainer;
     private LinearLayout comboContainer;
@@ -223,6 +224,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         comboSelected = findViewById(R.id.combo_selected);
         typeSelect = findViewById(R.id.vocab_type);
         textField = findViewById(R.id.vocab_text);
+        phoneticField = findViewById(R.id.vocab_phonetic);
         textContainer = findViewById(R.id.text_container);
         unicodeContainer = findViewById(R.id.unicode_container);
         comboContainer = findViewById(R.id.combo_container);
@@ -303,6 +305,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
             }
         }
         textField.setText(existing.text);
+        phoneticField.setText(existing.phonetic);
         if (existing.codepoints.isEmpty()) {
             addCodepointRow("");
         } else {
@@ -1431,6 +1434,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         String type = selectedType();
 
         String text = "";
+        String phonetic = VocabularyStore.clean(textOf(phoneticField), VocabularyStore.MAX_PHONETIC);
         List<String> codepoints = new ArrayList<>();
         List<String> parts = new ArrayList<>();
         if (VocabularyEntry.TYPE_TEXT.equals(type)) {
@@ -1581,6 +1585,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         target.codes.clear();
         target.codes.addAll(codes);
         target.text = text;
+        target.phonetic = phonetic;
         target.codepoints.clear();
         target.codepoints.addAll(codepoints);
         target.parts.clear();

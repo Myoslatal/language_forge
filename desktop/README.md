@@ -219,6 +219,17 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   compatibility, empty-group validation, reload and `.conlang`, and captures
   `vocab-pos.png`, `vocab-pos-editor.png`, `vocab-pos-picker.png`.
 
+## Phonetic text
+
+- Vocabulary entries have an optional `phonetic` string (trimmed, capped at 200 chars,
+  default empty) stored alongside `text` in `vocabulary.json`. Old files without it load
+  as empty; no format or uniqueness validation is applied.
+- The editor has a single-line **音标（可选）** input near the codes, with helper text
+  `不校验格式，例如 /ˈæp.əl/`. It loads existing values, saves edits, and an empty field
+  writes an empty string; the list shows “音标：…” only when non-empty.
+- Smoke sets `/ˈæp.əl/` on `banana`, verifies reload/persistence, old `apple` compatibility,
+  `.conlang` retention and captures `vocab-phonetic.png`.
+
 ## Notes
 
 Audio recording depends on an SDL capture device; on machines without one the UI reports a

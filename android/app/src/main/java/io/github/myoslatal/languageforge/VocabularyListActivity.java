@@ -99,6 +99,7 @@ public class VocabularyListActivity extends ForgeActivity {
         ForgeBadge type = row.findViewById(R.id.vocabulary_type);
         TextView codes = row.findViewById(R.id.vocabulary_codes);
         TextView meanings = row.findViewById(R.id.vocabulary_meanings);
+        TextView phonetic = row.findViewById(R.id.vocabulary_phonetic);
         LinearLayout posBadges = row.findViewById(R.id.vocabulary_pos_badges);
         ForgeButton more = row.findViewById(R.id.vocabulary_more);
 
@@ -106,6 +107,9 @@ public class VocabularyListActivity extends ForgeActivity {
         applyTypeface(name);
         type.setText(VocabularyEntry.typeLabel(entry.type));
         codes.setText("编码：" + VocabularyStore.joinSummary(entry.codes));
+        phonetic.setText("音标：" + entry.phonetic);
+        phonetic.setVisibility(entry.phonetic == null || entry.phonetic.isEmpty()
+                ? View.GONE : View.VISIBLE);
         meanings.setText("释义：" + posMeaningSummary(entry));
         posBadges.removeAllViews();
         for (VocabularyEntry.PosMeaning group : entry.posMeanings) {

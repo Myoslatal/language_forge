@@ -2951,6 +2951,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
   bool oldVocabCompat = false;
   bool emptyGroupBlocked = false;
   bool posDeleteUnknown = false;
+  bool phoneticOk = false;
+  bool oldPhoneticCompat = false;
   std::string multiVocabId;
   if (app.vocabulary && !nounId.empty() && !verbId.empty()) {
     VocabEntry* multi = nullptr;
@@ -3024,6 +3026,26 @@ int runSmoke(App& app, const fs::path& outputDir) {
       app.pickerOpen = false;
     }
   }
+  if (app.vocabulary) {
+    VocabEntry* phoneticEntry = nullptr;
+    for (auto& entry : app.vocabulary->entries) {
+      if (entry.text == "banana") phoneticEntry = &entry;
+    }
+    if (phoneticEntry) {
+      const std::string phoneticId = phoneticEntry->id;
+      phoneticEntry->phonetic = "/ˈæp.əl/";
+      vocabOk = app.vocabulary->save() && vocabOk;
+      app.loadVocabularyData();
+      const VocabEntry* reloaded = app.vocabulary->find(phoneticId);
+      phoneticOk = reloaded && reloaded->phonetic == "/ˈæp.əl/";
+      for (const auto& entry : app.vocabulary->entries) {
+        if (entry.text == "apple" && entry.phonetic.empty()) oldPhoneticCompat = true;
+      }
+      app.screen = App::Screen::Vocabulary;
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-phonetic.png") && ok;
+    }
+  }
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
   const bool exported = app.store->exportProject(app.folder, exportPath, error);
@@ -3044,16 +3066,18 @@ int runSmoke(App& app, const fs::path& outputDir) {
     AudioStore importedAudios(app.store->projectDirectory(imported.folder));
     PosStore importedPos(app.store->projectDirectory(imported.folder));
     bool importedPosMeanings = false;
+    bool importedPhonetic = false;
     for (const auto& entry : importedVocab.entries) {
       if (entry.text == "banana" && entry.posMeanings.size() == 2 &&
           entry.meanings.size() == 2) {
         importedPosMeanings = true;
       }
+      if (entry.text == "banana" && entry.phonetic == "/ˈæp.əl/") importedPhonetic = true;
     }
     importStatsOk = importStatsOk && importedVocab.entries.size() >= 4 &&
                     !importedFonts.fonts.empty() && !importedImages.images.empty() &&
                     !importedAudios.audios.empty() && importedPos.entries.size() >= 2 &&
-                    importedPosMeanings;
+                    importedPosMeanings && importedPhonetic;
     app.store->deleteProject(imported.folder);
   }
 
@@ -3134,7 +3158,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           invalidAudioRejected && invalidAudioNoResidue &&
                           audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
                           posOk && posDeleteOk && posMeaningsOk && oldVocabCompat &&
-                          emptyGroupBlocked && posDeleteUnknown
+                          emptyGroupBlocked && posDeleteUnknown && phoneticOk && oldPhoneticCompat
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -3191,7 +3215,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " pos_meanings=" << (posMeaningsOk ? "true" : "false")
          << " old_vocab_compat=" << (oldVocabCompat ? "true" : "false")
          << " empty_group_blocked=" << (emptyGroupBlocked ? "true" : "false")
-         << " pos_delete_unknown=" << (posDeleteUnknown ? "true" : "false") << std::endl;
+         << " pos_delete_unknown=" << (posDeleteUnknown ? "true" : "false")
+         << " phonetic=" << (phoneticOk ? "true" : "false")
+         << " old_phonetic_compat=" << (oldPhoneticCompat ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -3333,6 +3359,10 @@ void renderVocabularyEditor(App& app) {
     app.editEntry.codes.push_back("");
     app.editDirty = true;
   }
+  ImGui::TextUnformatted("音标（可选）");
+  ImGui::SetNextItemWidth(-1);
+  if (inputString("##phonetic", app.editEntry.phonetic, 200)) app.editDirty = true;
+  ImGui::TextDisabled("不校验格式，例如 /ˈæp.əl/");
   ImGui::Separator();
 
   if (app.editEntry.type == "text") {
@@ -3651,6 +3681,10 @@ void renderVocabulary(App& app) {
       codes += code;
     }
     ImGui::TextDisabled("编码：%s", codes.empty() ? "未设置" : codes.c_str());
+    if (!entry.phonetic.empty()) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("音标：%s", entry.phonetic.c_str());
+    }
     ImGui::SetCursorPosX(12);
     ImGui::TextDisabled("释义：%s", posMeaningSummary(app, entry).c_str());
     const std::string badges = posBadgeText(app, entry);

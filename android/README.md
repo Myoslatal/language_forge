@@ -169,20 +169,22 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 * `vocabulary.json` (UTF-8, `schema: 1`) lives next to `project.json`:
   `{"schema":1,"entries":[{"id":"uuid","type":"text|unicode|combo|image",
   "meanings":["..."],"posMeanings":[{"posId":"uuid","meanings":["..."]}],
-  "codes":["..."],"text":"...","codepoints":["12ab","34cd"],
+  "codes":["..."],"text":"...","phonetic":"/ˈæp.əl/","codepoints":["12ab","34cd"],
   "parts":["otherVocabId"],"image":"","imageWidth":0,"imageHeight":0,"audio":"",
   "audioStart":0,"audioEnd":0,"audioDuration":0,"createdAt":0,"updatedAt":0}]}`.
   IDs are UUIDs; strings are trimmed/capped; missing/bad files load empty and are logged.
   Writes use `vocabulary.json.tmp` + atomic move.
 * **List**: back, title, project subtitle, count badge, new button; rows show display name
-  (text/Unicode/combo preview/meaning), type badge, POS chips, code summary and grouped
-  “名词：…；动词：…” meaning summary. Row tap edits; ⋯ deletes with confirmation; empty state
-  has a new button.
+  (text/Unicode/combo preview/meaning), type badge, POS chips, code summary, optional
+  “音标：…” line and grouped “名词：…；动词：…” meaning summary. Row tap edits; ⋯ deletes
+  with confirmation; empty state has a new button.
 * **Editor**: back/title/save; POS multi-select (name + code) before meanings. With no POS,
   the generic repeatable meanings remain (old vocabulary compatible); selecting a POS shows a
   group per POS in `pos.json` order with its own meanings and remove/add controls. The first
   selected POS migrates non-empty generic meanings; each selected group requires at least one
-  non-empty meaning or save is blocked with a toast. Codes and the type selector follow;
+  non-empty meaning or save is blocked with a toast. Codes and the type selector follow; an
+  optional single-line **音标** field (placeholder `/ˈæp.əl/`) accepts arbitrary text, is
+  trimmed/capped at 200 chars and saved/cleared as `phonetic`; no format/uniqueness checks.
   **文本词语 / Unicode 编码词语 / 自定义文字组合词 / 自定义文字**; text input, multiple
   codepoint inputs with live preview, or combo parts chosen through the picker. Unicode
   codepoints accept `12ab`/`0x12AB` and normalize to lowercase without prefix.

@@ -16,6 +16,7 @@ final class VocabularyEntry {
     final List<PosMeaning> posMeanings = new ArrayList<>();
     final List<String> codes = new ArrayList<>();
     String text = "";
+    String phonetic = "";
     final List<String> codepoints = new ArrayList<>();
     final List<String> parts = new ArrayList<>();
     String image = "";

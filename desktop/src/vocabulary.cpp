@@ -108,6 +108,7 @@ VocabEntry entryFromJson(const json& value) {
   }
   entry.codes = stringArray(value.value("codes", json::array()));
   entry.text = value.value("text", "");
+  entry.phonetic = trim(value.value("phonetic", ""));
   entry.codepoints = stringArray(value.value("codepoints", json::array()));
   entry.parts = stringArray(value.value("parts", json::array()));
   entry.image = value.value("image", "");
@@ -142,6 +143,7 @@ json entryToJson(const VocabEntry& entry) {
       {"posMeanings", posArray},
       {"codes", entry.codes},
       {"text", entry.text},
+      {"phonetic", trim(entry.phonetic)},
       {"codepoints", entry.codepoints},
       {"parts", entry.parts},
       {"image", entry.image},

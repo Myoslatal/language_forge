@@ -160,6 +160,14 @@
                 android:layout_marginTop="6dp"
                 android:orientation="vertical" />
 
+            <io.github.myoslatal.languageforge.uikit.ForgeTextField
+                android:id="@+id/vocab_phonetic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                app:forgeLabel="音标"
+                app:forgeHint="例如：/ˈæp.əl/" />
+
             <io.github.myoslatal.languageforge.uikit.ForgeSelect
                 android:id="@+id/vocab_type"
                 android:layout_width="match_parent"

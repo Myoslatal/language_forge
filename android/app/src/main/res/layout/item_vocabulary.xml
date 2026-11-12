@@ -61,6 +61,17 @@
         android:textColor="@color/forge_muted"
         android:textSize="10.5sp" />
 
+    <TextView
+        android:id="@+id/vocabulary_phonetic"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif"
+        android:maxLines="1"
+        android:textColor="@color/forge_muted"
+        android:textSize="10.5sp" />
+
     <LinearLayout
         android:id="@+id/vocabulary_pos_badges"
         android:layout_width="match_parent"

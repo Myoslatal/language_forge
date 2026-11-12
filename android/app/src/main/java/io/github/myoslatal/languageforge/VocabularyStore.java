@@ -28,6 +28,7 @@ final class VocabularyStore {
     static final String TEMP_NAME = "vocabulary.json.tmp";
     static final int SCHEMA = 1;
     static final int MAX_TEXT = 200;
+    static final int MAX_PHONETIC = 200;
     static final int MAX_MEANING = 200;
     static final int MAX_CODE = 80;
     static final int MAX_CODEPOINT = 16;
@@ -283,6 +284,7 @@ final class VocabularyStore {
         }
         readStrings(object.optJSONArray("codes"), entry.codes, MAX_CODE);
         entry.text = clean(object.optString("text", ""), MAX_TEXT);
+        entry.phonetic = clean(object.optString("phonetic", ""), MAX_PHONETIC);
         readStrings(object.optJSONArray("codepoints"), entry.codepoints, MAX_CODEPOINT);
         readStrings(object.optJSONArray("parts"), entry.parts, 64);
         entry.image = clean(object.optString("image", ""), 500);
@@ -315,6 +317,7 @@ final class VocabularyStore {
         object.put("posMeanings", posArray);
         object.put("codes", toArray(entry.codes));
         object.put("text", entry.text);
+        object.put("phonetic", entry.phonetic);
         object.put("codepoints", toArray(entry.codepoints));
         object.put("parts", toArray(entry.parts));
         object.put("image", entry.image);
