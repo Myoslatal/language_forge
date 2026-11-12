@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/pos_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/forge_bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/pos_topbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/forge_bg_topbar"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_pos_back"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="返回"
+                app:forgeIcon="@drawable/forge_ic_back"
+                app:forgeVariant="ghost" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Forge.Text.Brand"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:text="词性管理" />
+
+                <TextView
+                    android:id="@+id/pos_project"
+                    style="@style/Forge.Text.Tiny"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="项目" />
+            </LinearLayout>
+
+            <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                android:id="@+id/pos_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:text="0 个" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeButton
+                android:id="@+id/btn_pos_new"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="＋ 新建词性"
+                android:textSize="11sp"
+                app:forgeVariant="primary" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/pos_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingTop="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="24dp">
+
+            <TextView
+                style="@style/Forge.Text.Hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="项目级词性；名称、描述与编码用于词汇标注。" />
+
+            <LinearLayout
+                android:id="@+id/pos_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical" />
+
+            <LinearLayout
+                android:id="@+id/pos_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/Forge.Text.Body"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="还没有词性" />
+
+                <TextView
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="点击右上角“新建词性”添加名词、动词等。" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

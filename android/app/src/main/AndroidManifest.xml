@@ -77,6 +77,16 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".PosManagementActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".PosEditorActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".CatalogActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

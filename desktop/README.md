@@ -187,6 +187,22 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
 - The top bar now reads `DESKTOP · SDL2`; the footer version is `v0.3.0`.
 - `.conlang` export/import includes `audios.json` and `resources/audio/`.
 
+## Parts of speech (POS)
+
+- Project-level `pos.json` (`schema:1`, `entries`) stores
+  `id, name, description, code, createdAt, updatedAt`. Writes use tmp + atomic rename;
+  missing/bad JSON loads as an empty list; names are trimmed and required, description/code are
+  optional and trimmed.
+- The Resources page has a **词性管理** card with the real count. The POS page lists name, code
+  (or 未设置) and description; row click edits, ⋯ menu edits/deletes with confirmation, and the
+  empty state reads “还没有词性”.
+- The editor modal has **名称** (required; e.g. 名词/动词), **描述** (multiline) and **编码**
+  inputs, save/cancel, loads existing values and refreshes the list. The page works in light and
+  dark themes with Chinese labels.
+- Smoke mode creates 名词 (n) and 动词 (v), edits their descriptions/codes, deletes a temporary
+  entry and captures `pos.png` / `pos-editor.png`; `pos.json` is included in `.conlang`
+  whole-directory export/import. Vocabulary binding is intentionally not added in this round.
+
 ## Notes
 
 Audio recording depends on an SDL capture device; on machines without one the UI reports a

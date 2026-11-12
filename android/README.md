@@ -13,7 +13,7 @@ business logic. The component catalog remains the development harness for the ki
 | Module | Type | Package | Purpose |
 | --- | --- | --- | --- |
 | `:uikit` | `com.android.library` | `io.github.myoslatal.languageforge.uikit` | Colors, dimens, styles, drawables and custom views |
-| `:app` | `com.android.application` | `io.github.myoslatal.languageforge` | Project manager, structure editor, course editor, resource management, vocabulary list/editor/picker, font/image/audio management + component catalog |
+| `:app` | `com.android.application` | `io.github.myoslatal.languageforge` | Project manager, structure editor, course editor, resource management, vocabulary list/editor/picker, font/image/audio management, POS management + component catalog |
 
 * minSdk 29 (Android 10), compileSdk/targetSdk 36, Java 17, AGP 9.0.1, Gradle 9.1.0.
 * Dependencies: AndroidX **appcompat 1.7.1** and **core 1.17.0** (the 1.8.0/1.19.1 pair
@@ -59,6 +59,28 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 * the list is loaded from the on-disk project folders, so create/delete/pin survive a cold
   start; deleting the last project keeps an empty state (no reseeding);
 * the bottom note and About dialog show the actual data directory.
+
+## Parts of speech (POS)
+
+`ResourceManagementActivity` → **词性管理** opens `PosManagementActivity`; the card shows
+the real entry count and the page has a back button, title, project name, count badge and
+**＋ 新建词性**. Rows show the name, code badge (or 未设置), description summary, row tap to edit
+and ⋯ menu for edit/delete; deleting asks for confirmation. Empty projects show
+“还没有词性”.
+
+`PosEditorActivity` creates/edits the three fields **名称** (required, trimmed; e.g. 名词/动词),
+**描述** (multiline) and **编码**; both description/code may be empty. The editor loads existing
+values, validates the name and saves via `PosStore`; `pos.json` is project-level:
+
+```json
+{"schema":1,"entries":[{"id":"...","name":"名词",
+  "description":"表示人、事物、地点等","code":"n",
+  "createdAt":1794440000000,"updatedAt":1794440000000}]}
+```
+
+`pos.json` is written through a temp file and atomic move; missing/corrupt JSON loads as an
+empty list. The whole project directory is already archived by `.conlang` export/import, so
+`pos.json` is included and preserved automatically. No new permission is needed.
 
 ## Data storage
 

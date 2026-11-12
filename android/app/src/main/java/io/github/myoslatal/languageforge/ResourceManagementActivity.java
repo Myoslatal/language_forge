@@ -23,6 +23,7 @@ public class ResourceManagementActivity extends ForgeActivity {
 
     private String folderName;
     private TextView vocabularySummary;
+    private TextView posSummary;
     private TextView fontSummary;
     private TextView imageSummary;
     private TextView audioSummary;
@@ -36,11 +37,13 @@ public class ResourceManagementActivity extends ForgeActivity {
 
         findViewById(R.id.btn_resource_back).setOnClickListener(v -> finish());
         vocabularySummary = findViewById(R.id.vocabulary_summary);
+        posSummary = findViewById(R.id.pos_summary);
         fontSummary = findViewById(R.id.font_summary);
         imageSummary = findViewById(R.id.image_summary);
         audioSummary = findViewById(R.id.audio_summary);
         folderName = getIntent().getStringExtra(EXTRA_FOLDER_NAME);
         findViewById(R.id.vocabulary_entry).setOnClickListener(v -> openVocabulary());
+        findViewById(R.id.pos_entry).setOnClickListener(v -> openPos());
         findViewById(R.id.font_entry).setOnClickListener(v -> openFonts());
         findViewById(R.id.image_entry).setOnClickListener(v -> openImages());
         findViewById(R.id.audio_entry).setOnClickListener(v -> openAudios());
@@ -65,6 +68,7 @@ public class ResourceManagementActivity extends ForgeActivity {
     protected void onResume() {
         super.onResume();
         updateVocabularyCount();
+        updatePosCount();
         updateFontSummary();
         updateImageSummary();
         updateAudioSummary();
@@ -80,6 +84,28 @@ public class ResourceManagementActivity extends ForgeActivity {
             count = new VocabularyStore(directory).entries.size();
         }
         vocabularySummary.setText(count + " 个词 · 管理词汇表");
+    }
+
+    private void updatePosCount() {
+        if (posSummary == null) {
+            return;
+        }
+        int count = 0;
+        java.io.File directory = PosStore.resolveProjectDirectory(this, folderName);
+        if (directory != null) {
+            count = new PosStore(directory).entries.size();
+        }
+        posSummary.setText(count + " 个词性 · 名称、描述与编码");
+    }
+
+    private void openPos() {
+        if (folderName == null || folderName.isEmpty()) {
+            toast("无法打开词性管理：项目目录不存在");
+            return;
+        }
+        Intent intent = new Intent(this, PosManagementActivity.class);
+        intent.putExtra(PosManagementActivity.EXTRA_FOLDER_NAME, folderName);
+        startActivity(intent);
     }
 
     private void updateAudioSummary() {

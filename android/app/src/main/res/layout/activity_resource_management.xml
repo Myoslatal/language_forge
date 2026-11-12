@@ -225,6 +225,70 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/pos_entry"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/forge_bg_project_card"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingTop="14dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="14dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="词性管理"
+                    android:src="@drawable/forge_ic_folder" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif"
+                        android:includeFontPadding="false"
+                        android:text="词性管理"
+                        android:textColor="@color/forge_text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/pos_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif"
+                        android:includeFontPadding="false"
+                        android:text="0 个词性 · 名称、描述与编码"
+                        android:textColor="@color/forge_muted"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                    android:id="@+id/pos_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="进入" />
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="进入词性管理"
+                    android:src="@drawable/forge_ic_chevron_right" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:id="@+id/image_entry"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

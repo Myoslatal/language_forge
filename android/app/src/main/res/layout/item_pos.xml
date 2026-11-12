@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:background="@drawable/forge_bg_project_card"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingTop="12dp"
+    android:paddingEnd="8dp"
+    android:paddingBottom="12dp">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/pos_name"
+                style="@style/Forge.Text.Body"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="名词" />
+
+            <io.github.myoslatal.languageforge.uikit.ForgeBadge
+                android:id="@+id/pos_code_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="n" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/pos_description"
+            style="@style/Forge.Text.Tiny"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:text="描述" />
+    </LinearLayout>
+
+    <io.github.myoslatal.languageforge.uikit.ForgeButton
+        android:id="@+id/pos_more"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:contentDescription="词性菜单"
+        android:text="⋯"
+        android:textSize="16sp"
+        app:forgeVariant="ghost" />
+</LinearLayout>

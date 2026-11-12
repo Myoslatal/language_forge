@@ -27,6 +27,7 @@
 #include "vocabulary.h"
 #include "images.h"
 #include "audio.h"
+#include "pos.h"
 #include <SDL_mixer.h>
 #include "nlohmann/json.hpp"
 
@@ -284,7 +285,7 @@ struct App {
   bool dark = false;
   bool running = true;
 
-  enum class Screen { Home, Structure, Course, Resources, Vocabulary, VocabularyEditor, Fonts, Images, Audios };
+  enum class Screen { Home, Structure, Course, Resources, Vocabulary, VocabularyEditor, Fonts, Images, Audios, Pos };
   Screen screen = Screen::Home;
   std::vector<ProjectSummary> projects;
   ProjectSummary project;
@@ -314,6 +315,7 @@ struct App {
     ConfirmFont,
     ConfirmImage,
     ConfirmAudio,
+    ConfirmPos,
     DiscardVocabulary
   };
   ModalKind modal = ModalKind::None;
@@ -334,6 +336,12 @@ struct App {
   std::unique_ptr<ImageStore> imageStore;
   std::map<std::string, SDL_Texture*> imageTextures;
   std::unique_ptr<AudioStore> audioStore;
+  std::unique_ptr<PosStore> posStore;
+  bool posEditorOpen = false;
+  std::string posEditId;
+  char posNameInput[256] = {};
+  char posDescriptionInput[1024] = {};
+  char posCodeInput[256] = {};
   char audioSearch[256] = {};
   bool audioCodeOpen = false;
   std::string audioCodeId;
@@ -615,6 +623,17 @@ struct App {
         }
         screen = Screen::Vocabulary;
         showToast("已删除词汇");
+        break;
+      }
+      case ModalKind::ConfirmPos: {
+        ensurePosLoaded();
+        if (posStore && posStore->remove(modalId1)) {
+          showToast("已删除词性");
+        } else {
+          showToast("删除词性失败");
+          return;
+        }
+        screen = Screen::Pos;
         break;
       }
       case ModalKind::ConfirmAudio: {
@@ -1245,6 +1264,64 @@ struct App {
     editEntry.audioEnd = static_cast<double>(editEntry.audioDuration);
     editDirty = true;
     showToast("录音完成（待保存）");
+  }
+
+  void ensurePosLoaded() {
+    fs::path dir = currentProjectDirectory();
+    if (dir.empty()) return;
+    if (!posStore || posStore->projectDirectory != dir) {
+      posStore = std::make_unique<PosStore>(dir);
+    }
+  }
+
+  void openPos() {
+    ensurePosLoaded();
+    screen = Screen::Pos;
+  }
+
+  void openPosEditor(const std::string& id) {
+    ensurePosLoaded();
+    posEditId = id;
+    posNameInput[0] = '\0';
+    posDescriptionInput[0] = '\0';
+    posCodeInput[0] = '\0';
+    if (posStore && !id.empty()) {
+      const PosEntry* entry = posStore->find(id);
+      if (entry) {
+        std::snprintf(posNameInput, sizeof(posNameInput), "%s", entry->name.c_str());
+        std::snprintf(posDescriptionInput, sizeof(posDescriptionInput), "%s",
+                      entry->description.c_str());
+        std::snprintf(posCodeInput, sizeof(posCodeInput), "%s", entry->code.c_str());
+      }
+    }
+    posEditorOpen = true;
+  }
+
+  void savePosEditor() {
+    ensurePosLoaded();
+    if (!posStore) return;
+    std::string name = posNameInput;
+    auto trim = [](std::string value) {
+      auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+      value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+      value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+      return value;
+    };
+    name = trim(name);
+    if (name.empty()) {
+      showToast("词性名称不能为空");
+      return;
+    }
+    bool ok = posEditId.empty()
+                  ? posStore->create(name, posDescriptionInput, posCodeInput) != nullptr
+                  : posStore->update(posEditId, name, posDescriptionInput, posCodeInput);
+    if (!ok) {
+      showToast("保存词性失败");
+      return;
+    }
+    posStore->load();
+    posEditorOpen = false;
+    showToast("词性已保存");
   }
 
   void openBrowser(BrowserMode mode) {
@@ -2086,6 +2163,8 @@ void renderImages(App& app);
 void renderImageModals(App& app);
 void renderAudios(App& app);
 void renderAudioModals(App& app);
+void renderPos(App& app);
+void renderPosEditor(App& app);
 void renderPicker(App& app);
 
 void renderFrame(App& app) {
@@ -2120,6 +2199,7 @@ void renderFrame(App& app) {
     case App::Screen::Fonts: renderFonts(app); break;
     case App::Screen::Images: renderImages(app); break;
     case App::Screen::Audios: renderAudios(app); break;
+    case App::Screen::Pos: renderPos(app); break;
   }
   ImGui::EndGroup();
   ImGui::EndChild();
@@ -2134,6 +2214,7 @@ void renderFrame(App& app) {
   renderBrowser(app);
   renderImageModals(app);
   renderAudioModals(app);
+  renderPosEditor(app);
   renderPicker(app);
   drawToast(app);
 
@@ -2706,12 +2787,49 @@ int runSmoke(App& app, const fs::path& outputDir) {
     app.deletePendingAudio();
     audioPendingCleanup = !fs::exists(pending);
   }
+  app.ensurePosLoaded();
+  bool posOk = false;
+  bool posDeleteOk = false;
+  std::string nounId;
+  std::string verbId;
+  if (app.posStore) {
+    auto findByDisplayName = [&](const std::string& name) -> PosEntry* {
+      for (auto& entry : app.posStore->entries) {
+        if (entry.name == name) return &entry;
+      }
+      return nullptr;
+    };
+    if (!findByDisplayName("名词")) app.posStore->create("名词", "表示人、事物、地点等", "n");
+    if (!findByDisplayName("动词")) app.posStore->create("动词", "表示动作或状态", "v");
+    app.posStore->load();
+    PosEntry* noun = findByDisplayName("名词");
+    PosEntry* verb = findByDisplayName("动词");
+    if (noun) nounId = noun->id;
+    if (verb) verbId = verb->id;
+    if (noun) app.posStore->update(noun->id, "名词", "表示人、事物、地点等", "n");
+    if (verb) app.posStore->update(verb->id, "动词", "表示动作或状态", "v");
+    PosEntry* temp = app.posStore->create("待删除词性", "临时", "tmp");
+    if (temp) posDeleteOk = app.posStore->remove(temp->id);
+    app.posStore->load();
+    posOk = !nounId.empty() && !verbId.empty() && app.posStore->find(nounId) &&
+            app.posStore->find(verbId);
+  }
+  app.screen = App::Screen::Pos;
+  renderFrame(app);
+  ok = saveScreenshot(app, outputDir / "pos.png") && ok;
+  if (!nounId.empty()) {
+    app.openPosEditor(nounId);
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "pos-editor.png") && ok;
+    app.posEditorOpen = false;
+  }
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
   const bool exported = app.store->exportProject(app.folder, exportPath, error);
   const bool zipOk = exported && zipContains(exportPath, {"project.json", "structure.json",
                                                           "vocabulary.json", "fonts.json",
-                                                          "images.json", "audios.json"}) &&
+                                                          "images.json", "audios.json",
+                                                          "pos.json"}) &&
                      zipContainsPrefix(exportPath, "resources/images/") &&
                      zipContainsPrefix(exportPath, "resources/audio/");
   ProjectSummary imported;
@@ -2723,9 +2841,10 @@ int runSmoke(App& app, const fs::path& outputDir) {
     FontStore importedFonts(app.store->projectDirectory(imported.folder));
     ImageStore importedImages(app.store->projectDirectory(imported.folder));
     AudioStore importedAudios(app.store->projectDirectory(imported.folder));
+    PosStore importedPos(app.store->projectDirectory(imported.folder));
     importStatsOk = importStatsOk && importedVocab.entries.size() >= 4 &&
                     !importedFonts.fonts.empty() && !importedImages.images.empty() &&
-                    !importedAudios.audios.empty();
+                    !importedAudios.audios.empty() && importedPos.entries.size() >= 2;
     app.store->deleteProject(imported.folder);
   }
 
@@ -2804,7 +2923,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           pendingCleanup && audioOk && audioRefOk && audioDeleteBlocked &&
                           unusedAudioDeleted && audioTrimOk && audioRecordGraceful &&
                           invalidAudioRejected && invalidAudioNoResidue &&
-                          audioPendingCleanup && unregisteredAudioListed && audioVocabSave
+                          audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
+                          posOk && posDeleteOk
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -2855,6 +2975,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " invalid_audio_no_residue=" << (invalidAudioNoResidue ? "true" : "false")
          << " unregistered_audio=" << (unregisteredAudioListed ? "true" : "false")
          << " audio_vocab_save=" << (audioVocabSave ? "true" : "false") << std::endl;
+  report << "pos=" << (app.posStore ? app.posStore->entries.size() : 0)
+         << " pos_ok=" << (posOk ? "true" : "false")
+         << " pos_delete=" << (posDeleteOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -2866,7 +2989,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                     unregisteredListed && imageVocabSave && audioOk && audioRefOk &&
                     audioDeleteBlocked && unusedAudioDeleted && audioTrimOk &&
                     audioRecordGraceful && invalidAudioRejected && invalidAudioNoResidue &&
-                    audioPendingCleanup && unregisteredAudioListed && audioVocabSave;
+                    audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
+                    posOk && posDeleteOk;
   SDL_Log("SMOKE %s", pass ? "PASS" : "FAIL");
   return pass ? 0 : 2;
 }
@@ -3113,6 +3237,8 @@ void renderResourcesWithPhase2(App& app) {
   app.ensureVocabularyLoaded();
   app.ensureImagesLoaded();
   app.ensureAudioLoaded();
+  app.ensurePosLoaded();
+  const std::size_t posCount = app.posStore ? app.posStore->entries.size() : 0;
   const std::size_t audioCount = app.audioStore
                                      ? app.audioStore->audios.size() +
                                            app.audioStore->unregisteredFiles().size()
@@ -3132,6 +3258,7 @@ void renderResourcesWithPhase2(App& app) {
     struct Card { const char* name; const char* letter; const char* desc; std::string meta; bool enabled; };
     Card cards[] = {
       {"词汇表", "V", "项目级共享词汇、编码与示例发音。", std::to_string(vocabCount) + " 条词汇", true},
+      {"词性管理", "POS", "项目级词性名称、描述与编码。", std::to_string(posCount) + " 个词性", true},
       {"字体管理", "F", "导入 TTF/OTF/TTC，仅词汇内容应用字体。", "当前：" + activeFont, true},
       {"图片管理", "P", "项目图片导入、编码与词汇引用。",
        std::to_string(imageCount) + " 张图片", true},
@@ -3160,6 +3287,7 @@ void renderResourcesWithPhase2(App& app) {
         if (ImGui::Button("打开", ImVec2(90, 28))) {
           if (std::string(card.name) == "词汇表") app.openVocabulary();
           else if (std::string(card.name) == "字体管理") app.openFonts();
+          else if (std::string(card.name) == "词性管理") app.openPos();
           else if (std::string(card.name) == "图片管理") app.openImages();
           else if (std::string(card.name) == "音频管理") app.openAudios();
         }
@@ -3961,6 +4089,91 @@ void renderAudioModals(App& app) {
   }
   ImGui::End();
   app.audioCodeOpen = open;
+}
+void renderPos(App& app) {
+  if (ImGui::Button("← 资源", ImVec2(100, 30))) app.screen = App::Screen::Resources;
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s / 词性", app.project.name.c_str());
+  ImGui::Spacing();
+  app.ensurePosLoaded();
+  const std::size_t count = app.posStore ? app.posStore->entries.size() : 0;
+  pageTitle("PARTS OF SPEECH", "词性管理", std::to_string(count) + " 个词性 · 名称、描述与编码");
+  ImGui::SameLine();
+  const float right = ImGui::GetWindowWidth() - 170;
+  if (right > 0) ImGui::SetCursorPosX(right);
+  if (ImGui::Button("＋ 新建词性", ImVec2(150, 34))) app.openPosEditor("");
+  ImGui::Spacing();
+  if (!app.posStore || app.posStore->entries.empty()) {
+    ImGui::Dummy(ImVec2(0, 40));
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.5f - 90);
+    ImGui::TextDisabled("还没有词性");
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.5f - 150);
+    ImGui::TextDisabled("点击右上角“新建词性”添加名词、动词等。");
+    return;
+  }
+  for (const auto& entry : app.posStore->entries) {
+    ImGui::PushID(entry.id.c_str());
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyle().Colors[ImGuiCol_ChildBg]);
+    ImGui::BeginChild("##pos_row", ImVec2(0, 74), ImGuiChildFlags_Borders,
+                      ImGuiWindowFlags_NoScrollbar);
+    ImGui::SetCursorPos(ImVec2(0, 0));
+    if (ImGui::InvisibleButton("##pos_click", ImVec2(ImGui::GetWindowWidth() - 60, 74))) {
+      app.openPosEditor(entry.id);
+    }
+    ImGui::SetCursorPos(ImVec2(12, 9));
+    ImGui::TextUnformatted(entry.name.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", entry.code.empty() ? "未设置编码" : entry.code.c_str());
+    ImGui::SetCursorPosX(12);
+    ImGui::TextDisabled("%s", entry.description.empty() ? "无描述" : entry.description.c_str());
+    ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 80, 9));
+    if (ImGui::Button("⋯", ImVec2(30, 26))) ImGui::OpenPopup("##pos_menu");
+    if (ImGui::BeginPopup("##pos_menu")) {
+      if (ImGui::MenuItem("编辑")) app.openPosEditor(entry.id);
+      ImGui::Separator();
+      if (ImGui::MenuItem("删除")) {
+        app.openModalConfirm(App::ModalKind::ConfirmPos, "删除词性",
+                             "确定删除「" + entry.name + "」吗？", entry.id);
+      }
+      ImGui::EndPopup();
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::PopID();
+    ImGui::Spacing();
+  }
+}
+
+void renderPosEditor(App& app) {
+  if (!app.posEditorOpen) return;
+  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 620) * 0.5f,
+                                 (ImGui::GetIO().DisplaySize.y - 540) * 0.5f),
+                          ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(620, 540), ImGuiCond_Always);
+  bool open = app.posEditorOpen;
+  if (ImGui::Begin(app.posEditId.empty() ? "新建词性##pos_editor" : "编辑词性##pos_editor", &open,
+                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+    ImGui::TextDisabled("名称必填；描述和编码可空。");
+    ImGui::TextUnformatted("名称");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##pos_name", app.posNameInput, sizeof(app.posNameInput));
+    ImGui::TextUnformatted("描述");
+    ImGui::InputTextMultiline("##pos_description", app.posDescriptionInput,
+                              sizeof(app.posDescriptionInput), ImVec2(-1, 150));
+    ImGui::TextUnformatted("编码");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##pos_code", app.posCodeInput, sizeof(app.posCodeInput));
+    ImGui::Spacing();
+    if (ImGui::Button("取消", ImVec2(110, 34))) {
+      app.posEditorOpen = false;
+      open = false;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("保存", ImVec2(120, 34))) app.savePosEditor();
+  }
+  ImGui::End();
+  app.posEditorOpen = open;
 }
 }  // namespace
 

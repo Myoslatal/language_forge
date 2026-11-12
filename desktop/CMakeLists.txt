@@ -36,6 +36,7 @@ add_executable(nostongue-forge
   src/vocabulary.cpp
   src/images.cpp
   src/audio.cpp
+  src/pos.cpp
   ${IMGUI_DIR}/imgui.cpp
   ${IMGUI_DIR}/imgui_draw.cpp
   ${IMGUI_DIR}/imgui_tables.cpp
