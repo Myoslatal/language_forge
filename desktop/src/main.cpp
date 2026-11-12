@@ -26,6 +26,7 @@
 #include "model.h"
 #include "vocabulary.h"
 #include "images.h"
+#include "lexicon.h"
 #include "audio.h"
 #include "pos.h"
 #include <SDL_mixer.h>
@@ -81,6 +82,30 @@ ImFont* addFontFromPath(const fs::path& path, float size, ImFontConfig* config,
   }
   return ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
       data, static_cast<int>(length), size, config, ranges);
+}
+
+void addLatinFallback(float size) {
+  static const ImWchar ranges[] = {0x0100, 0x02FF, 0};
+  std::vector<std::string> candidates = {
+      "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+      "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+      "/usr/share/fonts/TTF/DejaVuSans.ttf",
+      "C:/Windows/Fonts/segoeui.ttf",
+      "C:/Windows/Fonts/arial.ttf",
+      "C:/Windows/Fonts/calibri.ttf",
+  };
+  for (const auto& candidate : candidates) {
+    std::error_code ec;
+    const fs::path path = pathFromUtf8(candidate);
+    if (!fs::exists(path, ec)) continue;
+    ImFontConfig config;
+    config.MergeMode = true;
+    config.FontNo = 0;
+    config.OversampleH = 2;
+    config.OversampleV = 2;
+    config.PixelSnapH = true;
+    if (addFontFromPath(path, size, &config, ranges)) return;
+  }
 }
 
 std::string formatTime(std::int64_t millis) {
@@ -392,9 +417,11 @@ struct App {
   std::string pickerForId;
   std::vector<std::string> pickerSelected;
   char pickerSearch[256] = {};
+  char vocabSearch[256] = {};
   char fontImportName[256] = {};
 
-  enum class BrowserMode { ImportConlang, ExportConlang, ImportFont, ImportImage, ImportAudio };
+  enum class BrowserMode { ImportConlang, ExportConlang, ImportFont, ImportImage, ImportAudio,
+                           ImportLexicon };
   BrowserMode browserMode = BrowserMode::ImportConlang;
   bool imageBrowserForEditor = false;
   bool audioBrowserForEditor = false;
@@ -753,6 +780,7 @@ struct App {
       ImFontConfig ethiopicMerge = merge;
       addFontFromPath(ethiopic, 22.0f, &ethiopicMerge, ethiopicRanges);
     }
+    addLatinFallback(22.0f);
   }
 
   void openVocabulary() {
@@ -1484,7 +1512,9 @@ struct App {
                       ? supportedImageExtension(ext)
                       : browserMode == BrowserMode::ImportAudio
                             ? supportedAudioExtension(ext)
-                            : endsWithConlang(entry.path());
+                            : browserMode == BrowserMode::ImportLexicon
+                                  ? (ext == ".jsonl" || ext == ".json" || ext == ".txt")
+                                  : endsWithConlang(entry.path());
         if (accepted) browserEntries.push_back({utf8(entry.path().filename()), false});
       }
     }
@@ -1527,6 +1557,24 @@ struct App {
       return;
     }
     std::string error;
+    if (browserMode == BrowserMode::ImportLexicon) {
+      browserOpen = false;
+      ensureVocabularyLoaded();
+      ensurePosLoaded();
+      LexiconImportSummary summary;
+      if (!importLexiconJsonl(target, store->projectDirectory(folder), summary, error)) {
+        showToast("导入失败：" + error);
+        return;
+      }
+      if (vocabulary) vocabulary->load();
+      if (posStore) posStore->load();
+      screen = Screen::Vocabulary;
+      showToast("导入完成：新增 " + std::to_string(summary.added) + "，重复 "
+                + std::to_string(summary.duplicates) + "，无效 "
+                + std::to_string(summary.invalid) + "，新词性 "
+                + std::to_string(summary.newPos));
+      return;
+    }
     if (browserMode == BrowserMode::ImportAudio) {
       browserOpen = false;
       if (audioBrowserForEditor) {
@@ -1696,6 +1744,7 @@ ImFont* loadFont(App& app) {
         io.Fonts->GetGlyphRangesChineseFull());
     if (font) {
       app.font = font;
+      addLatinFallback(18.0f);
       return font;
     }
   }
@@ -2248,7 +2297,9 @@ void renderBrowser(App& app) {
                                       ? "选择 PNG/JPG/JPEG/WEBP/BMP"
                                       : app.browserMode == App::BrowserMode::ImportAudio
                                             ? "选择 WAV/MP3/OGG/M4A/FLAC"
-                                            : "选择 .conlang 文件");
+                                            : app.browserMode == App::BrowserMode::ImportLexicon
+                                                  ? "选择 Lexicon .jsonl/.json/.txt 词表"
+                                                  : "选择 .conlang 文件");
   ImGui::SetNextItemWidth(-150);
   ImGui::InputText("##filename", app.browserFileInput, sizeof(app.browserFileInput));
   ImGui::SameLine();
@@ -2953,6 +3004,11 @@ int runSmoke(App& app, const fs::path& outputDir) {
   bool posDeleteUnknown = false;
   bool phoneticOk = false;
   bool oldPhoneticCompat = false;
+  bool lexiconOk = false;
+  bool lexiconDuplicateOk = false;
+  bool lexiconBadLineOk = false;
+  bool lexiconId9Ok = false;
+  std::string lexiconNizId;
   std::string multiVocabId;
   if (app.vocabulary && !nounId.empty() && !verbId.empty()) {
     VocabEntry* multi = nullptr;
@@ -3045,6 +3101,65 @@ int runSmoke(App& app, const fs::path& outputDir) {
       renderFrame(app);
       ok = saveScreenshot(app, outputDir / "vocab-phonetic.png") && ok;
     }
+  }
+  const fs::path lexiconSample = "/tmp/lexicon-sample.jsonl";
+  if (fs::exists(lexiconSample) && app.vocabulary && app.posStore) {
+    LexiconImportSummary summary;
+    std::string lexiconError;
+    const bool firstImport = importLexiconJsonl(
+        lexiconSample, app.store->projectDirectory(app.folder), summary, lexiconError);
+    app.vocabulary->load();
+    app.posStore->load();
+    VocabEntry* niz = nullptr;
+    VocabEntry* id9 = nullptr;
+    for (auto& entry : app.vocabulary->entries) {
+      if (entry.text == "nız") niz = &entry;
+      if (entry.text == "ıu-vurg") id9 = &entry;
+    }
+    if (niz) {
+      lexiconNizId = niz->id;
+      bool hasDefinition = false;
+      for (const auto& meaning : niz->meanings) {
+        if (meaning.find("人 者 person") != std::string::npos) hasDefinition = true;
+      }
+      lexiconOk = firstImport && summary.invalid == 0 &&
+                  (summary.added >= 5000 || (summary.added == 0 && summary.duplicates == 5314)) &&
+                  app.posStore->entries.size() >= 15 && niz->phonetic == "nı z" &&
+                  !niz->posMeanings.empty() && hasDefinition;
+    }
+    lexiconId9Ok = id9 && id9->type == "text" && id9->text == "ıu-vurg";
+    if (firstImport) {
+      LexiconImportSummary duplicateSummary;
+      const bool duplicateImport = importLexiconJsonl(
+          lexiconSample, app.store->projectDirectory(app.folder), duplicateSummary, lexiconError);
+      lexiconDuplicateOk = duplicateImport && duplicateSummary.added == 0 &&
+                           duplicateSummary.duplicates == 5314;
+      const fs::path badLexicon = "/tmp/lexicon-bad.jsonl";
+      {
+        std::ofstream bad(badLexicon);
+        bad << "{\"bad\":";
+      }
+      LexiconImportSummary badSummary;
+      const bool badImport = importLexiconJsonl(
+          badLexicon, app.store->projectDirectory(app.folder), badSummary, lexiconError);
+      lexiconBadLineOk = badImport && badSummary.invalid == 1 && badSummary.added == 0;
+      app.vocabulary->load();
+      app.posStore->load();
+    }
+    app.vocabSearch[0] = '\0';
+    app.screen = App::Screen::Vocabulary;
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "vocab-import.png") && ok;
+    std::snprintf(app.vocabSearch, sizeof(app.vocabSearch), "%s", "nız");
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "vocab-import-search.png") && ok;
+    if (!lexiconNizId.empty()) {
+      app.editVocabulary(lexiconNizId);
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-import-editor.png") && ok;
+    }
+    app.vocabSearch[0] = '\0';
+    app.screen = App::Screen::Vocabulary;
   }
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
@@ -3158,7 +3273,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           invalidAudioRejected && invalidAudioNoResidue &&
                           audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
                           posOk && posDeleteOk && posMeaningsOk && oldVocabCompat &&
-                          emptyGroupBlocked && posDeleteUnknown && phoneticOk && oldPhoneticCompat
+                          emptyGroupBlocked && posDeleteUnknown && phoneticOk && oldPhoneticCompat &&
+                          lexiconOk && lexiconDuplicateOk && lexiconBadLineOk && lexiconId9Ok
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -3217,7 +3333,11 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " empty_group_blocked=" << (emptyGroupBlocked ? "true" : "false")
          << " pos_delete_unknown=" << (posDeleteUnknown ? "true" : "false")
          << " phonetic=" << (phoneticOk ? "true" : "false")
-         << " old_phonetic_compat=" << (oldPhoneticCompat ? "true" : "false") << std::endl;
+         << " old_phonetic_compat=" << (oldPhoneticCompat ? "true" : "false")
+         << " lexicon=" << (lexiconOk ? "true" : "false")
+         << " lexicon_duplicate=" << (lexiconDuplicateOk ? "true" : "false")
+         << " lexicon_bad=" << (lexiconBadLineOk ? "true" : "false")
+         << " lexicon_id9=" << (lexiconId9Ok ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -3278,12 +3398,16 @@ void renderVocabularyEditor(App& app) {
   if (!app.posStore || app.posStore->entries.empty()) {
     ImGui::TextDisabled("请先在资源管理→词性管理创建词性");
   } else {
+    int column = 0;
     for (const auto& pos : app.posStore->entries) {
+      if (column == 1) ImGui::SameLine();
       ImGui::PushID(pos.id.c_str());
       bool checked = app.findPosMeaning(pos.id) != nullptr;
       const std::string label = pos.code.empty() ? pos.name : pos.name + " · " + pos.code;
       if (ImGui::Checkbox(label.c_str(), &checked)) app.togglePosMeaning(pos.id, checked);
       ImGui::PopID();
+      column = (column + 1) % 2;
+      if (column == 0) ImGui::Spacing();
     }
   }
   ImGui::Spacing();
@@ -3644,20 +3768,72 @@ void renderVocabulary(App& app) {
   ImGui::TextDisabled("%s / 词汇表", app.project.name.c_str());
   ImGui::Spacing();
   app.ensureVocabularyLoaded();
+  app.ensurePosLoaded();
   const std::size_t count = app.vocabulary ? app.vocabulary->entries.size() : 0;
   pageTitle("VOCABULARY", "词汇表", std::to_string(count) + " 条项目级词汇");
-  ImGui::SameLine();
-  const float right = ImGui::GetWindowWidth() - 180;
+  const float right = ImGui::GetWindowWidth() - 285;
   if (right > 0) ImGui::SetCursorPosX(right);
-  if (ImGui::Button("＋ 新建词汇", ImVec2(150, 34))) app.startNewVocabulary();
+  if (ImGui::Button("导入词表", ImVec2(110, 34))) app.openBrowser(App::BrowserMode::ImportLexicon);
+  ImGui::SameLine();
+  if (ImGui::Button("＋ 新建词汇", ImVec2(140, 34))) app.startNewVocabulary();
   ImGui::Spacing();
-  if (!app.vocabulary || app.vocabulary->entries.empty()) {
+  ImGui::TextDisabled("搜索显示名 / 编码 / 音标 / 释义 / 词性");
+  ImGui::SetNextItemWidth(-1);
+  ImGui::InputText("##vocab_search", app.vocabSearch, sizeof(app.vocabSearch));
+  std::string query = app.vocabSearch;
+  std::transform(query.begin(), query.end(), query.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  auto lowerText = [](std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+  };
+  std::vector<const VocabEntry*> matches;
+  if (app.vocabulary) {
+    for (const auto& entry : app.vocabulary->entries) {
+      bool match = query.empty();
+      if (!match && lowerText(displayName(entry, app.vocabulary->entries)).find(query) != std::string::npos)
+        match = true;
+      if (!match && entry.text.size() && lowerText(entry.text).find(query) != std::string::npos)
+        match = true;
+      if (!match && !entry.phonetic.empty() &&
+          lowerText(entry.phonetic).find(query) != std::string::npos) match = true;
+      if (!match) for (const auto& code : entry.codes)
+        if (lowerText(code).find(query) != std::string::npos) match = true;
+      if (!match) for (const auto& meaning : entry.meanings)
+        if (lowerText(meaning).find(query) != std::string::npos) match = true;
+      if (!match && app.posStore) for (const auto& group : entry.posMeanings) {
+        const PosEntry* pos = app.posStore->find(group.posId);
+        if (pos && (lowerText(pos->name).find(query) != std::string::npos ||
+                    lowerText(pos->code).find(query) != std::string::npos)) match = true;
+      }
+      if (match) matches.push_back(&entry);
+    }
+  }
+  if (count == 0) {
     ImGui::Dummy(ImVec2(0, 40));
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.5f - 120);
     ImGui::TextDisabled("还没有词汇，点击右上角新建。");
     return;
   }
-  for (const auto& entry : app.vocabulary->entries) {
+  if (matches.empty()) {
+    ImGui::Dummy(ImVec2(0, 24));
+    ImGui::TextDisabled("没有匹配的词汇");
+    return;
+  }
+  constexpr std::size_t kMaxRows = 200;
+  const std::size_t shown = std::min(matches.size(), kMaxRows);
+  if (count > kMaxRows || !query.empty()) {
+    if (query.empty()) {
+      ImGui::TextDisabled("共 %zu 条，显示前 %zu 条；搜索缩小范围", count, shown);
+    } else if (matches.size() > kMaxRows) {
+      ImGui::TextDisabled("匹配 %zu 条，显示前 %zu 条；搜索缩小范围", matches.size(), shown);
+    } else {
+      ImGui::TextDisabled("匹配 %zu 条", matches.size());
+    }
+  }
+  for (std::size_t rowIndex = 0; rowIndex < shown; ++rowIndex) {
+    const auto& entry = *matches[rowIndex];
     ImGui::PushID(entry.id.c_str());
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyle().Colors[ImGuiCol_ChildBg]);
     ImGui::BeginChild("##vrow", ImVec2(0, 86), ImGuiChildFlags_Borders,
@@ -3798,8 +3974,10 @@ void renderPicker(App& app) {
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
   };
+  std::size_t pickerMatches = 0;
   ImGui::BeginChild("##picker_list", ImVec2(0, 360), ImGuiChildFlags_Borders);
   if (app.vocabulary) {
+    constexpr std::size_t kPickerMaxRows = 200;
     for (const auto& entry : app.vocabulary->entries) {
       if (entry.id == app.editEntry.id) continue;
       const std::string name = displayName(entry, app.vocabulary->entries);
@@ -3831,6 +4009,8 @@ void renderPicker(App& app) {
         }
       }
       if (!match) continue;
+      ++pickerMatches;
+      if (pickerMatches > kPickerMaxRows) continue;
       bool selected = std::find(app.pickerSelected.begin(), app.pickerSelected.end(),
                                 entry.id) != app.pickerSelected.end();
       ImGui::PushID(entry.id.c_str());
@@ -3862,6 +4042,9 @@ void renderPicker(App& app) {
     }
   }
   ImGui::EndChild();
+  if (pickerMatches > 200) {
+    ImGui::TextDisabled("匹配 %zu 条，显示前 200 条；输入搜索缩小范围", pickerMatches);
+  }
   ImGui::Spacing();
   if (ImGui::Button("取消", ImVec2(110, 34))) {
     app.pickerOpen = false;

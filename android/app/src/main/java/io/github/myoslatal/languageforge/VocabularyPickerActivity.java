@@ -96,16 +96,26 @@ public class VocabularyPickerActivity extends ForgeActivity {
 
     private void render() {
         list.removeAllViews();
+        int matched = 0;
         int shown = 0;
         for (VocabularyEntry entry : store.entries) {
             if (entry.id.equals(excludeId) || !matches(entry, query)) {
                 continue;
             }
+            matched++;
+            if (shown >= 200) {
+                continue;
+            }
             addRow(entry);
             shown++;
         }
-        emptyState.setVisibility(shown == 0 ? View.VISIBLE : View.GONE);
-        count.setText("已选 " + selectedIds.size() + " 个");
+        emptyState.setVisibility(matched == 0 ? View.VISIBLE : View.GONE);
+        if (matched > 200) {
+            count.setText("已选 " + selectedIds.size() + " 个 · 匹配 " + matched
+                    + " 条，显示前 200 条");
+        } else {
+            count.setText("已选 " + selectedIds.size() + " 个");
+        }
     }
 
     private void addRow(VocabularyEntry entry) {

@@ -34,6 +34,7 @@ add_executable(nostongue-forge
   src/main.cpp
   src/model.cpp
   src/vocabulary.cpp
+  src/lexicon.cpp
   src/images.cpp
   src/audio.cpp
   src/pos.cpp

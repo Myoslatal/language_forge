@@ -102,6 +102,48 @@
                 android:text="项目级共享词汇；点击词汇编辑，⋯ 删除。" />
 
             <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeTextField
+                    android:id="@+id/vocabulary_search"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    app:forgeHint="搜索显示名/编码/音标/释义/词性" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_import_lexicon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:text="导入词表"
+                    android:textSize="11sp"
+                    app:forgeVariant="ghost" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/vocabulary_visible"
+                style="@style/Forge.Text.Hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/vocabulary_no_match"
+                style="@style/Forge.Text.Hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="center"
+                android:text="没有匹配的词汇"
+                android:visibility="gone" />
+
+            <LinearLayout
                 android:id="@+id/vocabulary_empty"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

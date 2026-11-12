@@ -230,6 +230,22 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
 - Smoke sets `/ˈæp.əl/` on `banana`, verifies reload/persistence, old `apple` compatibility,
   `.conlang` retention and captures `vocab-phonetic.png`.
 
+## Lexicon JSONL import
+
+- The Vocabulary page has **导入词表**; the file browser accepts `.jsonl/.json/.txt` and imports
+  through `lexicon.cpp` into `pos.json` + `vocabulary.json`. The first non-empty line is the
+  Lexicon `_meta` (15 types in the sample); `rendered`/string `entry` becomes text,
+  `pronunciation` becomes phonetic, and `definition`/`detail` become the POS meanings and
+  aggregate. POS are matched by code then name and created in meta order when absent.
+- Duplicate text is skipped (case-insensitive/trimmed), as are file-internal duplicates; bad
+  JSON and empty-text/empty-definition rows are counted invalid. A toast reports added /
+  duplicates / invalid / new POS.
+- The vocabulary list has a search field over display name, codes, phonetic, meanings and POS
+  names/codes and renders at most 200 matching rows with a total/truncation hint. The picker
+  likewise caps at 200 rows and reports the match count. Smoke imports the full
+  `/tmp/lexicon-sample.jsonl` sample, checks nız/id9/POS 15, duplicate/bad-line behavior,
+  captures `vocab-import.png` and `vocab-import-editor.png`.
+
 ## Notes
 
 Audio recording depends on an SDL capture device; on machines without one the UI reports a

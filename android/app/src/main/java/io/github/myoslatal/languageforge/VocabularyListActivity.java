@@ -1,20 +1,33 @@
 package io.github.myoslatal.languageforge;
 
 import android.content.Intent;
+import android.database.Cursor;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
+import android.text.Editable;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import java.io.File;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
 import io.github.myoslatal.languageforge.uikit.ForgeBadge;
@@ -22,6 +35,7 @@ import io.github.myoslatal.languageforge.uikit.ForgeChip;
 import io.github.myoslatal.languageforge.uikit.ForgeButton;
 import io.github.myoslatal.languageforge.uikit.ForgeDialog;
 import io.github.myoslatal.languageforge.uikit.ForgeMenu;
+import io.github.myoslatal.languageforge.uikit.ForgeTextField;
 import io.github.myoslatal.languageforge.uikit.ForgeToast;
 
 /** Project-level vocabulary list. */
@@ -35,9 +49,15 @@ public class VocabularyListActivity extends ForgeActivity {
     private VocabularyStore store;
     private PosStore posStore;
     private Typeface vocabTypeface;
+    private static final int MAX_RENDERED = 200;
     private LinearLayout list;
     private LinearLayout emptyState;
     private ForgeBadge count;
+    private ForgeTextField searchField;
+    private TextView visibleHint;
+    private TextView noMatch;
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private ActivityResultLauncher<String[]> lexiconPicker;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -57,6 +77,8 @@ public class VocabularyListActivity extends ForgeActivity {
         applyTopInset(findViewById(R.id.vocabulary_topbar));
         applyBottomInset(findViewById(R.id.vocabulary_scroll));
         bindViews();
+        lexiconPicker = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(), this::onLexiconPicked);
 
         ((TextView) findViewById(R.id.vocabulary_project)).setText(
                 VocabularyStore.readProjectName(projectDirectory));
@@ -64,6 +86,21 @@ public class VocabularyListActivity extends ForgeActivity {
         View.OnClickListener newEntry = v -> openEditor(null);
         findViewById(R.id.btn_new_vocabulary).setOnClickListener(newEntry);
         findViewById(R.id.btn_empty_vocabulary).setOnClickListener(newEntry);
+        findViewById(R.id.btn_import_lexicon).setOnClickListener(v -> openLexiconPicker());
+        searchField.getEditText().addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                render();
+            }
+        });
         render();
     }
 
@@ -72,24 +109,97 @@ public class VocabularyListActivity extends ForgeActivity {
         super.onResume();
         if (store != null) {
             store.load();
+            posStore.load();
             reloadTypeface();
             render();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        ioExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     private void bindViews() {
         list = findViewById(R.id.vocabulary_list);
         emptyState = findViewById(R.id.vocabulary_empty);
         count = findViewById(R.id.vocabulary_count);
+        searchField = findViewById(R.id.vocabulary_search);
+        visibleHint = findViewById(R.id.vocabulary_visible);
+        noMatch = findViewById(R.id.vocabulary_no_match);
     }
 
     private void render() {
-        list.removeAllViews();
-        count.setText(String.valueOf(store.entries.size()));
-        emptyState.setVisibility(store.entries.isEmpty() ? View.VISIBLE : View.GONE);
-        for (VocabularyEntry entry : store.entries) {
-            addRow(entry);
+        if (list == null || store == null) {
+            return;
         }
+        String query = searchField == null ? "" : textOf(searchField).trim().toLowerCase(Locale.ROOT);
+        List<VocabularyEntry> matches = new ArrayList<>();
+        for (VocabularyEntry entry : store.entries) {
+            if (query.isEmpty() || matches(entry, query)) {
+                matches.add(entry);
+            }
+        }
+        int total = store.entries.size();
+        int visibleCount = Math.min(matches.size(), MAX_RENDERED);
+        list.removeAllViews();
+        count.setText(String.valueOf(total));
+        emptyState.setVisibility(total == 0 ? View.VISIBLE : View.GONE);
+        boolean noResults = total > 0 && !query.isEmpty() && matches.isEmpty();
+        noMatch.setVisibility(noResults ? View.VISIBLE : View.GONE);
+        if (total > MAX_RENDERED || !query.isEmpty()) {
+            visibleHint.setVisibility(View.VISIBLE);
+            if (query.isEmpty()) {
+                visibleHint.setText("共 " + total + " 条，显示前 " + visibleCount
+                        + " 条；搜索缩小范围");
+            } else if (matches.size() > MAX_RENDERED) {
+                visibleHint.setText("匹配 " + matches.size() + " 条，显示前 " + visibleCount
+                        + " 条；搜索缩小范围");
+            } else {
+                visibleHint.setText("匹配 " + matches.size() + " 条");
+            }
+        } else {
+            visibleHint.setVisibility(View.GONE);
+        }
+        for (int i = 0; i < visibleCount; i++) {
+            addRow(matches.get(i));
+        }
+    }
+
+    private boolean matches(VocabularyEntry entry, String query) {
+        if (store.displayName(entry).toLowerCase(Locale.ROOT).contains(query)) {
+            return true;
+        }
+        if (entry.text != null && entry.text.toLowerCase(Locale.ROOT).contains(query)) {
+            return true;
+        }
+        if (entry.phonetic != null && entry.phonetic.toLowerCase(Locale.ROOT).contains(query)) {
+            return true;
+        }
+        for (String code : entry.codes) {
+            if (code.toLowerCase(Locale.ROOT).contains(query)) {
+                return true;
+            }
+        }
+        for (String meaning : entry.meanings) {
+            if (meaning.toLowerCase(Locale.ROOT).contains(query)) {
+                return true;
+            }
+        }
+        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+            PosEntry pos = posStore.findById(group.posId);
+            if (pos != null && (pos.name.toLowerCase(Locale.ROOT).contains(query)
+                    || pos.code.toLowerCase(Locale.ROOT).contains(query))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String textOf(ForgeTextField field) {
+        CharSequence value = field.getText();
+        return value == null ? "" : value.toString();
     }
 
     private void addRow(VocabularyEntry entry) {
@@ -203,6 +313,66 @@ public class VocabularyListActivity extends ForgeActivity {
             render();
             toast("已删除「" + store.displayName(entry) + "」");
         });
+        dialog.show();
+    }
+
+    private void openLexiconPicker() {
+        if (lexiconPicker == null) {
+            return;
+        }
+        lexiconPicker.launch(new String[]{
+                "application/json", "application/x-ndjson", "text/plain", "*/*"
+        });
+    }
+
+    private void onLexiconPicked(Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        String name = displayName(uri);
+        String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (!lower.endsWith(".jsonl") && !lower.endsWith(".json") && !lower.endsWith(".txt")) {
+            toast("请选择 .jsonl/.json/.txt 词表文件");
+            return;
+        }
+        toast("正在导入词表…");
+        ioExecutor.execute(() -> {
+            try (InputStream input = getContentResolver().openInputStream(uri)) {
+                LexiconImporter.Summary summary =
+                        LexiconImporter.importFrom(input, projectDirectory);
+                runOnUiThread(() -> {
+                    store.load();
+                    posStore.load();
+                    render();
+                    showImportSummary(summary);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> toast("导入失败：" + (e.getMessage() == null
+                        ? "无法读取词表" : e.getMessage())));
+            }
+        });
+    }
+
+    private String displayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(
+                uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                return cursor.getString(0);
+            }
+        } catch (Exception ignored) {
+            // Fall back to the last path segment.
+        }
+        return uri.getLastPathSegment();
+    }
+
+    private void showImportSummary(LexiconImporter.Summary summary) {
+        ForgeDialog dialog = new ForgeDialog(this);
+        dialog.setTitle("导入词表");
+        dialog.setBodyText("新增 " + summary.added + " 条\n"
+                + "跳过重复 " + summary.duplicates + " 条\n"
+                + "跳过无效 " + summary.invalid + " 条\n"
+                + "新增词性 " + summary.newPos + " 个");
+        dialog.setPositiveButton("知道了", null);
         dialog.show();
     }
 
