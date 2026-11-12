@@ -20,6 +20,7 @@ import java.util.Locale;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
 import io.github.myoslatal.languageforge.uikit.ForgeBadge;
+import io.github.myoslatal.languageforge.uikit.ForgeChip;
 import io.github.myoslatal.languageforge.uikit.ForgeButton;
 import io.github.myoslatal.languageforge.uikit.ForgeTextField;
 import io.github.myoslatal.languageforge.uikit.ForgeToast;
@@ -32,6 +33,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
     public static final String EXTRA_SELECTED_IDS = "selectedIds";
 
     private VocabularyStore store;
+    private PosStore posStore;
     private Typeface vocabTypeface;
     private String excludeId;
     private LinearLayout list;
@@ -52,6 +54,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
             return;
         }
         store = new VocabularyStore(projectDirectory);
+        posStore = new PosStore(projectDirectory);
         vocabTypeface = new FontStore(projectDirectory).activeTypeface();
         excludeId = getIntent().getStringExtra(EXTRA_EXCLUDE_ID);
 
@@ -113,6 +116,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
         ForgeBadge type = row.findViewById(R.id.picker_type);
         TextView codes = row.findViewById(R.id.picker_codes);
         TextView meanings = row.findViewById(R.id.picker_meanings);
+        LinearLayout posBadges = row.findViewById(R.id.picker_pos_badges);
 
         name.setText(store.displayName(entry));
         if (vocabTypeface != null) {
@@ -126,7 +130,22 @@ public class VocabularyPickerActivity extends ForgeActivity {
         } else {
             codes.setText("编码：—");
         }
-        meanings.setText("释义：" + VocabularyStore.joinSummary(entry.meanings));
+        meanings.setText("释义：" + posMeaningSummary(entry));
+        posBadges.removeAllViews();
+        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+            PosEntry pos = posStore.findById(group.posId);
+            if (pos == null) {
+                continue;
+            }
+            ForgeChip chip = new ForgeChip(this);
+            chip.setText(pos.code.isEmpty() ? pos.name : pos.name + " · " + pos.code);
+            chip.setActive(true);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.setMarginEnd(dp(4));
+            posBadges.addView(chip, lp);
+        }
         check.setChecked(selectedIds.contains(entry.id));
         row.setOnClickListener(v -> {
             if (selectedIds.contains(entry.id)) {
@@ -165,7 +184,35 @@ public class VocabularyPickerActivity extends ForgeActivity {
                 return true;
             }
         }
+        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+            PosEntry pos = posStore.findById(group.posId);
+            if (pos != null && (pos.name.toLowerCase(Locale.ROOT).contains(q)
+                    || pos.code.toLowerCase(Locale.ROOT).contains(q))) {
+                return true;
+            }
+        }
         return store.displayName(entry).toLowerCase(Locale.ROOT).contains(q);
+    }
+
+    private String posMeaningSummary(VocabularyEntry entry) {
+        StringBuilder builder = new StringBuilder();
+        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+            PosEntry pos = posStore.findById(group.posId);
+            if (pos == null) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append("；");
+            }
+            builder.append(pos.name).append("：")
+                    .append(VocabularyStore.joinSummary(group.meanings));
+        }
+        return builder.length() == 0
+                ? VocabularyStore.joinSummary(entry.meanings) : builder.toString();
+    }
+
+    private int dp(int value) {
+        return Math.round(getResources().getDisplayMetrics().density * value);
     }
 
     private String stripCodePointPrefix(String value) {

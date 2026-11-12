@@ -266,6 +266,21 @@ final class VocabularyStore {
         String type = object.optString("type", VocabularyEntry.TYPE_TEXT);
         entry.type = VocabularyEntry.isKnownType(type) ? type : VocabularyEntry.TYPE_TEXT;
         readStrings(object.optJSONArray("meanings"), entry.meanings, MAX_MEANING);
+        JSONArray posArray = object.optJSONArray("posMeanings");
+        if (posArray != null) {
+            for (int i = 0; i < posArray.length(); i++) {
+                JSONObject group = posArray.optJSONObject(i);
+                if (group == null) {
+                    continue;
+                }
+                VocabularyEntry.PosMeaning posMeaning = new VocabularyEntry.PosMeaning();
+                posMeaning.posId = cleanId(group.optString("posId"));
+                readStrings(group.optJSONArray("meanings"), posMeaning.meanings, MAX_MEANING);
+                if (!posMeaning.posId.isEmpty()) {
+                    entry.posMeanings.add(posMeaning);
+                }
+            }
+        }
         readStrings(object.optJSONArray("codes"), entry.codes, MAX_CODE);
         entry.text = clean(object.optString("text", ""), MAX_TEXT);
         readStrings(object.optJSONArray("codepoints"), entry.codepoints, MAX_CODEPOINT);
@@ -287,6 +302,17 @@ final class VocabularyStore {
         object.put("id", entry.id);
         object.put("type", entry.type);
         object.put("meanings", toArray(entry.meanings));
+        JSONArray posArray = new JSONArray();
+        for (VocabularyEntry.PosMeaning posMeaning : entry.posMeanings) {
+            if (posMeaning.posId.isEmpty()) {
+                continue;
+            }
+            JSONObject group = new JSONObject();
+            group.put("posId", posMeaning.posId);
+            group.put("meanings", toArray(posMeaning.meanings));
+            posArray.put(group);
+        }
+        object.put("posMeanings", posArray);
         object.put("codes", toArray(entry.codes));
         object.put("text", entry.text);
         object.put("codepoints", toArray(entry.codepoints));

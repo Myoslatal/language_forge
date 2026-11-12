@@ -9,10 +9,16 @@
 
 namespace forge {
 
+struct PosMeaning {
+  std::string posId;
+  std::vector<std::string> meanings;
+};
+
 struct VocabEntry {
   std::string id;
   std::string type = "text";
   std::vector<std::string> meanings;
+  std::vector<PosMeaning> posMeanings;
   std::vector<std::string> codes;
   std::string text;
   std::vector<std::string> codepoints;

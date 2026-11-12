@@ -18,6 +18,7 @@ import java.io.File;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
 import io.github.myoslatal.languageforge.uikit.ForgeBadge;
+import io.github.myoslatal.languageforge.uikit.ForgeChip;
 import io.github.myoslatal.languageforge.uikit.ForgeButton;
 import io.github.myoslatal.languageforge.uikit.ForgeDialog;
 import io.github.myoslatal.languageforge.uikit.ForgeMenu;
@@ -32,6 +33,7 @@ public class VocabularyListActivity extends ForgeActivity {
     private String folderName;
     private File projectDirectory;
     private VocabularyStore store;
+    private PosStore posStore;
     private Typeface vocabTypeface;
     private LinearLayout list;
     private LinearLayout emptyState;
@@ -48,6 +50,7 @@ public class VocabularyListActivity extends ForgeActivity {
             return;
         }
         store = new VocabularyStore(projectDirectory);
+        posStore = new PosStore(projectDirectory);
         reloadTypeface();
 
         setContentView(R.layout.activity_vocabulary_list);
@@ -96,16 +99,53 @@ public class VocabularyListActivity extends ForgeActivity {
         ForgeBadge type = row.findViewById(R.id.vocabulary_type);
         TextView codes = row.findViewById(R.id.vocabulary_codes);
         TextView meanings = row.findViewById(R.id.vocabulary_meanings);
+        LinearLayout posBadges = row.findViewById(R.id.vocabulary_pos_badges);
         ForgeButton more = row.findViewById(R.id.vocabulary_more);
 
         name.setText(store.displayName(entry));
         applyTypeface(name);
         type.setText(VocabularyEntry.typeLabel(entry.type));
         codes.setText("编码：" + VocabularyStore.joinSummary(entry.codes));
-        meanings.setText("释义：" + VocabularyStore.joinSummary(entry.meanings));
+        meanings.setText("释义：" + posMeaningSummary(entry));
+        posBadges.removeAllViews();
+        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+            PosEntry pos = posStore.findById(group.posId);
+            if (pos == null) {
+                continue;
+            }
+            ForgeChip chip = new ForgeChip(this);
+            chip.setText(pos.code.isEmpty() ? pos.name : pos.name + " · " + pos.code);
+            chip.setActive(true);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.setMarginEnd(dp(4));
+            posBadges.addView(chip, lp);
+        }
         row.setOnClickListener(v -> openEditor(entry.id));
         more.setOnClickListener(v -> showEntryMenu(more, entry));
         list.addView(row);
+    }
+
+    private String posMeaningSummary(VocabularyEntry entry) {
+        StringBuilder builder = new StringBuilder();
+        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+            PosEntry pos = posStore.findById(group.posId);
+            if (pos == null) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append("；");
+            }
+            builder.append(pos.name).append("：")
+                    .append(VocabularyStore.joinSummary(group.meanings));
+        }
+        return builder.length() == 0
+                ? VocabularyStore.joinSummary(entry.meanings) : builder.toString();
+    }
+
+    private int dp(int value) {
+        return Math.round(getResources().getDisplayMetrics().density * value);
     }
 
     private void reloadTypeface() {

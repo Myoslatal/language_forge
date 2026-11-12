@@ -203,6 +203,22 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   entry and captures `pos.png` / `pos-editor.png`; `pos.json` is included in `.conlang`
   whole-directory export/import. Vocabulary binding is intentionally not added in this round.
 
+## Multi-POS vocabulary meanings
+
+- `vocabulary.json` entries may carry `posMeanings:[{posId,meanings}]`; `meanings` remains
+  the aggregated/deduplicated compatibility and search field. Saving with POS selected writes
+  the aggregate in POS order; saving without POS keeps generic meanings.
+- The vocabulary editor has a **词性（可多选）** checkbox row. With no POS selected it shows
+  generic meanings; with POS selected it hides generic meanings and renders one group per POS
+  in `pos.json` order, each with add/remove rows. The first selected POS migrates non-empty
+  generic meanings; every selected group needs at least one non-empty meaning or save is
+  blocked with a toast. Unknown groups from deleted POS are ignored on open/save.
+- Vocabulary rows show colored POS badges and grouped summaries; the picker shows the same
+  badges and searches POS names/codes in addition to meanings/codes/text/codepoints.
+- Smoke creates `banana` with 名词/动词 groups, checks aggregated meanings, old `apple`
+  compatibility, empty-group validation, reload and `.conlang`, and captures
+  `vocab-pos.png`, `vocab-pos-editor.png`, `vocab-pos-picker.png`.
+
 ## Notes
 
 Audio recording depends on an SDL capture device; on machines without one the UI reports a

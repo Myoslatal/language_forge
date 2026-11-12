@@ -32,12 +32,15 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
 import io.github.myoslatal.languageforge.uikit.ForgeButton;
+import io.github.myoslatal.languageforge.uikit.ForgeCheckRow;
 import io.github.myoslatal.languageforge.uikit.ForgeChip;
 import io.github.myoslatal.languageforge.uikit.ForgeDialog;
 import io.github.myoslatal.languageforge.uikit.ForgeSelect;
@@ -61,6 +64,16 @@ public class VocabularyEditorActivity extends ForgeActivity {
     private VocabularyEntry existing;
 
     private LinearLayout meaningsContainer;
+    private LinearLayout meaningsHeader;
+    private LinearLayout posOptions;
+    private TextView posHint;
+    private ForgeButton addMeaningButton;
+    private PosStore posStore;
+    private final LinkedHashSet<String> selectedPosIds = new LinkedHashSet<>();
+    private final LinkedHashMap<String, List<String>> posMeaningValues = new LinkedHashMap<>();
+    private final LinkedHashMap<String, List<ForgeTextField>> posMeaningFields = new LinkedHashMap<>();
+    private final List<String> genericMeanings = new ArrayList<>();
+    private boolean updatingPosChecks;
     private LinearLayout codesContainer;
     private LinearLayout codepointsContainer;
     private LinearLayout comboSelected;
@@ -131,6 +144,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
             return;
         }
         store = new VocabularyStore(projectDirectory);
+        posStore = new PosStore(projectDirectory);
         vocabTypeface = new FontStore(projectDirectory).activeTypeface();
         String entryId = getIntent().getStringExtra(EXTRA_ENTRY_ID);
         if (entryId != null && !entryId.isEmpty()) {
@@ -200,6 +214,10 @@ public class VocabularyEditorActivity extends ForgeActivity {
 
     private void bindViews() {
         meaningsContainer = findViewById(R.id.meanings_container);
+        meaningsHeader = findViewById(R.id.meanings_header);
+        posOptions = findViewById(R.id.pos_options);
+        posHint = findViewById(R.id.pos_hint);
+        addMeaningButton = findViewById(R.id.btn_add_meaning);
         codesContainer = findViewById(R.id.codes_container);
         codepointsContainer = findViewById(R.id.codepoints_container);
         comboSelected = findViewById(R.id.combo_selected);
@@ -250,18 +268,32 @@ public class VocabularyEditorActivity extends ForgeActivity {
     }
 
     private void populate() {
+        selectedPosIds.clear();
+        posMeaningValues.clear();
+        genericMeanings.clear();
+        if (existing != null) {
+            for (VocabularyEntry.PosMeaning group : existing.posMeanings) {
+                if (posStore.findById(group.posId) == null) {
+                    continue;
+                }
+                if (!posMeaningValues.containsKey(group.posId)) {
+                    selectedPosIds.add(group.posId);
+                    posMeaningValues.put(group.posId, new ArrayList<>(group.meanings));
+                }
+            }
+            if (selectedPosIds.isEmpty()) {
+                genericMeanings.addAll(existing.meanings);
+            }
+        }
+        if (selectedPosIds.isEmpty() && genericMeanings.isEmpty()) {
+            genericMeanings.add("");
+        }
+        renderPosOptions();
+        renderMeanings();
         if (existing == null) {
-            addMeaningRow("");
             addCodeRow("");
             addCodepointRow("");
             return;
-        }
-        if (existing.meanings.isEmpty()) {
-            addMeaningRow("");
-        } else {
-            for (String meaning : existing.meanings) {
-                addMeaningRow(meaning);
-            }
         }
         if (existing.codes.isEmpty()) {
             addCodeRow("");
@@ -332,6 +364,187 @@ public class VocabularyEditorActivity extends ForgeActivity {
         if (VocabularyEntry.TYPE_IMAGE.equals(type)) {
             updateImageUi();
         }
+    }
+
+    private void renderPosOptions() {
+        if (posOptions == null) {
+            return;
+        }
+        updatingPosChecks = true;
+        posOptions.removeAllViews();
+        if (posStore == null || posStore.entries.isEmpty()) {
+            posHint.setText("请先在资源管理→词性管理创建词性");
+        } else {
+            posHint.setText("可多选；选择后按词性分别填写释义。");
+            for (PosEntry pos : posStore.entries) {
+                ForgeCheckRow row = new ForgeCheckRow(this);
+                String label = pos.name;
+                if (pos.code != null && !pos.code.isEmpty()) {
+                    label += " · " + pos.code;
+                }
+                row.setLabel(label);
+                row.setChecked(selectedPosIds.contains(pos.id));
+                row.setOnCheckedChangeListener((button, checked) -> {
+                    if (updatingPosChecks) {
+                        return;
+                    }
+                    onPosToggled(pos.id, checked);
+                });
+                posOptions.addView(row);
+            }
+        }
+        updatingPosChecks = false;
+    }
+
+    private void onPosToggled(String posId, boolean checked) {
+        captureMeanings();
+        if (checked) {
+            boolean wasEmpty = selectedPosIds.isEmpty();
+            selectedPosIds.add(posId);
+            if (!posMeaningValues.containsKey(posId)) {
+                List<String> values = new ArrayList<>();
+                if (wasEmpty) {
+                    for (String meaning : genericMeanings) {
+                        if (!meaning.trim().isEmpty()) {
+                            values.add(meaning);
+                        }
+                    }
+                }
+                if (values.isEmpty()) {
+                    values.add("");
+                }
+                posMeaningValues.put(posId, values);
+            }
+        } else {
+            List<String> values = posMeaningValues.remove(posId);
+            selectedPosIds.remove(posId);
+            if (values != null) {
+                for (String value : values) {
+                    if (!value.trim().isEmpty()) {
+                        toast("已取消选择词性，保存后该组释义不再写入");
+                        break;
+                    }
+                }
+            }
+        }
+        renderPosOptions();
+        renderMeanings();
+    }
+
+    private void captureMeanings() {
+        if (selectedPosIds.isEmpty()) {
+            genericMeanings.clear();
+            genericMeanings.addAll(collect(meaningFields, VocabularyStore.MAX_MEANING));
+        } else {
+            for (String posId : selectedPosIds) {
+                List<ForgeTextField> fields = posMeaningFields.get(posId);
+                if (fields != null) {
+                    posMeaningValues.put(posId, collect(fields, VocabularyStore.MAX_MEANING));
+                }
+            }
+        }
+    }
+
+    private void renderMeanings() {
+        meaningsContainer.removeAllViews();
+        meaningFields.clear();
+        posMeaningFields.clear();
+        if (selectedPosIds.isEmpty()) {
+            meaningsHeader.setVisibility(android.view.View.VISIBLE);
+            addMeaningButton.setVisibility(android.view.View.VISIBLE);
+            if (genericMeanings.isEmpty()) {
+                genericMeanings.add("");
+            }
+            for (String meaning : genericMeanings) {
+                addMeaningRow(meaning);
+            }
+            return;
+        }
+        meaningsHeader.setVisibility(android.view.View.GONE);
+        addMeaningButton.setVisibility(android.view.View.GONE);
+        for (PosEntry pos : posStore.entries) {
+            if (!selectedPosIds.contains(pos.id)) {
+                continue;
+            }
+            LinearLayout groupHeader = new LinearLayout(this);
+            groupHeader.setOrientation(LinearLayout.HORIZONTAL);
+            groupHeader.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            groupHeader.setPadding(0, dp(6), 0, dp(2));
+            TextView title = new TextView(this);
+            String label = pos.name;
+            if (pos.code != null && !pos.code.isEmpty()) {
+                label += " [" + pos.code + "]";
+            }
+            title.setText(label);
+            title.setTextSize(13f);
+            title.setTextColor(getColor(R.color.forge_text));
+            groupHeader.addView(title, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton cancel = removeButton("取消选择词性");
+            cancel.setOnClickListener(v -> onPosToggled(pos.id, false));
+            groupHeader.addView(cancel, new LinearLayout.LayoutParams(dp(32), dp(32)));
+            meaningsContainer.addView(groupHeader);
+            LinearLayout groupBox = new LinearLayout(this);
+            groupBox.setOrientation(LinearLayout.VERTICAL);
+            meaningsContainer.addView(groupBox);
+            List<String> values = posMeaningValues.get(pos.id);
+            if (values == null || values.isEmpty()) {
+                values = new ArrayList<>();
+                values.add("");
+                posMeaningValues.put(pos.id, values);
+            }
+            List<ForgeTextField> fields = new ArrayList<>();
+            posMeaningFields.put(pos.id, fields);
+            for (String value : values) {
+                addGroupMeaningRow(pos.id, groupBox, fields, value);
+            }
+            ForgeButton add = new ForgeButton(this);
+            add.setText("＋ 添加释义");
+            add.setTextSize(11f);
+            add.setVariant(ForgeButton.VARIANT_GHOST);
+            add.setOnClickListener(v -> {
+                List<String> current = posMeaningValues.get(pos.id);
+                if (current == null) {
+                    current = new ArrayList<>();
+                    posMeaningValues.put(pos.id, current);
+                }
+                current.add("");
+                List<ForgeTextField> groupFields = posMeaningFields.get(pos.id);
+                if (groupFields == null) {
+                    groupFields = new ArrayList<>();
+                    posMeaningFields.put(pos.id, groupFields);
+                }
+                addGroupMeaningRow(pos.id, groupBox, groupFields, "");
+            });
+            meaningsContainer.addView(add);
+        }
+    }
+
+    private void addGroupMeaningRow(String posId, LinearLayout groupBox,
+                                    List<ForgeTextField> fields, String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, 0, 0, dp(6));
+        ForgeTextField field = new ForgeTextField(this);
+        field.setLabel("释义");
+        field.setHint("该词性下的释义");
+        field.setText(value);
+        row.addView(field, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        ForgeButton remove = removeButton("删除释义");
+        remove.setOnClickListener(v -> {
+            if (fields.size() <= 1) {
+                toast("每个词性至少保留一条释义");
+                return;
+            }
+            groupBox.removeView(row);
+            fields.remove(field);
+            posMeaningValues.put(posId, collect(fields, VocabularyStore.MAX_MEANING));
+        });
+        row.addView(remove, new LinearLayout.LayoutParams(dp(32), dp(32)));
+        groupBox.addView(row);
+        fields.add(field);
     }
 
     private void addMeaningRow(String value) {
@@ -1168,10 +1381,51 @@ public class VocabularyEditorActivity extends ForgeActivity {
     }
 
     private void save() {
-        List<String> meanings = collect(meaningFields, VocabularyStore.MAX_MEANING);
-        if (meanings.isEmpty()) {
-            toast("请至少填写一条释义");
-            return;
+        captureMeanings();
+        List<String> meanings = new ArrayList<>();
+        List<VocabularyEntry.PosMeaning> posGroups = new ArrayList<>();
+        if (selectedPosIds.isEmpty()) {
+            for (String value : genericMeanings) {
+                String clean = VocabularyStore.clean(value, VocabularyStore.MAX_MEANING);
+                if (!clean.isEmpty() && !meanings.contains(clean)) {
+                    meanings.add(clean);
+                }
+            }
+            if (meanings.isEmpty()) {
+                toast("请至少填写一条释义");
+                return;
+            }
+        } else {
+            LinkedHashSet<String> aggregate = new LinkedHashSet<>();
+            for (PosEntry pos : posStore.entries) {
+                if (!selectedPosIds.contains(pos.id)) {
+                    continue;
+                }
+                List<String> groupValues = new ArrayList<>();
+                List<String> values = posMeaningValues.get(pos.id);
+                if (values != null) {
+                    for (String value : values) {
+                        String clean = VocabularyStore.clean(value, VocabularyStore.MAX_MEANING);
+                        if (!clean.isEmpty()) {
+                            groupValues.add(clean);
+                            aggregate.add(clean);
+                        }
+                    }
+                }
+                if (groupValues.isEmpty()) {
+                    toast("词性「" + pos.name + "」至少填写一条释义");
+                    return;
+                }
+                VocabularyEntry.PosMeaning group = new VocabularyEntry.PosMeaning();
+                group.posId = pos.id;
+                group.meanings.addAll(groupValues);
+                posGroups.add(group);
+            }
+            if (posGroups.isEmpty()) {
+                toast("请选择至少一个词性");
+                return;
+            }
+            meanings.addAll(aggregate);
         }
         List<String> codes = collect(codeFields, VocabularyStore.MAX_CODE);
         String type = selectedType();
@@ -1322,6 +1576,8 @@ public class VocabularyEditorActivity extends ForgeActivity {
         target.type = type;
         target.meanings.clear();
         target.meanings.addAll(meanings);
+        target.posMeanings.clear();
+        target.posMeanings.addAll(posGroups);
         target.codes.clear();
         target.codes.addAll(codes);
         target.text = text;

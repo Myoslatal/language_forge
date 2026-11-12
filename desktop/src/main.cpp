@@ -794,6 +794,15 @@ struct App {
       return;
     }
     editEntry = *found;
+    ensurePosLoaded();
+    if (posStore) {
+      editEntry.posMeanings.erase(
+          std::remove_if(editEntry.posMeanings.begin(), editEntry.posMeanings.end(),
+                         [&](const PosMeaning& group) {
+                           return !posStore->find(group.posId);
+                         }),
+          editEntry.posMeanings.end());
+    }
     if (editEntry.meanings.empty()) editEntry.meanings.push_back("");
     if (editEntry.codes.empty()) editEntry.codes.push_back("");
     editId = id;
@@ -831,6 +840,11 @@ struct App {
   void saveEditedVocabulary() {
     if (!vocabulary) loadVocabularyData();
     if (!vocabulary) return;
+    std::string meaningError;
+    if (!validateEditMeanings(&meaningError)) {
+      showToast(meaningError);
+      return;
+    }
     if (editEntry.type == "image") {
       if (editEntry.image.empty() || editEntry.imageWidth <= 0 || editEntry.imageHeight <= 0) {
         showToast("自定义文字图片缺失，请先导入或手绘");
@@ -848,9 +862,45 @@ struct App {
     }
     if (editEntry.meanings.empty()) editEntry.meanings.push_back("");
     if (editEntry.codes.empty()) editEntry.codes.push_back("");
-    bool hasMeaning = false;
-    for (const auto& meaning : editEntry.meanings) if (!meaning.empty()) hasMeaning = true;
-    if (!hasMeaning) { showToast("至少填写一条释义"); return; }
+    auto trimText = [](std::string value) {
+      auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+      value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+      value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+      return value;
+    };
+    if (editEntry.posMeanings.empty()) {
+      bool hasMeaning = false;
+      for (const auto& meaning : editEntry.meanings) if (!trimText(meaning).empty()) hasMeaning = true;
+      if (!hasMeaning) { showToast("至少填写一条释义"); return; }
+    } else {
+      std::vector<PosMeaning> validGroups;
+      std::vector<std::string> aggregate;
+      for (const auto& pos : posStore->entries) {
+        PosMeaning* group = findPosMeaning(pos.id);
+        if (!group) continue;
+        PosMeaning cleaned;
+        cleaned.posId = pos.id;
+        for (const auto& meaning : group->meanings) {
+          const std::string value = trimText(meaning);
+          if (value.empty()) continue;
+          cleaned.meanings.push_back(value);
+          if (std::find(aggregate.begin(), aggregate.end(), value) == aggregate.end()) {
+            aggregate.push_back(value);
+          }
+        }
+        if (cleaned.meanings.empty()) {
+          showToast("词性「" + pos.name + "」至少填写一条释义");
+          return;
+        }
+        validGroups.push_back(std::move(cleaned));
+      }
+      if (validGroups.empty()) {
+        showToast("请选择至少一个词性");
+        return;
+      }
+      editEntry.posMeanings = std::move(validGroups);
+      editEntry.meanings = std::move(aggregate);
+    }
     if (editEntry.type == "text" && editEntry.text.empty()) {
       showToast("文本词语不能为空"); return;
     }
@@ -928,6 +978,80 @@ struct App {
     editDirty = false;
     screen = Screen::Vocabulary;
     showToast("词汇已保存");
+  }
+
+  PosMeaning* findPosMeaning(const std::string& posId) {
+    for (auto& group : editEntry.posMeanings) {
+      if (group.posId == posId) return &group;
+    }
+    return nullptr;
+  }
+
+  void togglePosMeaning(const std::string& posId, bool selected) {
+    if (!posStore) return;
+    const PosEntry* pos = posStore->find(posId);
+    if (!pos) return;
+    PosMeaning* group = findPosMeaning(posId);
+    if (selected && !group) {
+      const bool wasEmpty = editEntry.posMeanings.empty();
+      PosMeaning created;
+      created.posId = posId;
+      if (wasEmpty) {
+        for (const auto& meaning : editEntry.meanings) {
+          if (!meaning.empty()) created.meanings.push_back(meaning);
+        }
+      }
+      if (created.meanings.empty()) created.meanings.push_back("");
+      editEntry.posMeanings.push_back(std::move(created));
+      editDirty = true;
+    } else if (!selected && group) {
+      if (!group->meanings.empty() && !group->meanings.front().empty()) {
+        showToast("已取消选择「" + pos->name + "」，保存后该组释义不再写入");
+      }
+      editEntry.posMeanings.erase(
+          std::remove_if(editEntry.posMeanings.begin(), editEntry.posMeanings.end(),
+                         [&](const PosMeaning& item) { return item.posId == posId; }),
+          editEntry.posMeanings.end());
+      editDirty = true;
+    }
+  }
+
+  bool validateEditMeanings(std::string* error) {
+    auto trimText = [](std::string value) {
+      auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+      value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+      value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+      return value;
+    };
+    if (editEntry.posMeanings.empty()) {
+      for (const auto& meaning : editEntry.meanings) {
+        if (!trimText(meaning).empty()) return true;
+      }
+      if (error) *error = "至少填写一条释义";
+      return false;
+    }
+    ensurePosLoaded();
+    bool any = false;
+    if (posStore) {
+      for (const auto& pos : posStore->entries) {
+        PosMeaning* group = findPosMeaning(pos.id);
+        if (!group) continue;
+        bool has = false;
+        for (const auto& meaning : group->meanings) {
+          if (!trimText(meaning).empty()) has = true;
+        }
+        if (!has) {
+          if (error) *error = "词性「" + pos.name + "」至少填写一条释义";
+          return false;
+        }
+        any = true;
+      }
+    }
+    if (!any) {
+      if (error) *error = "请选择至少一个词性";
+      return false;
+    }
+    return true;
   }
 
   void openPicker() {
@@ -2823,6 +2947,83 @@ int runSmoke(App& app, const fs::path& outputDir) {
     ok = saveScreenshot(app, outputDir / "pos-editor.png") && ok;
     app.posEditorOpen = false;
   }
+  bool posMeaningsOk = false;
+  bool oldVocabCompat = false;
+  bool emptyGroupBlocked = false;
+  bool posDeleteUnknown = false;
+  std::string multiVocabId;
+  if (app.vocabulary && !nounId.empty() && !verbId.empty()) {
+    VocabEntry* multi = nullptr;
+    for (auto& entry : app.vocabulary->entries) {
+      if (entry.type == "text" && entry.text == "banana") multi = &entry;
+    }
+    if (!multi) {
+      VocabEntry entry;
+      entry.id = Store::newUuid();
+      entry.type = "text";
+      entry.text = "banana";
+      entry.meanings = {"香蕉", "动作"};
+      entry.posMeanings = {{nounId, {"香蕉"}}, {verbId, {"动作"}}};
+      entry.codes = {"mp"};
+      entry.createdAt = entry.updatedAt = 1794400000003;
+      app.vocabulary->entries.push_back(entry);
+      multi = &app.vocabulary->entries.back();
+    }
+    multiVocabId = multi->id;
+    vocabOk = app.vocabulary->save() && vocabOk;
+    app.loadVocabularyData();
+    multi = app.vocabulary->find(multiVocabId);
+    posMeaningsOk = multi && multi->posMeanings.size() == 2 &&
+                    multi->meanings.size() == 2 &&
+                    multi->posMeanings[0].posId == nounId &&
+                    multi->posMeanings[1].posId == verbId;
+    for (const auto& entry : app.vocabulary->entries) {
+      if (entry.text == "apple" && entry.posMeanings.empty() &&
+          !entry.meanings.empty() && entry.meanings.front() == "苹果") {
+        oldVocabCompat = true;
+      }
+    }
+    app.screen = App::Screen::Vocabulary;
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "vocab-pos.png") && ok;
+    if (multi && !nounId.empty()) {
+      VocabEntry backup = app.editEntry;
+      app.editEntry.posMeanings = {{nounId, {""}}};
+      std::string validationError;
+      emptyGroupBlocked = !app.validateEditMeanings(&validationError) &&
+                          validationError.find("名词") != std::string::npos;
+      app.editEntry = backup;
+    }
+    if (multi && !verbId.empty()) {
+      VocabEntry* stored = app.vocabulary->find(multi->id);
+      const std::string unknownId = Store::newUuid();
+      if (stored) stored->posMeanings.push_back({unknownId, {"orphan"}});
+      app.editVocabulary(multi->id);
+      posDeleteUnknown = app.findPosMeaning(unknownId) == nullptr &&
+                         app.editEntry.posMeanings.size() == 2;
+      if (stored) {
+        stored->posMeanings.erase(
+            std::remove_if(stored->posMeanings.begin(), stored->posMeanings.end(),
+                           [&](const PosMeaning& group) { return group.posId == unknownId; }),
+            stored->posMeanings.end());
+      }
+    }
+    if (multi) {
+      app.editVocabulary(multi->id);
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-pos-editor.png") && ok;
+      const VocabEntry* appleEntry = nullptr;
+      for (const auto& entry : app.vocabulary->entries) {
+        if (entry.text == "apple") appleEntry = &entry;
+      }
+      if (appleEntry) app.editVocabulary(appleEntry->id);
+      app.openPicker();
+      std::snprintf(app.pickerSearch, sizeof(app.pickerSearch), "%s", "香蕉");
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-pos-picker.png") && ok;
+      app.pickerOpen = false;
+    }
+  }
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
   const bool exported = app.store->exportProject(app.folder, exportPath, error);
@@ -2842,9 +3043,17 @@ int runSmoke(App& app, const fs::path& outputDir) {
     ImageStore importedImages(app.store->projectDirectory(imported.folder));
     AudioStore importedAudios(app.store->projectDirectory(imported.folder));
     PosStore importedPos(app.store->projectDirectory(imported.folder));
+    bool importedPosMeanings = false;
+    for (const auto& entry : importedVocab.entries) {
+      if (entry.text == "banana" && entry.posMeanings.size() == 2 &&
+          entry.meanings.size() == 2) {
+        importedPosMeanings = true;
+      }
+    }
     importStatsOk = importStatsOk && importedVocab.entries.size() >= 4 &&
                     !importedFonts.fonts.empty() && !importedImages.images.empty() &&
-                    !importedAudios.audios.empty() && importedPos.entries.size() >= 2;
+                    !importedAudios.audios.empty() && importedPos.entries.size() >= 2 &&
+                    importedPosMeanings;
     app.store->deleteProject(imported.folder);
   }
 
@@ -2924,7 +3133,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           unusedAudioDeleted && audioTrimOk && audioRecordGraceful &&
                           invalidAudioRejected && invalidAudioNoResidue &&
                           audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
-                          posOk && posDeleteOk
+                          posOk && posDeleteOk && posMeaningsOk && oldVocabCompat &&
+                          emptyGroupBlocked && posDeleteUnknown
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -2977,7 +3187,11 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " audio_vocab_save=" << (audioVocabSave ? "true" : "false") << std::endl;
   report << "pos=" << (app.posStore ? app.posStore->entries.size() : 0)
          << " pos_ok=" << (posOk ? "true" : "false")
-         << " pos_delete=" << (posDeleteOk ? "true" : "false") << std::endl;
+         << " pos_delete=" << (posDeleteOk ? "true" : "false")
+         << " pos_meanings=" << (posMeaningsOk ? "true" : "false")
+         << " old_vocab_compat=" << (oldVocabCompat ? "true" : "false")
+         << " empty_group_blocked=" << (emptyGroupBlocked ? "true" : "false")
+         << " pos_delete_unknown=" << (posDeleteUnknown ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -3033,23 +3247,72 @@ void renderVocabularyEditor(App& app) {
   }
   ImGui::Separator();
 
-  ImGui::TextUnformatted("释义");
-  for (std::size_t i = 0; i < app.editEntry.meanings.size(); ++i) {
-    ImGui::PushID(9000 + static_cast<int>(i));
-    ImGui::SetNextItemWidth(-80);
-    if (inputString("##meaning", app.editEntry.meanings[i])) app.editDirty = true;
-    ImGui::SameLine();
-    if (ImGui::Button("删除", ImVec2(60, 28))) {
-      if (app.editEntry.meanings.size() > 1) {
-        app.editEntry.meanings.erase(app.editEntry.meanings.begin() + i);
-        app.editDirty = true;
-      } else app.showToast("至少保留一条释义");
+  ImGui::TextUnformatted("词性（可多选）");
+  app.ensurePosLoaded();
+  if (!app.posStore || app.posStore->entries.empty()) {
+    ImGui::TextDisabled("请先在资源管理→词性管理创建词性");
+  } else {
+    for (const auto& pos : app.posStore->entries) {
+      ImGui::PushID(pos.id.c_str());
+      bool checked = app.findPosMeaning(pos.id) != nullptr;
+      const std::string label = pos.code.empty() ? pos.name : pos.name + " · " + pos.code;
+      if (ImGui::Checkbox(label.c_str(), &checked)) app.togglePosMeaning(pos.id, checked);
+      ImGui::PopID();
     }
-    ImGui::PopID();
   }
-  if (ImGui::Button("＋ 添加释义", ImVec2(120, 28))) {
-    app.editEntry.meanings.push_back("");
-    app.editDirty = true;
+  ImGui::Spacing();
+  if (app.editEntry.posMeanings.empty()) {
+    ImGui::TextUnformatted("释义（通用）");
+    for (std::size_t i = 0; i < app.editEntry.meanings.size(); ++i) {
+      ImGui::PushID(9000 + static_cast<int>(i));
+      ImGui::SetNextItemWidth(-80);
+      if (inputString("##meaning", app.editEntry.meanings[i])) app.editDirty = true;
+      ImGui::SameLine();
+      if (ImGui::Button("删除", ImVec2(60, 28))) {
+        if (app.editEntry.meanings.size() > 1) {
+          app.editEntry.meanings.erase(app.editEntry.meanings.begin() + i);
+          app.editDirty = true;
+        } else app.showToast("至少保留一条释义");
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::Button("＋ 添加释义", ImVec2(120, 28))) {
+      app.editEntry.meanings.push_back("");
+      app.editDirty = true;
+    }
+  } else {
+    for (const auto& pos : app.posStore->entries) {
+      PosMeaning* group = app.findPosMeaning(pos.id);
+      if (!group) continue;
+      ImGui::PushID(pos.id.c_str());
+      ImGui::TextUnformatted((pos.name + (pos.code.empty() ? "" : " [" + pos.code + "]")).c_str());
+      ImGui::SameLine();
+      if (ImGui::Button("取消选择", ImVec2(90, 26))) {
+        app.togglePosMeaning(pos.id, false);
+        ImGui::PopID();
+        continue;
+      }
+      if (group->meanings.empty()) group->meanings.push_back("");
+      for (std::size_t i = 0; i < group->meanings.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i) + 5000);
+        ImGui::SetNextItemWidth(-80);
+        if (inputString("##pos_meaning", group->meanings[i])) app.editDirty = true;
+        ImGui::SameLine();
+        if (ImGui::Button("删除", ImVec2(60, 28))) {
+          if (group->meanings.size() > 1) {
+            group->meanings.erase(group->meanings.begin() + i);
+            app.editDirty = true;
+          } else app.showToast("每个词性至少保留一条释义");
+        }
+        ImGui::PopID();
+      }
+      if (ImGui::Button("＋ 添加该词性释义", ImVec2(150, 28))) {
+        group->meanings.push_back("");
+        app.editDirty = true;
+      }
+      ImGui::PopID();
+      ImGui::Spacing();
+    }
   }
 
   ImGui::TextUnformatted("编码");
@@ -3303,6 +3566,48 @@ void renderResourcesWithPhase2(App& app) {
   }
 }
 
+std::string posMeaningSummary(App& app, const VocabEntry& entry) {
+  app.ensurePosLoaded();
+  std::string summary;
+  if (app.posStore) {
+    for (const auto& group : entry.posMeanings) {
+      const PosEntry* pos = app.posStore->find(group.posId);
+      if (!pos) continue;
+      if (!summary.empty()) summary += "；";
+      summary += pos->name + "：";
+      bool first = true;
+      for (const auto& meaning : group.meanings) {
+        if (meaning.empty()) continue;
+        if (!first) summary += "、";
+        summary += meaning;
+        first = false;
+      }
+    }
+  }
+  if (summary.empty()) {
+    for (const auto& meaning : entry.meanings) {
+      if (meaning.empty()) continue;
+      if (!summary.empty()) summary += " / ";
+      summary += meaning;
+    }
+  }
+  return summary.empty() ? "未填写" : summary;
+}
+
+std::string posBadgeText(App& app, const VocabEntry& entry) {
+  app.ensurePosLoaded();
+  std::string badges;
+  if (app.posStore) {
+    for (const auto& group : entry.posMeanings) {
+      const PosEntry* pos = app.posStore->find(group.posId);
+      if (!pos) continue;
+      if (!badges.empty()) badges += "  ";
+      badges += "[" + pos->name + (pos->code.empty() ? "" : " " + pos->code) + "]";
+    }
+  }
+  return badges;
+}
+
 void renderVocabulary(App& app) {
   if (ImGui::Button("← 资源", ImVec2(100, 30))) app.screen = App::Screen::Resources;
   ImGui::SameLine();
@@ -3325,7 +3630,7 @@ void renderVocabulary(App& app) {
   for (const auto& entry : app.vocabulary->entries) {
     ImGui::PushID(entry.id.c_str());
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyle().Colors[ImGuiCol_ChildBg]);
-    ImGui::BeginChild("##vrow", ImVec2(0, 64), ImGuiChildFlags_Borders,
+    ImGui::BeginChild("##vrow", ImVec2(0, 86), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar);
     const std::string name = displayName(entry, app.vocabulary->entries);
     const char* typeLabel = entry.type == "text" ? "文本" : entry.type == "unicode"
@@ -3347,8 +3652,12 @@ void renderVocabulary(App& app) {
     }
     ImGui::TextDisabled("编码：%s", codes.empty() ? "未设置" : codes.c_str());
     ImGui::SetCursorPosX(12);
-    ImGui::TextDisabled("释义：%s", entry.meanings.empty() || entry.meanings.front().empty()
-                                        ? "未填写" : entry.meanings.front().c_str());
+    ImGui::TextDisabled("释义：%s", posMeaningSummary(app, entry).c_str());
+    const std::string badges = posBadgeText(app, entry);
+    if (!badges.empty()) {
+      ImGui::SameLine();
+      ImGui::TextColored(ImVec4(0.2f, 0.45f, 0.85f, 1.0f), "%s", badges.c_str());
+    }
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 48);
     if (ImGui::Button("⋯", ImVec2(30, 26))) ImGui::OpenPopup("##vmenu");
     if (ImGui::BeginPopup("##vmenu")) {
@@ -3468,6 +3777,13 @@ void renderPicker(App& app) {
         if (!match) if (lower(entry.text).find(query) != std::string::npos) match = true;
         if (!match) for (const auto& meaning : entry.meanings)
           if (lower(meaning).find(query) != std::string::npos) match = true;
+        if (!match && app.posStore) {
+          for (const auto& group : entry.posMeanings) {
+            const PosEntry* pos = app.posStore->find(group.posId);
+            if (pos && (lower(pos->name).find(query) != std::string::npos ||
+                        lower(pos->code).find(query) != std::string::npos)) match = true;
+          }
+        }
         if (!match) for (const auto& cp : entry.codepoints) {
           if (lower(cp).find(query) != std::string::npos ||
               lower("0x" + cp).find(query) != std::string::npos ||
@@ -3484,7 +3800,7 @@ void renderPicker(App& app) {
       bool selected = std::find(app.pickerSelected.begin(), app.pickerSelected.end(),
                                 entry.id) != app.pickerSelected.end();
       ImGui::PushID(entry.id.c_str());
-      if (ImGui::Selectable(("##pick_" + entry.id).c_str(), selected, 0, ImVec2(0, 52))) {
+      if (ImGui::Selectable(("##pick_" + entry.id).c_str(), selected, 0, ImVec2(0, 66))) {
         auto it = std::find(app.pickerSelected.begin(), app.pickerSelected.end(), entry.id);
         if (it == app.pickerSelected.end()) app.pickerSelected.push_back(entry.id);
         else app.pickerSelected.erase(it);
@@ -3501,6 +3817,13 @@ void renderPicker(App& app) {
       std::string codes;
       for (const auto& code : entry.codes) { if (!codes.empty()) codes += " / "; codes += code; }
       ImGui::TextDisabled("%s", codes.c_str());
+      const std::string pickerBadges = posBadgeText(app, entry);
+      if (!pickerBadges.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.2f, 0.45f, 0.85f, 1.0f), "%s", pickerBadges.c_str());
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("释义：%s", posMeaningSummary(app, entry).c_str());
       ImGui::PopID();
     }
   }

@@ -97,6 +97,15 @@ VocabEntry entryFromJson(const json& value) {
   entry.type = value.value("type", "text");
   if (!typeIsKnown(entry.type)) entry.type = "text";
   entry.meanings = stringArray(value.value("meanings", json::array()));
+  if (value.contains("posMeanings") && value["posMeanings"].is_array()) {
+    for (const auto& group : value["posMeanings"]) {
+      if (!group.is_object()) continue;
+      PosMeaning posMeaning;
+      posMeaning.posId = group.value("posId", "");
+      posMeaning.meanings = stringArray(group.value("meanings", json::array()));
+      if (!posMeaning.posId.empty()) entry.posMeanings.push_back(posMeaning);
+    }
+  }
   entry.codes = stringArray(value.value("codes", json::array()));
   entry.text = value.value("text", "");
   entry.codepoints = stringArray(value.value("codepoints", json::array()));
@@ -121,10 +130,16 @@ VocabEntry entryFromJson(const json& value) {
 }
 
 json entryToJson(const VocabEntry& entry) {
+  json posArray = json::array();
+  for (const auto& group : entry.posMeanings) {
+    if (group.posId.empty()) continue;
+    posArray.push_back({{"posId", group.posId}, {"meanings", group.meanings}});
+  }
   return json{
       {"id", entry.id},
       {"type", entry.type},
       {"meanings", entry.meanings},
+      {"posMeanings", posArray},
       {"codes", entry.codes},
       {"text", entry.text},
       {"codepoints", entry.codepoints},

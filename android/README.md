@@ -168,15 +168,21 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 
 * `vocabulary.json` (UTF-8, `schema: 1`) lives next to `project.json`:
   `{"schema":1,"entries":[{"id":"uuid","type":"text|unicode|combo|image",
-  "meanings":["..."],"codes":["..."],"text":"...","codepoints":["12ab","34cd"],
+  "meanings":["..."],"posMeanings":[{"posId":"uuid","meanings":["..."]}],
+  "codes":["..."],"text":"...","codepoints":["12ab","34cd"],
   "parts":["otherVocabId"],"image":"","imageWidth":0,"imageHeight":0,"audio":"",
   "audioStart":0,"audioEnd":0,"audioDuration":0,"createdAt":0,"updatedAt":0}]}`.
   IDs are UUIDs; strings are trimmed/capped; missing/bad files load empty and are logged.
   Writes use `vocabulary.json.tmp` + atomic move.
 * **List**: back, title, project subtitle, count badge, new button; rows show display name
-  (text/Unicode/combo preview/meaning), type badge, code summary and meaning summary. Row tap
-  edits; ⋯ deletes with confirmation; empty state has a new button.
-* **Editor**: back/title/save; repeatable meanings (at least one) and codes; type selector
+  (text/Unicode/combo preview/meaning), type badge, POS chips, code summary and grouped
+  “名词：…；动词：…” meaning summary. Row tap edits; ⋯ deletes with confirmation; empty state
+  has a new button.
+* **Editor**: back/title/save; POS multi-select (name + code) before meanings. With no POS,
+  the generic repeatable meanings remain (old vocabulary compatible); selecting a POS shows a
+  group per POS in `pos.json` order with its own meanings and remove/add controls. The first
+  selected POS migrates non-empty generic meanings; each selected group requires at least one
+  non-empty meaning or save is blocked with a toast. Codes and the type selector follow;
   **文本词语 / Unicode 编码词语 / 自定义文字组合词 / 自定义文字**; text input, multiple
   codepoint inputs with live preview, or combo parts chosen through the picker. Unicode
   codepoints accept `12ab`/`0x12AB` and normalize to lowercase without prefix.
@@ -185,10 +191,15 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
   content and writes the project file; failures keep the editor content.
 * **Picker**: reusable multi-select `VocabularyPickerActivity` with search. Search matches
   all `codes` (case/space-insensitive), text `text`, Unicode `codepoints`
-  (`12ab`/`0x12AB`), meanings and display names. Selection order is preserved and
+  (`12ab`/`0x12AB`), meanings, POS names/codes and display names. Selection order is preserved and
   returned to the combo editor; the current entry is excluded.
-* `.conlang` export/import includes `vocabulary.json` automatically because the whole
-  project directory is archived.
+* **posMeanings compatibility**: `meanings` remains the aggregated/deduplicated list used by
+  search and old readers; saving with selected POS writes `meanings` = all non-empty group
+  meanings in POS order. Old entries without `posMeanings` load as generic meanings. Groups
+  referencing a deleted POS are ignored by the editor; their text stays in `meanings` and
+  saving drops the unknown group.
+* `.conlang` export/import includes `vocabulary.json` and `pos.json` automatically because the
+  whole project directory is archived.
 
 ## Custom-text images (Phase 2A)
 

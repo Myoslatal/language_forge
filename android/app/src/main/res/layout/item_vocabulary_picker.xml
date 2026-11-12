@@ -68,6 +68,13 @@
             android:textColor="@color/forge_muted"
             android:textSize="10sp" />
 
+        <LinearLayout
+            android:id="@+id/picker_pos_badges"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal" />
+
         <TextView
             android:id="@+id/picker_meanings"
             android:layout_width="match_parent"

@@ -13,6 +13,7 @@ final class VocabularyEntry {
     String id;
     String type = TYPE_TEXT;
     final List<String> meanings = new ArrayList<>();
+    final List<PosMeaning> posMeanings = new ArrayList<>();
     final List<String> codes = new ArrayList<>();
     String text = "";
     final List<String> codepoints = new ArrayList<>();
@@ -29,6 +30,12 @@ final class VocabularyEntry {
 
     VocabularyEntry(String id) {
         this.id = id;
+    }
+
+    /** One POS group's independent meanings; meanings[] stays the aggregated compatibility field. */
+    static final class PosMeaning {
+        String posId = "";
+        final List<String> meanings = new ArrayList<>();
     }
 
     static String typeLabel(String type) {
