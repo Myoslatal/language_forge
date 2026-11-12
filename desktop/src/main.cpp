@@ -418,6 +418,8 @@ struct App {
   std::vector<std::string> pickerSelected;
   char pickerSearch[256] = {};
   char vocabSearch[256] = {};
+  int vocabPage = 1;
+  bool lexiconOverwrite = false;
   char fontImportName[256] = {};
 
   enum class BrowserMode { ImportConlang, ExportConlang, ImportFont, ImportImage, ImportAudio,
@@ -785,6 +787,7 @@ struct App {
 
   void openVocabulary() {
     loadVocabularyData();
+    vocabPage = 1;
     screen = Screen::Vocabulary;
   }
 
@@ -1562,14 +1565,18 @@ struct App {
       ensureVocabularyLoaded();
       ensurePosLoaded();
       LexiconImportSummary summary;
-      if (!importLexiconJsonl(target, store->projectDirectory(folder), summary, error)) {
+      if (!importLexiconJsonl(target, store->projectDirectory(folder),
+                              lexiconOverwrite ? LexiconImportMode::Overwrite
+                                               : LexiconImportMode::Skip,
+                              summary, error)) {
         showToast("导入失败：" + error);
         return;
       }
       if (vocabulary) vocabulary->load();
       if (posStore) posStore->load();
       screen = Screen::Vocabulary;
-      showToast("导入完成：新增 " + std::to_string(summary.added) + "，重复 "
+      showToast("导入完成：新增 " + std::to_string(summary.added) + "，更新 "
+                + std::to_string(summary.updated) + "，重复 "
                 + std::to_string(summary.duplicates) + "，无效 "
                 + std::to_string(summary.invalid) + "，新词性 "
                 + std::to_string(summary.newPos));
@@ -3006,6 +3013,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
   bool oldPhoneticCompat = false;
   bool lexiconOk = false;
   bool lexiconDuplicateOk = false;
+  bool lexiconOverwriteOk = false;
   bool lexiconBadLineOk = false;
   bool lexiconId9Ok = false;
   std::string lexiconNizId;
@@ -3107,7 +3115,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
     LexiconImportSummary summary;
     std::string lexiconError;
     const bool firstImport = importLexiconJsonl(
-        lexiconSample, app.store->projectDirectory(app.folder), summary, lexiconError);
+        lexiconSample, app.store->projectDirectory(app.folder),
+        LexiconImportMode::Skip, summary, lexiconError);
     app.vocabulary->load();
     app.posStore->load();
     VocabEntry* niz = nullptr;
@@ -3128,10 +3137,17 @@ int runSmoke(App& app, const fs::path& outputDir) {
                   !niz->posMeanings.empty() && hasDefinition;
     }
     lexiconId9Ok = id9 && id9->type == "text" && id9->text == "ıu-vurg";
+    std::string nizOriginalId = lexiconNizId;
+    if (niz) {
+      niz->codes = {"keep"};
+      app.vocabulary->save();
+      app.vocabulary->load();
+    }
     if (firstImport) {
       LexiconImportSummary duplicateSummary;
       const bool duplicateImport = importLexiconJsonl(
-          lexiconSample, app.store->projectDirectory(app.folder), duplicateSummary, lexiconError);
+          lexiconSample, app.store->projectDirectory(app.folder),
+          LexiconImportMode::Skip, duplicateSummary, lexiconError);
       lexiconDuplicateOk = duplicateImport && duplicateSummary.added == 0 &&
                            duplicateSummary.duplicates == 5314;
       const fs::path badLexicon = "/tmp/lexicon-bad.jsonl";
@@ -3141,9 +3157,30 @@ int runSmoke(App& app, const fs::path& outputDir) {
       }
       LexiconImportSummary badSummary;
       const bool badImport = importLexiconJsonl(
-          badLexicon, app.store->projectDirectory(app.folder), badSummary, lexiconError);
+          badLexicon, app.store->projectDirectory(app.folder),
+          LexiconImportMode::Skip, badSummary, lexiconError);
       lexiconBadLineOk = badImport && badSummary.invalid == 1 && badSummary.added == 0;
+      LexiconImportSummary overwriteSummary;
+      const bool overwriteImport = importLexiconJsonl(
+          lexiconSample, app.store->projectDirectory(app.folder),
+          LexiconImportMode::Overwrite, overwriteSummary, lexiconError);
+      lexiconOverwriteOk = overwriteImport && overwriteSummary.added == 0 &&
+                           overwriteSummary.updated >= 5000 &&
+                           overwriteSummary.duplicates == 2;
       app.vocabulary->load();
+      VocabEntry* nizAfter = nullptr;
+      for (const auto& entry : app.vocabulary->entries) {
+        if (entry.text == "nız") nizAfter = const_cast<VocabEntry*>(&entry);
+      }
+      if (nizAfter) {
+        bool keptCode = std::find(nizAfter->codes.begin(), nizAfter->codes.end(), "keep") !=
+                        nizAfter->codes.end();
+        lexiconOverwriteOk = lexiconOverwriteOk && keptCode &&
+                             nizAfter->id == nizOriginalId &&
+                             nizAfter->phonetic == "nı z";
+      } else {
+        lexiconOverwriteOk = false;
+      }
       app.posStore->load();
     }
     app.vocabSearch[0] = '\0';
@@ -3274,7 +3311,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
                           posOk && posDeleteOk && posMeaningsOk && oldVocabCompat &&
                           emptyGroupBlocked && posDeleteUnknown && phoneticOk && oldPhoneticCompat &&
-                          lexiconOk && lexiconDuplicateOk && lexiconBadLineOk && lexiconId9Ok
+                          lexiconOk && lexiconDuplicateOk && lexiconBadLineOk && lexiconId9Ok &&
+                          lexiconOverwriteOk
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -3337,7 +3375,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " lexicon=" << (lexiconOk ? "true" : "false")
          << " lexicon_duplicate=" << (lexiconDuplicateOk ? "true" : "false")
          << " lexicon_bad=" << (lexiconBadLineOk ? "true" : "false")
-         << " lexicon_id9=" << (lexiconId9Ok ? "true" : "false") << std::endl;
+         << " lexicon_id9=" << (lexiconId9Ok ? "true" : "false")
+         << " lexicon_overwrite=" << (lexiconOverwriteOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -3771,15 +3810,25 @@ void renderVocabulary(App& app) {
   app.ensurePosLoaded();
   const std::size_t count = app.vocabulary ? app.vocabulary->entries.size() : 0;
   pageTitle("VOCABULARY", "词汇表", std::to_string(count) + " 条项目级词汇");
-  const float right = ImGui::GetWindowWidth() - 285;
+  const float right = ImGui::GetWindowWidth() - 390;
   if (right > 0) ImGui::SetCursorPosX(right);
-  if (ImGui::Button("导入词表", ImVec2(110, 34))) app.openBrowser(App::BrowserMode::ImportLexicon);
+  if (ImGui::Button("导入词表", ImVec2(100, 34))) {
+    app.lexiconOverwrite = false;
+    app.openBrowser(App::BrowserMode::ImportLexicon);
+  }
   ImGui::SameLine();
-  if (ImGui::Button("＋ 新建词汇", ImVec2(140, 34))) app.startNewVocabulary();
+  if (ImGui::Button("覆盖合并", ImVec2(100, 34))) {
+    app.lexiconOverwrite = true;
+    app.openBrowser(App::BrowserMode::ImportLexicon);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("＋ 新建词汇", ImVec2(130, 34))) app.startNewVocabulary();
   ImGui::Spacing();
   ImGui::TextDisabled("搜索显示名 / 编码 / 音标 / 释义 / 词性");
   ImGui::SetNextItemWidth(-1);
-  ImGui::InputText("##vocab_search", app.vocabSearch, sizeof(app.vocabSearch));
+  if (ImGui::InputText("##vocab_search", app.vocabSearch, sizeof(app.vocabSearch))) {
+    app.vocabPage = 1;
+  }
   std::string query = app.vocabSearch;
   std::transform(query.begin(), query.end(), query.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -3821,19 +3870,25 @@ void renderVocabulary(App& app) {
     ImGui::TextDisabled("没有匹配的词汇");
     return;
   }
-  constexpr std::size_t kMaxRows = 200;
-  const std::size_t shown = std::min(matches.size(), kMaxRows);
-  if (count > kMaxRows || !query.empty()) {
-    if (query.empty()) {
-      ImGui::TextDisabled("共 %zu 条，显示前 %zu 条；搜索缩小范围", count, shown);
-    } else if (matches.size() > kMaxRows) {
-      ImGui::TextDisabled("匹配 %zu 条，显示前 %zu 条；搜索缩小范围", matches.size(), shown);
-    } else {
-      ImGui::TextDisabled("匹配 %zu 条", matches.size());
-    }
+  constexpr int kPageSize = 50;
+  int pageCount = static_cast<int>((matches.size() + kPageSize - 1) / kPageSize);
+  if (app.vocabPage < 1) app.vocabPage = 1;
+  if (app.vocabPage > pageCount) app.vocabPage = pageCount;
+  ImGui::TextDisabled("%s %zu 条 · 第 %d/%d 页", query.empty() ? "共" : "匹配",
+                      matches.size(), app.vocabPage, pageCount);
+  if (ImGui::Button("← 上一页", ImVec2(90, 28)) && app.vocabPage > 1) {
+    app.vocabPage--;
   }
+  ImGui::SameLine();
+  ImGui::TextDisabled("第 %d / %d 页", app.vocabPage, pageCount);
+  ImGui::SameLine();
+  if (ImGui::Button("下一页 →", ImVec2(90, 28)) && app.vocabPage < pageCount) {
+    app.vocabPage++;
+  }
+  const std::size_t start = static_cast<std::size_t>(app.vocabPage - 1) * kPageSize;
+  const std::size_t shown = std::min<std::size_t>(kPageSize, matches.size() - start);
   for (std::size_t rowIndex = 0; rowIndex < shown; ++rowIndex) {
-    const auto& entry = *matches[rowIndex];
+    const auto& entry = *matches[start + rowIndex];
     ImGui::PushID(entry.id.c_str());
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyle().Colors[ImGuiCol_ChildBg]);
     ImGui::BeginChild("##vrow", ImVec2(0, 86), ImGuiChildFlags_Borders,

@@ -205,10 +205,10 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 
 ## Lexicon JSONL import
 
-- **导入词表** in `VocabularyListActivity` uses SAF `ACTION_OPEN_DOCUMENT` with
-  `application/json`, `application/x-ndjson`, `text/plain`, `*/*`; filenames must end in
-  `.jsonl`, `.json` or `.txt`. The stream is parsed on a background executor as UTF-8
-  (BOM/blank lines tolerated).
+- **导入词表** in `VocabularyListActivity` first asks **跳过重复 / 覆盖合并**, then uses
+  SAF `ACTION_OPEN_DOCUMENT` with `application/json`, `application/x-ndjson`,
+  `text/plain`, `*/*`; filenames must end in `.jsonl`, `.json` or `.txt`. The stream is
+  parsed on a background executor as UTF-8 (BOM/blank lines tolerated).
 - First line is `{"_meta":{"types":[{"k":"n","label":"名词"},...]}}`. Each following line
   maps `rendered` (or string `entry` when rendered is empty) to `text`, `pronunciation`
   to `phonetic`, `definition`/`detail` deduplicated to the POS group meanings (and the
@@ -218,10 +218,14 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 - Duplicate text (case-insensitive/trimmed) is skipped against existing entries and earlier
   file rows; bad JSON/blank-text/empty-definition rows are counted invalid; `_meta` is skipped.
   The result dialog reports added / duplicate / invalid / new POS counts.
+- Overwrite merge matches existing text (trimmed, case-insensitive) and updates the entry in
+  place: id/codes/media are preserved, non-empty `pronunciation` replaces `phonetic`, and each
+  imported POS group replaces the same `posId` or is appended; `meanings` is re-aggregated.
+  The summary adds **更新 N 条**; internal file duplicates are still counted as duplicates.
 - `pos.json` and `vocabulary.json` are saved through their atomic writers. The list searches
-  display name, codes, phonetic, meanings and POS names/codes, but only inflates the first 200
-  matches with “共 N 条，显示前 200 条；搜索缩小范围”; the badge remains the total count. The
-  picker likewise renders at most 200 matching rows.
+  display name, codes, phonetic, meanings and POS names/codes; it inflates only the current
+  **50-row page** with prev/next controls, total/pages text and search resetting to page 1. The
+  badge remains the total count. The picker still caps at 200 matching rows.
 
 ## Custom-text images (Phase 2A)
 

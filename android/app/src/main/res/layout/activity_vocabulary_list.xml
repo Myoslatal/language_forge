@@ -133,6 +133,40 @@
                 android:layout_marginTop="4dp"
                 android:visibility="gone" />
 
+            <LinearLayout
+                android:id="@+id/vocabulary_pager"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_vocabulary_prev"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="上一页"
+                    android:textSize="11sp"
+                    app:forgeVariant="ghost" />
+
+                <TextView
+                    android:id="@+id/vocabulary_page"
+                    style="@style/Forge.Text.Hint"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="第 1 / 1 页" />
+
+                <io.github.myoslatal.languageforge.uikit.ForgeButton
+                    android:id="@+id/btn_vocabulary_next"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="下一页"
+                    android:textSize="11sp"
+                    app:forgeVariant="ghost" />
+            </LinearLayout>
+
             <TextView
                 android:id="@+id/vocabulary_no_match"
                 style="@style/Forge.Text.Hint"

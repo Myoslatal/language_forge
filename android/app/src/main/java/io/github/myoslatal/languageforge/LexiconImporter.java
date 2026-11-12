@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,8 +23,11 @@ import java.util.UUID;
 /** Import a Lexicon JSONL vocabulary file into pos.json + vocabulary.json. */
 final class LexiconImporter {
 
+    enum Mode { SKIP, OVERWRITE }
+
     static final class Summary {
         int added;
+        int updated;
         int duplicates;
         int invalid;
         int newPos;
@@ -32,7 +36,7 @@ final class LexiconImporter {
     private LexiconImporter() {
     }
 
-    static Summary importFrom(InputStream input, File projectDirectory) throws IOException {
+    static Summary importFrom(InputStream input, File projectDirectory, Mode mode) throws IOException {
         if (input == null || projectDirectory == null) {
             throw new IOException("词表文件不可用");
         }
@@ -114,9 +118,9 @@ final class LexiconImporter {
             }
         }
 
-        Set<String> existingTexts = new HashSet<>();
+        Map<String, VocabularyEntry> existingByText = new HashMap<>();
         for (VocabularyEntry entry : vocabulary.entries) {
-            existingTexts.add(normalizeText(entry.text));
+            existingByText.putIfAbsent(normalizeText(entry.text), entry);
         }
         Set<String> seen = new HashSet<>();
 
@@ -144,7 +148,7 @@ final class LexiconImporter {
                 continue;
             }
             String normalized = normalizeText(text);
-            if (existingTexts.contains(normalized) || !seen.add(normalized)) {
+            if (!seen.add(normalized)) {
                 summary.duplicates++;
                 continue;
             }
@@ -157,6 +161,52 @@ final class LexiconImporter {
                 continue;
             }
 
+            String typeCode = object.optString("type", "").trim();
+            PosEntry pos = typeCode.isEmpty()
+                    ? null : posByCode.get(typeCode.toLowerCase(Locale.ROOT));
+            VocabularyEntry existing = existingByText.get(normalized);
+            if (existing != null) {
+                if (mode == Mode.SKIP) {
+                    summary.duplicates++;
+                    continue;
+                }
+                String importedPhonetic = VocabularyStore.clean(
+                        object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
+                if (!importedPhonetic.isEmpty()) {
+                    existing.phonetic = importedPhonetic;
+                }
+                if (pos != null) {
+                    VocabularyEntry.PosMeaning target = null;
+                    for (VocabularyEntry.PosMeaning group : existing.posMeanings) {
+                        if (group.posId.equals(pos.id)) {
+                            target = group;
+                            break;
+                        }
+                    }
+                    if (target == null) {
+                        target = new VocabularyEntry.PosMeaning();
+                        target.posId = pos.id;
+                        existing.posMeanings.add(target);
+                    }
+                    target.meanings.clear();
+                    target.meanings.addAll(meanings);
+                }
+                if (!existing.posMeanings.isEmpty()) {
+                    LinkedHashSet<String> aggregate = new LinkedHashSet<>();
+                    for (VocabularyEntry.PosMeaning group : existing.posMeanings) {
+                        aggregate.addAll(group.meanings);
+                    }
+                    existing.meanings.clear();
+                    existing.meanings.addAll(aggregate);
+                } else {
+                    existing.meanings.clear();
+                    existing.meanings.addAll(meanings);
+                }
+                existing.updatedAt = System.currentTimeMillis();
+                summary.updated++;
+                continue;
+            }
+
             VocabularyEntry entry = new VocabularyEntry(UUID.randomUUID().toString());
             entry.type = VocabularyEntry.TYPE_TEXT;
             entry.text = text;
@@ -164,10 +214,6 @@ final class LexiconImporter {
                     object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
             entry.meanings.addAll(meanings);
             entry.createdAt = entry.updatedAt = System.currentTimeMillis();
-
-            String typeCode = object.optString("type", "").trim();
-            PosEntry pos = typeCode.isEmpty()
-                    ? null : posByCode.get(typeCode.toLowerCase(Locale.ROOT));
             if (pos != null) {
                 VocabularyEntry.PosMeaning group = new VocabularyEntry.PosMeaning();
                 group.posId = pos.id;

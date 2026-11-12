@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
@@ -51,7 +52,8 @@ void addMeaning(std::vector<std::string>& values, const std::string& value) {
 }  // namespace
 
 bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
-                        LexiconImportSummary& summary, std::string& error) {
+                        LexiconImportMode mode, LexiconImportSummary& summary,
+                        std::string& error) {
   summary = LexiconImportSummary{};
   std::ifstream input(file, std::ios::binary);
   if (!input) {
@@ -135,9 +137,12 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     pos.load();
   }
 
-  std::set<std::string> existingTexts;
-  for (const auto& entry : vocabulary.entries) existingTexts.insert(lower(trim(entry.text)));
+  std::map<std::string, VocabEntry*> existingByText;
+  for (auto& entry : vocabulary.entries) {
+    existingByText.emplace(lower(trim(entry.text)), &entry);
+  }
   std::set<std::string> seen;
+  vocabulary.entries.reserve(vocabulary.entries.size() + entryLines.size());
 
   for (const auto& text : entryLines) {
     json value;
@@ -157,7 +162,7 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
       continue;
     }
     const std::string normalized = lower(word);
-    if (existingTexts.count(normalized) || !seen.insert(normalized).second) {
+    if (!seen.insert(normalized).second) {
       summary.duplicates++;
       continue;
     }
@@ -169,13 +174,6 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
       continue;
     }
 
-    VocabEntry entry;
-    entry.id = Store::newUuid();
-    entry.type = "text";
-    entry.text = word;
-    entry.phonetic = trim(jsonText(value, "pronunciation"));
-    entry.meanings = meanings;
-    entry.createdAt = entry.updatedAt = 1794401000000 + summary.added;
     const std::string type = trim(jsonText(value, "type"));
     std::string posId;
     for (const auto& item : posIds) {
@@ -184,6 +182,56 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
         break;
       }
     }
+    auto existingIt = existingByText.find(normalized);
+    if (existingIt != existingByText.end()) {
+      if (mode == LexiconImportMode::Skip) {
+        summary.duplicates++;
+        continue;
+      }
+      VocabEntry* existing = existingIt->second;
+      const std::string pronunciation = trim(jsonText(value, "pronunciation"));
+      if (!pronunciation.empty()) existing->phonetic = pronunciation;
+      if (!posId.empty()) {
+        PosMeaning* target = nullptr;
+        for (auto& group : existing->posMeanings) {
+          if (group.posId == posId) {
+            target = &group;
+            break;
+          }
+        }
+        if (!target) {
+          PosMeaning created;
+          created.posId = posId;
+          existing->posMeanings.push_back(std::move(created));
+          target = &existing->posMeanings.back();
+        }
+        target->meanings = meanings;
+      }
+      if (!existing->posMeanings.empty()) {
+        std::vector<std::string> aggregate;
+        for (const auto& group : existing->posMeanings) {
+          for (const auto& meaning : group.meanings) {
+            if (std::find(aggregate.begin(), aggregate.end(), meaning) == aggregate.end()) {
+              aggregate.push_back(meaning);
+            }
+          }
+        }
+        existing->meanings = std::move(aggregate);
+      } else {
+        existing->meanings = meanings;
+      }
+      existing->updatedAt = 1794401000000 + summary.updated;
+      summary.updated++;
+      continue;
+    }
+
+    VocabEntry entry;
+    entry.id = Store::newUuid();
+    entry.type = "text";
+    entry.text = word;
+    entry.phonetic = trim(jsonText(value, "pronunciation"));
+    entry.meanings = meanings;
+    entry.createdAt = entry.updatedAt = 1794401000000 + summary.added;
     if (!posId.empty()) {
       PosMeaning group;
       group.posId = posId;
@@ -192,6 +240,7 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     }
     vocabulary.entries.push_back(std::move(entry));
     summary.added++;
+
   }
 
   if (summary.newPos > 0 && !pos.save()) {
