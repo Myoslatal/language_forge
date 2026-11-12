@@ -10,6 +10,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.CheckBox;
 import android.widget.RadioButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -57,6 +58,7 @@ public class QuestionEditorActivity extends ForgeActivity {
     private SeekBar startSeek;
     private SeekBar endSeek;
     private boolean updatingTrim;
+    private CheckBox hintsEnabledView;
     private Handler playHandler;
     private Runnable playStopTask;
     private ForgeButton recordButton;
@@ -149,6 +151,9 @@ public class QuestionEditorActivity extends ForgeActivity {
         startSeek = findViewById(R.id.question_audio_start);
         endSeek = findViewById(R.id.question_audio_end);
         recordButton = findViewById(R.id.btn_question_record);
+        hintsEnabledView = findViewById(R.id.question_hints_enabled);
+        hintsEnabledView.setChecked(question.hintsEnabled);
+        hintsEnabledView.setOnCheckedChangeListener((buttonView, checked) -> dirty = true);
         startSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (!fromUser || updatingTrim) return;
@@ -641,6 +646,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.sentence = sentenceText();
         question.audioStart = audioStart;
         question.audioEnd = audioEnd;
+        question.hintsEnabled = hintsEnabledView.isChecked();
         question.options.clear();
         question.options.addAll(options);
         question.correctIndex = correct;

@@ -33,6 +33,7 @@ struct Question {
   long long audioDuration = 0;
   long long audioStart = 0;
   long long audioEnd = 0;
+  bool hintsEnabled = true;
   std::vector<std::string> options;
   int correctIndex = -1;
 };

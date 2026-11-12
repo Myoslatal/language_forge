@@ -163,6 +163,7 @@ json structureToJson(const Structure& structure) {
                                {"audioDuration", question.audioDuration},
                                {"audioStart", question.audioStart},
                                {"audioEnd", question.audioEnd},
+                               {"hintsEnabled", question.hintsEnabled},
                                {"options", question.options},
                                {"correctIndex", question.correctIndex}});
         }
@@ -217,6 +218,7 @@ Structure structureFromJson(const json& value) {
                 question.audioDuration = questionValue.value("audioDuration", 0LL);
                 question.audioStart = questionValue.value("audioStart", 0LL);
                 question.audioEnd = questionValue.value("audioEnd", question.audioDuration);
+                question.hintsEnabled = questionValue.value("hintsEnabled", true);
                 question.correctIndex = questionValue.value("correctIndex", -1);
                 if (questionValue.contains("segments") && questionValue["segments"].is_array()) {
                   for (const auto& segment : questionValue["segments"]) {

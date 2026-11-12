@@ -217,7 +217,11 @@ public class ProjectListActivity extends ForgeActivity {
         ForgeDialog dialog = new ForgeDialog(this);
         dialog.setTitle(project.name);
         dialog.setBodyText("选择进入方式。\n\n学习功能暂未实现；可以先编辑项目结构。");
-        dialog.setNegativeButton("学习", (d, which) -> toast("学习功能暂未实现"));
+        dialog.setNegativeButton("学习", (d, which) -> {
+            Intent intent = new Intent(this, LearningActivity.class);
+            intent.putExtra(LearningActivity.EXTRA_FOLDER_NAME, project.folderName);
+            startActivity(intent);
+        });
         dialog.setPositiveButton("编辑", (d, which) -> {
             Intent intent = new Intent(this, ProjectStructureActivity.class);
             intent.putExtra(ProjectStructureActivity.EXTRA_FOLDER_NAME, project.folderName);

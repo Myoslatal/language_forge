@@ -488,3 +488,10 @@ parts remains the derived word-id list. The question editor inserts 14 punctuati
 moves/deletes punctuation tokens, previews the rendered sentence, and trims whole-audio with
 audioStart/audioEnd. Audio management scans both vocabulary and question audio, shows
 vocabulary/question reference counts, and blocks deletion while either reference exists.
+
+## Learning mode
+
+Home -> 学习 opens a read-only course list, question list and learning page. Question
+tokens are underlined via Spannable/ClickableSpan (punctuation excluded); tapping a word
+shows POS/meanings/phonetics and plays its vocabulary audio respecting truncation.
+Question-level hintsEnabled (default true) disables underlines, hints and auto-play.

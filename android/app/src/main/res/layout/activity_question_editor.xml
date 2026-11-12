@@ -192,6 +192,15 @@
                 android:text="试听裁剪"
                 app:forgeVariant="ghost" />
 
+            <CheckBox
+                android:id="@+id/question_hints_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:checked="true"
+                android:text="启用学习提示（词下划线/词性/释义/发音）"
+                android:textColor="@color/forge_text" />
+
             <TextView
                 style="@style/Forge.Text.SectionTitle"
                 android:layout_width="wrap_content"

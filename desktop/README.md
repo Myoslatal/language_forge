@@ -265,3 +265,7 @@ an audio device.
 
 Question editor additionally supports ordered punctuation segments, audio audioStart /
 audioEnd trim, and audio-management question reference counts with delete protection.
+
+Learning mode: Home -> 学习 opens read-only course/question lists and a learning page with
+underlined clickable word tokens, POS/meaning/phonetic hints and vocabulary audio.
+hintsEnabled disables hints; old questions default to enabled.

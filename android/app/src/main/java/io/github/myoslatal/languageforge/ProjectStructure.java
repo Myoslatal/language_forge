@@ -112,6 +112,8 @@ final class ProjectStructure {
                                         }
                                         question.correctIndex =
                                                 questionObject.optInt("correctIndex", -1);
+                                        question.hintsEnabled =
+                                                questionObject.optBoolean("hintsEnabled", true);
                                         JSONArray segments = questionObject.optJSONArray("segments");
                                         if (segments != null) {
                                             for (int s = 0; s < segments.length(); s++) {
@@ -201,6 +203,7 @@ final class ProjectStructure {
                             for (String option : question.options) options.put(option);
                             questionObject.put("options", options);
                             questionObject.put("correctIndex", question.correctIndex);
+                            questionObject.put("hintsEnabled", question.hintsEnabled);
                             JSONArray segments = new JSONArray();
                             for (Question.Segment segment : question.segments) {
                                 JSONObject object = new JSONObject();
@@ -401,6 +404,7 @@ final class ProjectStructure {
         final List<String> parts = new ArrayList<>();
         final List<Segment> segments = new ArrayList<>();
         String sentence = "";
+        boolean hintsEnabled = true;
         String audio = "";
         long audioDuration;
         long audioStart;

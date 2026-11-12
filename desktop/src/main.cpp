@@ -310,7 +310,7 @@ struct App {
   bool dark = false;
   bool running = true;
 
-  enum class Screen { Home, Structure, Course, Resources, Vocabulary, VocabularyEditor, Fonts, Images, Audios, Pos, QuestionEditor };
+  enum class Screen { Home, Structure, Course, Resources, Vocabulary, VocabularyEditor, Fonts, Images, Audios, Pos, QuestionEditor, Learning };
   Screen screen = Screen::Home;
   std::vector<ProjectSummary> projects;
   ProjectSummary project;
@@ -421,6 +421,9 @@ struct App {
   bool questionDirty = false;
   char questionOptions[4][256] = {};
   int questionCorrectIndex = -1;
+  std::string learningCourseId;
+  std::string learningQuestionId;
+  std::string learningHintId;
   std::vector<std::string> pickerSelected;
   char pickerSearch[256] = {};
   char vocabSearch[256] = {};
@@ -2390,6 +2393,9 @@ void renderQuestionEditor(App& app) {
     ImGui::TextDisabled("裁剪：%dms → %dms（至少 100ms）", startMs, endMs);
   }
   ImGui::Separator();
+  if (ImGui::Checkbox("启用学习提示（词下划线/词性/释义/发音）", &app.editQuestion.hintsEnabled)) {
+    app.questionDirty = true;
+  }
   ImGui::TextUnformatted("四个选项（唯一正确答案）");
   for (int i = 0; i < 4; ++i) {
     ImGui::PushID(7000 + i);
@@ -2410,6 +2416,162 @@ void renderQuestionEditor(App& app) {
   if (ImGui::Button("保存题目##question_save_bottom", ImVec2(120, 34))) app.saveQuestion();
   ImGui::SameLine();
   if (ImGui::Button("取消##question_cancel_bottom", ImVec2(90, 34))) app.screen = App::Screen::Course;
+}
+
+void renderLearning(App& app) {
+  if (app.structure.chapters.empty() && !app.folder.empty()) {
+    app.store->loadProject(app.folder, app.project, app.structure);
+  }
+  auto back = [&] {
+    if (!app.learningQuestionId.empty()) app.learningQuestionId.clear();
+    else if (!app.learningCourseId.empty()) app.learningCourseId.clear();
+    else app.screen = App::Screen::Home;
+  };
+  if (ImGui::Button("←", ImVec2(50, 30))) back();
+  ImGui::SameLine();
+  ImGui::TextDisabled("学习模式（只读）");
+  ImGui::Spacing();
+  Course* course = nullptr;
+  if (!app.learningCourseId.empty()) {
+    for (auto& chapter : app.structure.chapters) {
+      for (auto& unit : chapter.units) {
+        for (auto& item : unit.courses) {
+          if (item.id == app.learningCourseId) course = &item;
+        }
+      }
+    }
+  }
+  if (app.learningQuestionId.empty()) {
+    if (!course) {
+      pageTitle("LEARN", "选择课程", "语法与词汇学习");
+      for (auto& chapter : app.structure.chapters) {
+        for (auto& unit : chapter.units) {
+          for (auto& item : unit.courses) {
+            ImGui::PushID(item.id.c_str());
+            if (ImGui::Button((item.name + "  ·  " + chapter.name + " / " + unit.name +
+                               "  ·  " + std::to_string(item.questions.size()) + " 题").c_str(),
+                              ImVec2(-1, 44))) {
+              app.learningCourseId = item.id;
+              app.learningQuestionId.clear();
+            }
+            ImGui::PopID();
+          }
+        }
+      }
+      return;
+    }
+    pageTitle("LEARN", course->name, "选择题目");
+    for (auto& question : course->questions) {
+      ImGui::PushID(question.id.c_str());
+      const std::string title = question.sentence.empty() ? question.name : question.sentence;
+      if (ImGui::Button((title + "  ·  选择正确翻译" +
+                         (question.hintsEnabled ? "  ·  学习提示" : "  ·  无提示")).c_str(),
+                        ImVec2(-1, 44))) {
+        app.learningQuestionId = question.id;
+      }
+      ImGui::PopID();
+    }
+    return;
+  }
+  if (!course) return;
+  Question* question = nullptr;
+  for (auto& item : course->questions) {
+    if (item.id == app.learningQuestionId) question = &item;
+  }
+  if (!question) return;
+  pageTitle("LEARN", question->name, "选择正确翻译 · " + course->name);
+  app.ensureVocabularyLoaded();
+  PosStore posStore(app.currentProjectDirectory());
+  if (app.vocabulary) {
+    for (auto& segment : question->segments) {
+      if (segment.kind == "word") {
+        VocabEntry* entry = app.vocabulary->find(segment.vocabId);
+        if (!entry) {
+          ImGui::TextUnformatted("〔词汇已删除〕");
+          if (ImGui::IsItemClicked()) app.showToast("词汇已删除");
+        } else {
+          const std::string name =
+              entry->text.empty() ? (entry->meanings.empty() ? entry->id : entry->meanings.front())
+                                  : entry->text;
+          if (question->hintsEnabled) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.18f, 0.43f, 0.92f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.43f, 0.92f, 0.10f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.43f, 0.92f, 0.18f));
+            if (ImGui::Button(name.c_str(), ImVec2(0, 0))) {
+              app.learningHintId = entry->id;
+              app.playAudioFile(entry->audio, static_cast<int>(entry->audioStart),
+                                static_cast<int>(entry->audioEnd));
+            }
+            ImGui::PopStyleColor(3);
+            const ImVec2 min = ImGui::GetItemRectMin();
+            const ImVec2 max = ImGui::GetItemRectMax();
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(min.x, max.y - 2),
+                                                ImVec2(max.x, max.y - 2),
+                                                IM_COL32(47, 111, 235, 255), 1.5f);
+            ImGui::PopStyleColor();
+          } else {
+            ImGui::TextUnformatted(name.c_str());
+          }
+          ImGui::SameLine(0, 4);
+        }
+      } else {
+        ImGui::TextUnformatted(segment.text.c_str());
+        ImGui::SameLine(0, 0);
+      }
+    }
+    ImGui::NewLine();
+  }
+  if (!question->hintsEnabled) {
+    ImGui::TextDisabled("本题未启用学习提示");
+  } else if (!app.learningHintId.empty()) {
+    VocabEntry* entry = app.vocabulary->find(app.learningHintId);
+    if (entry) {
+      ImGui::Separator();
+      ImGui::TextUnformatted(("提示：" + entry->text).c_str());
+      if (!entry->phonetics.empty()) {
+        std::string phonetics;
+        for (const auto& value : entry->phonetics) {
+          if (!phonetics.empty()) phonetics += " / ";
+          phonetics += value;
+        }
+        ImGui::TextDisabled("音标：%s", phonetics.c_str());
+      } else if (!entry->phonetic.empty()) {
+        ImGui::TextDisabled("音标：%s", entry->phonetic.c_str());
+      }
+      if (entry->posMeanings.empty()) {
+        std::string meanings;
+        for (const auto& value : entry->meanings) {
+          if (!meanings.empty()) meanings += "、";
+          meanings += value;
+        }
+        ImGui::TextWrapped("释义：%s", meanings.empty() ? "暂无释义" : meanings.c_str());
+      } else {
+        for (const auto& group : entry->posMeanings) {
+          const PosEntry* pos = posStore.find(group.posId);
+          std::string meanings;
+          for (const auto& value : group.meanings) {
+            if (!meanings.empty()) meanings += "、";
+            meanings += value;
+          }
+          ImGui::TextWrapped("%s%s：%s", pos ? pos->name.c_str() : "未标注词性",
+                             pos && !pos->code.empty() ? ("（" + pos->code + "）").c_str() : "",
+                             meanings.c_str());
+        }
+      }
+      if (entry->audio.empty()) ImGui::TextDisabled("暂无示例发音");
+    }
+  }
+  ImGui::Separator();
+  ImGui::TextDisabled("选项（只读）");
+  for (std::size_t i = 0; i < question->options.size(); ++i) {
+    ImGui::PushID(static_cast<int>(i));
+    if (ImGui::Button((std::to_string(i + 1) + ". " + question->options[i]).c_str(),
+                      ImVec2(-1, 42))) {
+      app.showToast("已选择选项 " + std::to_string(i + 1));
+    }
+    ImGui::PopID();
+  }
 }
 
 void renderCourse(App& app) {
@@ -2502,9 +2664,15 @@ void renderCardDialog(App& app) {
     ImGui::Spacing();
     ImGui::TextWrapped("选择进入方式：学习播放器将在后续阶段实现；编辑可进入项目结构。");
     ImGui::Spacing();
-    if (ImGui::Button("学习（后续）", ImVec2(180, 36))) {
+    if (ImGui::Button("学习", ImVec2(180, 36))) {
       app.cardDialog = false;
-      app.showToast("学习播放器将在后续阶段实现");
+      if (!app.cardFolder.empty()) {
+        app.folder = app.cardFolder;
+        app.store->loadProject(app.folder, app.project, app.structure);
+      }
+      app.screen = App::Screen::Learning;
+      app.learningCourseId.clear();
+      app.learningQuestionId.clear();
       ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
@@ -2661,6 +2829,7 @@ void renderResourcesWithPhase2(App& app);
 void renderVocabulary(App& app);
 void renderVocabularyEditor(App& app);
 void renderQuestionEditor(App& app);
+void renderLearning(App& app);
 void renderFonts(App& app);
 void renderImages(App& app);
 void renderImageModals(App& app);
@@ -2705,6 +2874,7 @@ void renderFrame(App& app) {
     case App::Screen::Audios: renderAudios(app); break;
     case App::Screen::Pos: renderPos(app); break;
     case App::Screen::QuestionEditor: renderQuestionEditor(app); break;
+    case App::Screen::Learning: renderLearning(app); break;
   }
   ImGui::EndGroup();
   ImGui::EndChild();
@@ -3342,6 +3512,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
   bool lexiconPromptOk = false;
   bool lexiconUnicodeOk = false;
   bool questionOk = false;
+  bool learningOk = false;
   bool lexiconDuplicateOk = false;
   bool lexiconOverwriteOk = false;
   bool lexiconBadLineOk = false;
@@ -3823,6 +3994,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
       }
     }
     questionOk = savedQuestionOk && oldCompatible;
+    learningOk = savedQuestionOk;
     if (!savedQuestionId.empty()) app.openQuestionEditor(savedQuestionId);
     renderFrame(app);
     ok = saveScreenshot(app, outputDir / "question-editor-reopen.png") && ok;
@@ -4017,7 +4189,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " lexicon_prompt=" << (lexiconPromptOk ? "true" : "false")
          << " lexicon_perword=" << (lexiconPerwordOk ? "true" : "false")
          << " lexicon_unicode=" << (lexiconUnicodeOk ? "true" : "false")
-         << " question=" << (questionOk ? "true" : "false") << std::endl;
+         << " question=" << (questionOk ? "true" : "false")
+         << " learning=" << (learningOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -4030,7 +4203,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
                     audioDeleteBlocked && unusedAudioDeleted && audioTrimOk &&
                     audioRecordGraceful && invalidAudioRejected && invalidAudioNoResidue &&
                     audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
-                    posOk && posDeleteOk && questionOk && lexiconPromptOk &&
+                    posOk && posDeleteOk && questionOk && learningOk && lexiconPromptOk &&
                     lexiconPerwordOk && lexiconUnicodeOk;
   SDL_Log("SMOKE %s", pass ? "PASS" : "FAIL");
   return pass ? 0 : 2;
