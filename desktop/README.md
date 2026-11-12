@@ -241,9 +241,9 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   Unicode display text (codepoints rendered to characters); combo/image entries are not matched.
   Overwrite/merge update a matched Unicode entry in place and preserve type, codepoints, id,
   codes and media; non-empty pronunciation replaces/appends per mode. Before writing, the
-  importer preflights file-internal duplicate groups and opens a modal with **合并释义**,
-  **保留第一条** and **取消**; cancel writes nothing, and the choice is independent of the
-  external mode.
+  importer preflights file-internal duplicate groups and opens one modal listing every group
+  with per-row **合并释义** / **保留第一条** toggles, plus 全部合并/全部保留, 开始导入 and 取消;
+  cancel writes nothing, and choices are independent of the external mode.
 - Duplicate text is skipped (case-insensitive/trimmed), as are Unicode display matches and
   file-internal duplicates under the chosen policy; bad JSON and empty-text/empty-definition
   rows are invalid. A toast reports added / updated / merged / duplicate / invalid / new POS.

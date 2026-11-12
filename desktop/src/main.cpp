@@ -425,8 +425,8 @@ struct App {
   fs::path pendingLexiconFile;
   LexiconImportMode pendingLexiconMode = LexiconImportMode::Skip;
   bool lexiconDuplicatePrompt = false;
-  int pendingDuplicateGroups = 0;
-  std::vector<std::string> pendingDuplicateExamples;
+  std::vector<LexiconDuplicateGroup> pendingDuplicateGroupList;
+  std::map<std::string, LexiconDuplicateChoice> pendingDuplicateChoices;
   char fontImportName[256] = {};
 
   enum class BrowserMode { ImportConlang, ExportConlang, ImportFont, ImportImage, ImportAudio,
@@ -1549,12 +1549,12 @@ struct App {
   }
 
   void runLexiconImport(const fs::path& file, LexiconImportMode mode,
-                         LexiconDuplicateChoice choice) {
+                         const std::map<std::string, LexiconDuplicateChoice>* choices) {
     ensureVocabularyLoaded();
     ensurePosLoaded();
     LexiconImportSummary summary;
     std::string error;
-    if (!importLexiconJsonl(file, store->projectDirectory(folder), mode, choice,
+    if (!importLexiconJsonl(file, store->projectDirectory(folder), mode, choices,
                             summary, error)) {
       showToast("导入失败：" + error);
       return;
@@ -1562,8 +1562,11 @@ struct App {
     if (summary.needsDuplicateChoice) {
       pendingLexiconFile = file;
       pendingLexiconMode = mode;
-      pendingDuplicateGroups = summary.duplicateGroups;
-      pendingDuplicateExamples = summary.duplicateExamples;
+      pendingDuplicateGroupList = summary.duplicateGroupList;
+      pendingDuplicateChoices.clear();
+      for (const auto& group : summary.duplicateGroupList) {
+        pendingDuplicateChoices[group.key] = LexiconDuplicateChoice::KeepFirst;
+      }
       lexiconDuplicatePrompt = true;
       return;
     }
@@ -1599,7 +1602,7 @@ struct App {
     std::string error;
     if (browserMode == BrowserMode::ImportLexicon) {
       browserOpen = false;
-      runLexiconImport(target, lexiconMode, LexiconDuplicateChoice::Ask);
+      runLexiconImport(target, lexiconMode, nullptr);
       return;
     }
     if (browserMode == BrowserMode::ImportAudio) {
@@ -3144,7 +3147,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
     std::string askError;
     const bool askImport = importLexiconJsonl(
         lexiconSample, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Merge, LexiconDuplicateChoice::Ask, askSummary, askError);
+        LexiconImportMode::Merge, nullptr, askSummary, askError);
     lexiconPromptOk = askImport && askSummary.needsDuplicateChoice &&
                       askSummary.duplicateGroups == 2 && askSummary.added == 0 &&
                       askSummary.duplicates == 0 &&
@@ -3153,19 +3156,28 @@ int runSmoke(App& app, const fs::path& outputDir) {
     if (lexiconPromptOk) {
       app.pendingLexiconFile = lexiconSample;
       app.pendingLexiconMode = LexiconImportMode::Merge;
-      app.pendingDuplicateGroups = askSummary.duplicateGroups;
-      app.pendingDuplicateExamples = askSummary.duplicateExamples;
+      app.pendingDuplicateGroupList = askSummary.duplicateGroupList;
+      app.pendingDuplicateChoices.clear();
+      for (const auto& group : askSummary.duplicateGroupList) {
+        app.pendingDuplicateChoices[group.key] = group.text == "e"
+                ? LexiconDuplicateChoice::Merge : LexiconDuplicateChoice::KeepFirst;
+      }
       app.lexiconDuplicatePrompt = true;
       renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-duplicate-perword.png") && ok;
       ok = saveScreenshot(app, outputDir / "vocab-internal-duplicate.png") && ok;
       app.lexiconDuplicatePrompt = false;
     }
 
+    std::map<std::string, LexiconDuplicateChoice> mixedChoices = {
+        {"e", LexiconDuplicateChoice::Merge},
+        {"u", LexiconDuplicateChoice::KeepFirst},
+    };
     LexiconImportSummary summary;
     std::string lexiconError;
     const bool firstImport = importLexiconJsonl(
         lexiconSample, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Merge, LexiconDuplicateChoice::Merge, summary, lexiconError);
+        LexiconImportMode::Merge, &mixedChoices, summary, lexiconError);
     app.vocabulary->load();
     app.posStore->load();
     VocabEntry* niz = nullptr;
@@ -3180,10 +3192,10 @@ int runSmoke(App& app, const fs::path& outputDir) {
       for (const auto& meaning : niz->meanings) {
         if (meaning.find("人 者 person") != std::string::npos) hasDefinition = true;
       }
-      const bool freshMerge = summary.added >= 5000 && summary.merged >= 2 &&
-                              summary.duplicates == 0;
+      const bool freshMerge = summary.added >= 5000 && summary.merged == 1 &&
+                              summary.duplicates == 1;
       const bool repeatedMerge = summary.added == 0 && summary.merged >= 5000 &&
-                                 summary.duplicates == 0;
+                                 summary.duplicates == 1;
       bool hasDefaultCode = std::find(niz->codes.begin(), niz->codes.end(), "nız") !=
                             niz->codes.end();
       bool hasPhonetic = std::find(niz->phonetics.begin(), niz->phonetics.end(), "nı z") !=
@@ -3201,14 +3213,29 @@ int runSmoke(App& app, const fs::path& outputDir) {
       app.vocabulary->load();
     }
     if (firstImport) {
+      std::map<std::string, LexiconDuplicateChoice> allMergeChoices = {
+          {"e", LexiconDuplicateChoice::Merge},
+          {"u", LexiconDuplicateChoice::Merge},
+      };
+      LexiconImportSummary mergeAllSummary;
+      const bool mergeAllImport = importLexiconJsonl(
+          lexiconSample, app.store->projectDirectory(app.folder),
+          LexiconImportMode::Merge, &allMergeChoices, mergeAllSummary, lexiconError);
+      const bool mergeAllOk = mergeAllImport && mergeAllSummary.added == 0 &&
+                              mergeAllSummary.merged == 5314 &&
+                              mergeAllSummary.duplicates == 0;
+      std::map<std::string, LexiconDuplicateChoice> allKeepChoices = {
+          {"e", LexiconDuplicateChoice::KeepFirst},
+          {"u", LexiconDuplicateChoice::KeepFirst},
+      };
       LexiconImportSummary duplicateSummary;
       const bool duplicateImport = importLexiconJsonl(
           lexiconSample, app.store->projectDirectory(app.folder),
-          LexiconImportMode::Merge, LexiconDuplicateChoice::KeepFirst,
+          LexiconImportMode::Merge, &allKeepChoices,
           duplicateSummary, lexiconError);
-      lexiconDuplicateOk = duplicateImport && duplicateSummary.added == 0 &&
+      lexiconDuplicateOk = mergeAllOk && duplicateImport && duplicateSummary.added == 0 &&
                            duplicateSummary.duplicates == 2 &&
-                           duplicateSummary.merged >= 5000;
+                           duplicateSummary.merged == 5312;
       const fs::path badLexicon = "/tmp/lexicon-bad.jsonl";
       {
         std::ofstream bad(badLexicon);
@@ -3217,13 +3244,12 @@ int runSmoke(App& app, const fs::path& outputDir) {
       LexiconImportSummary badSummary;
       const bool badImport = importLexiconJsonl(
           badLexicon, app.store->projectDirectory(app.folder),
-          LexiconImportMode::Skip, LexiconDuplicateChoice::KeepFirst,
-          badSummary, lexiconError);
+          LexiconImportMode::Skip, &allKeepChoices, badSummary, lexiconError);
       lexiconBadLineOk = badImport && badSummary.invalid == 1 && badSummary.added == 0;
       LexiconImportSummary overwriteSummary;
       const bool overwriteImport = importLexiconJsonl(
           lexiconSample, app.store->projectDirectory(app.folder),
-          LexiconImportMode::Overwrite, LexiconDuplicateChoice::KeepFirst,
+          LexiconImportMode::Overwrite, &allKeepChoices,
           overwriteSummary, lexiconError);
       lexiconOverwriteOk = overwriteImport && overwriteSummary.added == 0 &&
                            overwriteSummary.updated >= 5000 &&
@@ -3302,9 +3328,10 @@ int runSmoke(App& app, const fs::path& outputDir) {
     }
     LexiconImportSummary unicodeMerge;
     std::string unicodeError;
+    std::map<std::string, LexiconDuplicateChoice> unicodeChoices;
     const bool unicodeMergeImport = importLexiconJsonl(
         unicodeJsonl, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Merge, LexiconDuplicateChoice::KeepFirst,
+        LexiconImportMode::Merge, &unicodeChoices,
         unicodeMerge, unicodeError);
     app.vocabulary->load();
     const VocabEntry* unicodeAfterMerge = nullptr;
@@ -3335,7 +3362,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
     LexiconImportSummary unicodeOverwrite;
     const bool unicodeOverwriteImport = importLexiconJsonl(
         unicodeJsonl, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Overwrite, LexiconDuplicateChoice::KeepFirst,
+        LexiconImportMode::Overwrite, &unicodeChoices,
         unicodeOverwrite, unicodeError);
     app.vocabulary->load();
     const VocabEntry* unicodeAfterOverwrite = nullptr;
@@ -3357,7 +3384,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
     LexiconImportSummary unicodeSkip;
     const bool unicodeSkipImport = importLexiconJsonl(
         unicodeJsonl, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Skip, LexiconDuplicateChoice::KeepFirst,
+        LexiconImportMode::Skip, &unicodeChoices,
         unicodeSkip, unicodeError);
     lexiconUnicodeOk = unicodeMergeOk && unicodeOverwriteOk && unicodeSkipImport &&
                        unicodeSkip.duplicates == 1 && unicodeSkip.added == 0;
@@ -3603,6 +3630,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " lexicon_merge=" << (lexiconMergeOk ? "true" : "false")
          << " picker_cross_page=" << (pickerCrossPageOk ? "true" : "false")
          << " lexicon_prompt=" << (lexiconPromptOk ? "true" : "false")
+         << " lexicon_perword=" << (lexiconOk ? "true" : "false")
          << " lexicon_unicode=" << (lexiconUnicodeOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
@@ -4410,42 +4438,54 @@ void renderPicker(App& app) {
 
 void renderLexiconDuplicateModal(App& app) {
   if (!app.lexiconDuplicatePrompt) return;
-  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 680) * 0.5f,
-                                 (ImGui::GetIO().DisplaySize.y - 300) * 0.5f),
+  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 760) * 0.5f,
+                                 (ImGui::GetIO().DisplaySize.y - 420) * 0.5f),
                           ImGuiCond_Always);
-  ImGui::SetNextWindowSize(ImVec2(680, 300), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(760, 420), ImGuiCond_Always);
   bool open = true;
-  if (!ImGui::Begin("文件内有重复词##lexicon_duplicate", &open,
+  if (!ImGui::Begin("文件内重复词（逐词选择）##lexicon_duplicate", &open,
                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
     ImGui::End();
     if (!open) app.lexiconDuplicatePrompt = false;
     return;
   }
-  ImGui::TextWrapped("文件中检测到 %d 组重复词。", app.pendingDuplicateGroups);
-  if (!app.pendingDuplicateExamples.empty()) {
-    std::string examples;
-    for (const auto& value : app.pendingDuplicateExamples) {
-      if (!examples.empty()) examples += "、";
-      examples += value;
+  ImGui::TextWrapped("检测到 %zu 组文件内重复词。请逐词选择处理方式；取消不写入任何数据。",
+                     app.pendingDuplicateGroupList.size());
+  ImGui::Spacing();
+  for (const auto& group : app.pendingDuplicateGroupList) {
+    ImGui::PushID(group.key.c_str());
+    bool merge = app.pendingDuplicateChoices[group.key] == LexiconDuplicateChoice::Merge;
+    ImGui::TextUnformatted(group.text.c_str());
+    ImGui::SameLine(220);
+    ImGui::TextDisabled("%d 条记录", group.rows);
+    ImGui::SameLine(360);
+    if (ImGui::RadioButton("合并释义", merge)) {
+      app.pendingDuplicateChoices[group.key] = LexiconDuplicateChoice::Merge;
     }
-    ImGui::TextWrapped("例如：%s", examples.c_str());
+    ImGui::SameLine();
+    if (ImGui::RadioButton("保留第一条", !merge)) {
+      app.pendingDuplicateChoices[group.key] = LexiconDuplicateChoice::KeepFirst;
+    }
+    ImGui::PopID();
   }
   ImGui::Spacing();
-  ImGui::TextWrapped("合并释义：后续重复的释义/音标合并进第一条，只生成一条词汇。");
-  ImGui::TextWrapped("保留第一条：丢弃后续重复。");
-  ImGui::TextWrapped("取消：不写入任何数据。");
-  ImGui::Spacing();
-  if (ImGui::Button("合并释义", ImVec2(130, 36))) {
-    app.lexiconDuplicatePrompt = false;
-    app.runLexiconImport(app.pendingLexiconFile, app.pendingLexiconMode,
-                         LexiconDuplicateChoice::Merge);
+  if (ImGui::Button("全部合并", ImVec2(100, 30))) {
+    for (const auto& group : app.pendingDuplicateGroupList) {
+      app.pendingDuplicateChoices[group.key] = LexiconDuplicateChoice::Merge;
+    }
   }
   ImGui::SameLine();
-  if (ImGui::Button("保留第一条", ImVec2(130, 36))) {
+  if (ImGui::Button("全部保留", ImVec2(100, 30))) {
+    for (const auto& group : app.pendingDuplicateGroupList) {
+      app.pendingDuplicateChoices[group.key] = LexiconDuplicateChoice::KeepFirst;
+    }
+  }
+  ImGui::Spacing();
+  if (ImGui::Button("开始导入", ImVec2(130, 36))) {
+    auto choices = app.pendingDuplicateChoices;
     app.lexiconDuplicatePrompt = false;
-    app.runLexiconImport(app.pendingLexiconFile, app.pendingLexiconMode,
-                         LexiconDuplicateChoice::KeepFirst);
+    app.runLexiconImport(app.pendingLexiconFile, app.pendingLexiconMode, &choices);
   }
   ImGui::SameLine();
   if (ImGui::Button("取消", ImVec2(100, 36))) {

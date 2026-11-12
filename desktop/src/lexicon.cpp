@@ -66,7 +66,8 @@ std::string entryTextFromLine(const std::string& line) {
 }  // namespace
 
 bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
-                        LexiconImportMode mode, LexiconDuplicateChoice duplicateChoice,
+                        LexiconImportMode mode,
+                        const std::map<std::string, LexiconDuplicateChoice>* duplicateChoices,
                         LexiconImportSummary& summary, std::string& error) {
   summary = LexiconImportSummary{};
   std::ifstream input(file, std::ios::binary);
@@ -133,12 +134,17 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
   for (const auto& item : duplicateCounts) {
     if (item.second > 1) {
       summary.duplicateGroups++;
+      LexiconDuplicateGroup group;
+      group.key = item.first;
+      group.text = duplicateLabels[item.first];
+      group.rows = item.second;
+      summary.duplicateGroupList.push_back(group);
       if (summary.duplicateExamples.size() < 6) {
-        summary.duplicateExamples.push_back(duplicateLabels[item.first]);
+        summary.duplicateExamples.push_back(group.text);
       }
     }
   }
-  if (summary.duplicateGroups > 0 && duplicateChoice == LexiconDuplicateChoice::Ask) {
+  if (summary.duplicateGroups > 0 && duplicateChoices == nullptr) {
     summary.needsDuplicateChoice = true;
     return true;
   }
@@ -304,7 +310,12 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     }
     const std::string pronunciation = trim(jsonText(value, "pronunciation"));
     if (!seen.insert(normalized).second) {
-      if (duplicateChoice == LexiconDuplicateChoice::Merge) {
+      LexiconDuplicateChoice decision = LexiconDuplicateChoice::KeepFirst;
+      if (duplicateChoices != nullptr) {
+        auto chosen = duplicateChoices->find(normalized);
+        if (chosen != duplicateChoices->end()) decision = chosen->second;
+      }
+      if (decision == LexiconDuplicateChoice::Merge) {
         auto first = existingByText.find(normalized);
         if (first != existingByText.end()) {
           ensureCode(first->second, word);

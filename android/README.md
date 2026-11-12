@@ -218,9 +218,10 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
 - Matching uses text (trimmed/case-insensitive) and Unicode display text (codepoints rendered
   to characters); combo/image entries are not matched. Skip counts both kinds; overwrite/merge
   update the Unicode entry in place and preserve its type, codepoints, id, codes and media.
-- Before writing, the importer pre-scans file-internal duplicate groups. If any exist, a dialog
-  shows the group count/examples and asks **合并释义** or **保留第一条**; cancel/close writes
-  nothing. The choice is independent of the external skip/overwrite/merge mode. Bad JSON/
+- Before writing, the importer pre-scans file-internal duplicate groups. If any exist, one dialog
+  is shown per group (for example “文件内重复词 1/2：e”) with **合并释义** / **保留第一条**;
+  closing/cancelling any dialog terminates the whole import without writing. Choices are
+  accumulated per word and are independent of the external skip/overwrite/merge mode. Bad JSON/
   blank-text/empty-definition rows are invalid; `_meta` is skipped. The result dialog reports
   added / updated / merged / duplicate / invalid / new POS counts.
 - Overwrite matches existing text (trimmed, case-insensitive) and updates in place: id/codes/

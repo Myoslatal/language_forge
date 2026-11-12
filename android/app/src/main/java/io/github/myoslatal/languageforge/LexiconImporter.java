@@ -25,7 +25,13 @@ final class LexiconImporter {
 
     enum Mode { SKIP, OVERWRITE, MERGE }
 
-    enum DuplicateChoice { ASK, MERGE, KEEP_FIRST }
+    enum DuplicateChoice { MERGE, KEEP_FIRST }
+
+    static final class DuplicateGroup {
+        String key;
+        String text;
+        int rows;
+    }
 
     static final class Summary {
         int added;
@@ -37,6 +43,7 @@ final class LexiconImporter {
         boolean needsDuplicateChoice;
         int duplicateGroups;
         final List<String> duplicateExamples = new ArrayList<>();
+        final List<DuplicateGroup> duplicateGroupList = new ArrayList<>();
     }
 
     private LexiconImporter() {
@@ -44,11 +51,12 @@ final class LexiconImporter {
 
     static Summary importFrom(InputStream input, File projectDirectory, Mode mode)
             throws IOException {
-        return importFrom(input, projectDirectory, mode, DuplicateChoice.ASK);
+        return importFrom(input, projectDirectory, mode, null);
     }
 
     static Summary importFrom(InputStream input, File projectDirectory, Mode mode,
-                              DuplicateChoice duplicateChoice) throws IOException {
+                              Map<String, DuplicateChoice> duplicateChoices)
+            throws IOException {
         if (input == null || projectDirectory == null) {
             throw new IOException("词表文件不可用");
         }
@@ -93,12 +101,17 @@ final class LexiconImporter {
         for (Map.Entry<String, Integer> duplicate : duplicateCounts.entrySet()) {
             if (duplicate.getValue() > 1) {
                 summary.duplicateGroups++;
+                DuplicateGroup group = new DuplicateGroup();
+                group.key = duplicate.getKey();
+                group.text = duplicateLabels.get(duplicate.getKey());
+                group.rows = duplicate.getValue();
+                summary.duplicateGroupList.add(group);
                 if (summary.duplicateExamples.size() < 6) {
-                    summary.duplicateExamples.add(duplicateLabels.get(duplicate.getKey()));
+                    summary.duplicateExamples.add(group.text);
                 }
             }
         }
-        if (summary.duplicateGroups > 0 && duplicateChoice == DuplicateChoice.ASK) {
+        if (summary.duplicateGroups > 0 && duplicateChoices == null) {
             summary.needsDuplicateChoice = true;
             return summary;
         }
@@ -206,7 +219,10 @@ final class LexiconImporter {
                     object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
             if (!seen.add(normalized)) {
                 VocabularyEntry first = existingByText.get(normalized);
-                if (duplicateChoice == DuplicateChoice.MERGE && first != null) {
+                DuplicateChoice decision = duplicateChoices == null
+                        ? DuplicateChoice.KEEP_FIRST
+                        : duplicateChoices.getOrDefault(normalized, DuplicateChoice.KEEP_FIRST);
+                if (decision == DuplicateChoice.MERGE && first != null) {
                     ensureCode(first, text);
                     mergeEntry(first, meanings, importedPhonetic, pos);
                     summary.merged++;

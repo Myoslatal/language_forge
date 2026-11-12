@@ -25,8 +25,10 @@ import androidx.core.content.ContextCompat;
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -396,19 +398,20 @@ public class VocabularyListActivity extends ForgeActivity {
             toast("请选择 .jsonl/.json/.txt 词表文件");
             return;
         }
-        runImport(uri, pendingMode, LexiconImporter.DuplicateChoice.ASK);
+        runImport(uri, pendingMode, null);
     }
 
     private void runImport(Uri uri, LexiconImporter.Mode mode,
-                           LexiconImporter.DuplicateChoice duplicateChoice) {
+                           Map<String, LexiconImporter.DuplicateChoice> duplicateChoices) {
         toast("正在导入词表…");
         ioExecutor.execute(() -> {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
                 LexiconImporter.Summary summary =
-                        LexiconImporter.importFrom(input, projectDirectory, mode, duplicateChoice);
+                        LexiconImporter.importFrom(input, projectDirectory, mode, duplicateChoices);
                 runOnUiThread(() -> {
                     if (summary.needsDuplicateChoice) {
-                        showInternalDuplicateDialog(uri, mode, summary);
+                        showDuplicateGroupDialog(uri, mode, summary, 0,
+                                new LinkedHashMap<>());
                         return;
                     }
                     store.load();
@@ -424,27 +427,28 @@ public class VocabularyListActivity extends ForgeActivity {
         });
     }
 
-    private void showInternalDuplicateDialog(Uri uri, LexiconImporter.Mode mode,
-                                             LexiconImporter.Summary summary) {
-        StringBuilder body = new StringBuilder();
-        body.append("文件中检测到 ").append(summary.duplicateGroups).append(" 组重复词");
-        if (!summary.duplicateExamples.isEmpty()) {
-            body.append("（例如：");
-            for (int i = 0; i < summary.duplicateExamples.size(); i++) {
-                if (i > 0) body.append("、");
-                body.append(summary.duplicateExamples.get(i));
-            }
-            body.append("）");
+    private void showDuplicateGroupDialog(Uri uri, LexiconImporter.Mode mode,
+                                          LexiconImporter.Summary summary, int index,
+                                          Map<String, LexiconImporter.DuplicateChoice> choices) {
+        if (index >= summary.duplicateGroupList.size()) {
+            runImport(uri, mode, choices);
+            return;
         }
-        body.append("。\n\n合并释义：后续重复的释义/音标合并进第一条，只生成一条词汇。\n")
-                .append("保留第一条：丢弃后续重复。\n取消/关闭：不写入任何数据。");
+        LexiconImporter.DuplicateGroup group = summary.duplicateGroupList.get(index);
         ForgeDialog dialog = new ForgeDialog(this);
-        dialog.setTitle("文件内有重复词");
-        dialog.setBodyText(body.toString());
-        dialog.setNegativeButton("保留第一条",
-                (d, which) -> runImport(uri, mode, LexiconImporter.DuplicateChoice.KEEP_FIRST));
-        dialog.setPositiveButton("合并释义",
-                (d, which) -> runImport(uri, mode, LexiconImporter.DuplicateChoice.MERGE));
+        dialog.setTitle("文件内重复词 " + (index + 1) + "/"
+                + summary.duplicateGroupList.size() + "：" + group.text);
+        dialog.setBodyText("该词共有 " + group.rows + " 条记录。\n\n"
+                + "合并释义：把后续重复的释义/音标按词性合并进首条，只生成一条词汇。\n"
+                + "保留第一条：丢弃后续重复。\n取消/关闭：终止整次导入，不写入任何数据。");
+        dialog.setNegativeButton("保留第一条", (d, which) -> {
+            choices.put(group.key, LexiconImporter.DuplicateChoice.KEEP_FIRST);
+            showDuplicateGroupDialog(uri, mode, summary, index + 1, choices);
+        });
+        dialog.setPositiveButton("合并释义", (d, which) -> {
+            choices.put(group.key, LexiconImporter.DuplicateChoice.MERGE);
+            showDuplicateGroupDialog(uri, mode, summary, index + 1, choices);
+        });
         dialog.show();
     }
 
