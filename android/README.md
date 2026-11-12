@@ -215,9 +215,14 @@ project folder to `VocabularyListActivity`; the card count is reloaded from disk
   aggregated `meanings`), and `type` to a POS by code first, then name. Meta types are created
   in meta order with `name=label`, `code=k`, description “Lexicon 词表导入”; existing POS
   are reused without renaming. Array entries are imported only via `rendered` as text.
-- Duplicate text (case-insensitive/trimmed) is skipped against existing entries and earlier
-  file rows; bad JSON/blank-text/empty-definition rows are counted invalid; `_meta` is skipped.
-  The result dialog reports added / duplicate / invalid / new POS counts.
+- Matching uses text (trimmed/case-insensitive) and Unicode display text (codepoints rendered
+  to characters); combo/image entries are not matched. Skip counts both kinds; overwrite/merge
+  update the Unicode entry in place and preserve its type, codepoints, id, codes and media.
+- Before writing, the importer pre-scans file-internal duplicate groups. If any exist, a dialog
+  shows the group count/examples and asks **合并释义** or **保留第一条**; cancel/close writes
+  nothing. The choice is independent of the external skip/overwrite/merge mode. Bad JSON/
+  blank-text/empty-definition rows are invalid; `_meta` is skipped. The result dialog reports
+  added / updated / merged / duplicate / invalid / new POS counts.
 - Overwrite matches existing text (trimmed, case-insensitive) and updates in place: id/codes/
   media are preserved, non-empty pronunciation replaces the sound list, POS groups replace by
   posId or append, and meanings re-aggregate. Merge keeps the existing entry and appends

@@ -396,12 +396,21 @@ public class VocabularyListActivity extends ForgeActivity {
             toast("请选择 .jsonl/.json/.txt 词表文件");
             return;
         }
+        runImport(uri, pendingMode, LexiconImporter.DuplicateChoice.ASK);
+    }
+
+    private void runImport(Uri uri, LexiconImporter.Mode mode,
+                           LexiconImporter.DuplicateChoice duplicateChoice) {
         toast("正在导入词表…");
         ioExecutor.execute(() -> {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
                 LexiconImporter.Summary summary =
-                        LexiconImporter.importFrom(input, projectDirectory, pendingMode);
+                        LexiconImporter.importFrom(input, projectDirectory, mode, duplicateChoice);
                 runOnUiThread(() -> {
+                    if (summary.needsDuplicateChoice) {
+                        showInternalDuplicateDialog(uri, mode, summary);
+                        return;
+                    }
                     store.load();
                     posStore.load();
                     page = 1;
@@ -413,6 +422,30 @@ public class VocabularyListActivity extends ForgeActivity {
                         ? "无法读取词表" : e.getMessage())));
             }
         });
+    }
+
+    private void showInternalDuplicateDialog(Uri uri, LexiconImporter.Mode mode,
+                                             LexiconImporter.Summary summary) {
+        StringBuilder body = new StringBuilder();
+        body.append("文件中检测到 ").append(summary.duplicateGroups).append(" 组重复词");
+        if (!summary.duplicateExamples.isEmpty()) {
+            body.append("（例如：");
+            for (int i = 0; i < summary.duplicateExamples.size(); i++) {
+                if (i > 0) body.append("、");
+                body.append(summary.duplicateExamples.get(i));
+            }
+            body.append("）");
+        }
+        body.append("。\n\n合并释义：后续重复的释义/音标合并进第一条，只生成一条词汇。\n")
+                .append("保留第一条：丢弃后续重复。\n取消/关闭：不写入任何数据。");
+        ForgeDialog dialog = new ForgeDialog(this);
+        dialog.setTitle("文件内有重复词");
+        dialog.setBodyText(body.toString());
+        dialog.setNegativeButton("保留第一条",
+                (d, which) -> runImport(uri, mode, LexiconImporter.DuplicateChoice.KEEP_FIRST));
+        dialog.setPositiveButton("合并释义",
+                (d, which) -> runImport(uri, mode, LexiconImporter.DuplicateChoice.MERGE));
+        dialog.show();
     }
 
     private String displayName(Uri uri) {

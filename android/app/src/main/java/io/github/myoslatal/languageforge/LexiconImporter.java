@@ -25,6 +25,8 @@ final class LexiconImporter {
 
     enum Mode { SKIP, OVERWRITE, MERGE }
 
+    enum DuplicateChoice { ASK, MERGE, KEEP_FIRST }
+
     static final class Summary {
         int added;
         int updated;
@@ -32,12 +34,21 @@ final class LexiconImporter {
         int duplicates;
         int invalid;
         int newPos;
+        boolean needsDuplicateChoice;
+        int duplicateGroups;
+        final List<String> duplicateExamples = new ArrayList<>();
     }
 
     private LexiconImporter() {
     }
 
-    static Summary importFrom(InputStream input, File projectDirectory, Mode mode) throws IOException {
+    static Summary importFrom(InputStream input, File projectDirectory, Mode mode)
+            throws IOException {
+        return importFrom(input, projectDirectory, mode, DuplicateChoice.ASK);
+    }
+
+    static Summary importFrom(InputStream input, File projectDirectory, Mode mode,
+                              DuplicateChoice duplicateChoice) throws IOException {
         if (input == null || projectDirectory == null) {
             throw new IOException("词表文件不可用");
         }
@@ -68,6 +79,28 @@ final class LexiconImporter {
                 }
             }
             entryLines.add(trimmed);
+        }
+
+        Map<String, Integer> duplicateCounts = new LinkedHashMap<>();
+        Map<String, String> duplicateLabels = new LinkedHashMap<>();
+        for (String line : entryLines) {
+            String text = extractText(line);
+            if (text.isEmpty()) continue;
+            String normalized = normalizeText(text);
+            duplicateCounts.put(normalized, duplicateCounts.getOrDefault(normalized, 0) + 1);
+            duplicateLabels.putIfAbsent(normalized, text);
+        }
+        for (Map.Entry<String, Integer> duplicate : duplicateCounts.entrySet()) {
+            if (duplicate.getValue() > 1) {
+                summary.duplicateGroups++;
+                if (summary.duplicateExamples.size() < 6) {
+                    summary.duplicateExamples.add(duplicateLabels.get(duplicate.getKey()));
+                }
+            }
+        }
+        if (summary.duplicateGroups > 0 && duplicateChoice == DuplicateChoice.ASK) {
+            summary.needsDuplicateChoice = true;
+            return summary;
         }
 
         Map<String, String> metaLabels = new LinkedHashMap<>();
@@ -121,7 +154,15 @@ final class LexiconImporter {
 
         Map<String, VocabularyEntry> existingByText = new HashMap<>();
         for (VocabularyEntry entry : vocabulary.entries) {
-            existingByText.putIfAbsent(normalizeText(entry.text), entry);
+            String key = "";
+            if (VocabularyEntry.TYPE_TEXT.equals(entry.type) && !entry.text.isEmpty()) {
+                key = normalizeText(entry.text);
+            } else if (VocabularyEntry.TYPE_UNICODE.equals(entry.type)) {
+                key = normalizeText(VocabularyStore.unicodeText(entry.codepoints));
+            }
+            if (!key.isEmpty()) {
+                existingByText.putIfAbsent(key, entry);
+            }
         }
         Set<String> seen = new HashSet<>();
 
@@ -165,7 +206,8 @@ final class LexiconImporter {
                     object.optString("pronunciation", ""), VocabularyStore.MAX_PHONETIC);
             if (!seen.add(normalized)) {
                 VocabularyEntry first = existingByText.get(normalized);
-                if (mode == Mode.MERGE && first != null) {
+                if (duplicateChoice == DuplicateChoice.MERGE && first != null) {
+                    ensureCode(first, text);
                     mergeEntry(first, meanings, importedPhonetic, pos);
                     summary.merged++;
                 } else {
@@ -179,6 +221,7 @@ final class LexiconImporter {
                     summary.duplicates++;
                     continue;
                 }
+                ensureCode(existing, text);
                 if (mode == Mode.MERGE) {
                     mergeEntry(existing, meanings, importedPhonetic, pos);
                     summary.merged++;
@@ -219,6 +262,25 @@ final class LexiconImporter {
         return summary;
     }
 
+    private static String extractText(String line) {
+        try {
+            JSONObject object = new JSONObject(line);
+            if (object.optJSONObject("_meta") != null) {
+                return "";
+            }
+            String text = object.optString("rendered", "").trim();
+            if (text.isEmpty()) {
+                Object rawEntry = object.opt("entry");
+                if (rawEntry instanceof String) {
+                    text = ((String) rawEntry).trim();
+                }
+            }
+            return text;
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
     private static void addPhonetic(VocabularyEntry entry, String value) {
         String clean = VocabularyStore.clean(value, VocabularyStore.MAX_PHONETIC);
         if (clean.isEmpty()) return;
@@ -244,7 +306,6 @@ final class LexiconImporter {
 
     private static void mergeEntry(VocabularyEntry entry, List<String> meanings,
                                    String phonetic, PosEntry pos) {
-        ensureCode(entry, entry.text);
         addPhonetic(entry, phonetic);
         if (pos != null) {
             VocabularyEntry.PosMeaning target = null;
@@ -276,7 +337,6 @@ final class LexiconImporter {
 
     private static void overwriteEntry(VocabularyEntry entry, List<String> meanings,
                                        String phonetic, PosEntry pos) {
-        ensureCode(entry, entry.text);
         if (!phonetic.isEmpty()) {
             entry.phonetics.clear();
             entry.phonetics.add(phonetic);

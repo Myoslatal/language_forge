@@ -49,11 +49,25 @@ void addMeaning(std::vector<std::string>& values, const std::string& value) {
   }
 }
 
+std::string entryTextFromLine(const std::string& line) {
+  try {
+    json value = json::parse(line);
+    if (value.contains("_meta") && value["_meta"].is_object()) return "";
+    std::string word = jsonText(value, "rendered");
+    if (word.empty() && value.contains("entry") && value["entry"].is_string()) {
+      word = trim(value["entry"].get<std::string>());
+    }
+    return word;
+  } catch (...) {
+    return "";
+  }
+}
+
 }  // namespace
 
 bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
-                        LexiconImportMode mode, LexiconImportSummary& summary,
-                        std::string& error) {
+                        LexiconImportMode mode, LexiconDuplicateChoice duplicateChoice,
+                        LexiconImportSummary& summary, std::string& error) {
   summary = LexiconImportSummary{};
   std::ifstream input(file, std::ios::binary);
   if (!input) {
@@ -107,6 +121,28 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     entryLines.push_back(text);
   }
 
+  std::map<std::string, int> duplicateCounts;
+  std::map<std::string, std::string> duplicateLabels;
+  for (const auto& line : entryLines) {
+    const std::string word = entryTextFromLine(line);
+    if (word.empty()) continue;
+    const std::string normalized = lower(word);
+    duplicateCounts[normalized]++;
+    duplicateLabels.emplace(normalized, word);
+  }
+  for (const auto& item : duplicateCounts) {
+    if (item.second > 1) {
+      summary.duplicateGroups++;
+      if (summary.duplicateExamples.size() < 6) {
+        summary.duplicateExamples.push_back(duplicateLabels[item.first]);
+      }
+    }
+  }
+  if (summary.duplicateGroups > 0 && duplicateChoice == LexiconDuplicateChoice::Ask) {
+    summary.needsDuplicateChoice = true;
+    return true;
+  }
+
   auto findCode = [&](const std::string& code) -> PosEntry* {
     if (code.empty()) return nullptr;
     for (auto& item : pos.entries) {
@@ -140,7 +176,13 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
   vocabulary.entries.reserve(vocabulary.entries.size() + entryLines.size());
   std::map<std::string, VocabEntry*> existingByText;
   for (auto& entry : vocabulary.entries) {
-    existingByText.emplace(lower(trim(entry.text)), &entry);
+    std::string key;
+    if (entry.type == "text" && !entry.text.empty()) {
+      key = lower(trim(entry.text));
+    } else if (entry.type == "unicode") {
+      key = lower(trim(codepointsToUtf8(entry.codepoints)));
+    }
+    if (!key.empty()) existingByText.emplace(key, &entry);
   }
   std::set<std::string> seen;
 
@@ -176,7 +218,6 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
   };
   auto mergeEntry = [&](VocabEntry* entry, const std::vector<std::string>& meanings,
                         const std::string& pronunciation, const std::string& posId) {
-    ensureCode(entry, entry->text);
     addPhonetic(entry, pronunciation);
     if (!posId.empty()) {
       PosMeaning* target = nullptr;
@@ -201,7 +242,6 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
   };
   auto overwriteEntry = [&](VocabEntry* entry, const std::vector<std::string>& meanings,
                             const std::string& pronunciation, const std::string& posId) {
-    ensureCode(entry, entry->text);
     if (!pronunciation.empty()) {
       entry->phonetics.clear();
       entry->phonetics.push_back(pronunciation);
@@ -264,9 +304,10 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     }
     const std::string pronunciation = trim(jsonText(value, "pronunciation"));
     if (!seen.insert(normalized).second) {
-      if (mode == LexiconImportMode::Merge) {
+      if (duplicateChoice == LexiconDuplicateChoice::Merge) {
         auto first = existingByText.find(normalized);
         if (first != existingByText.end()) {
+          ensureCode(first->second, word);
           mergeEntry(first->second, meanings, pronunciation, posId);
           summary.merged++;
         } else {
@@ -282,9 +323,11 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
       if (mode == LexiconImportMode::Skip) {
         summary.duplicates++;
       } else if (mode == LexiconImportMode::Merge) {
+        ensureCode(existingIt->second, word);
         mergeEntry(existingIt->second, meanings, pronunciation, posId);
         summary.merged++;
       } else {
+        ensureCode(existingIt->second, word);
         overwriteEntry(existingIt->second, meanings, pronunciation, posId);
         summary.updated++;
       }

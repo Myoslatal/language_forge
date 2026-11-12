@@ -237,14 +237,16 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   `vocabulary.json`. The first non-empty line is the Lexicon `_meta` (15 types in the sample);
   `rendered`/string `entry` becomes text, `pronunciation` becomes phonetic, and
   `definition`/`detail` become the POS meanings and aggregate. POS are matched by code then
-  name and created in meta order when absent. Overwrite matches text (trimmed/case-insensitive)
-  and updates in place, preserving id/codes/media; non-empty pronunciation replaces the sound
-  list, POS groups replace by posId or append, and meanings re-aggregate. Merge keeps the entry
-  and appends deduplicated meanings/phonetics, adding missing POS groups; all modes ensure the
-  text is present in codes. File-internal duplicates merge into the first row in merge mode.
-- Duplicate text is skipped (case-insensitive/trimmed), as are file-internal duplicates; bad
-  JSON and empty-text/empty-definition rows are counted invalid. A toast reports added /
-  duplicates / invalid / new POS.
+  name and created in meta order when absent. Matching uses text (trimmed/case-insensitive) and
+  Unicode display text (codepoints rendered to characters); combo/image entries are not matched.
+  Overwrite/merge update a matched Unicode entry in place and preserve type, codepoints, id,
+  codes and media; non-empty pronunciation replaces/appends per mode. Before writing, the
+  importer preflights file-internal duplicate groups and opens a modal with **合并释义**,
+  **保留第一条** and **取消**; cancel writes nothing, and the choice is independent of the
+  external mode.
+- Duplicate text is skipped (case-insensitive/trimmed), as are Unicode display matches and
+  file-internal duplicates under the chosen policy; bad JSON and empty-text/empty-definition
+  rows are invalid. A toast reports added / updated / merged / duplicate / invalid / new POS.
 - The vocabulary list and picker both paginate at 50 rows with prev/next and an ImGui SliderInt
   jump-to-page slider; search resets to page 1 and picker selections persist across pages.
   Lists/picker show all phonetics joined by “ / ” and search every value. Smoke imports the full

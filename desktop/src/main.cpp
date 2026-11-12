@@ -422,6 +422,11 @@ struct App {
   bool vocabScrollTop = false;
   int pickerPage = 1;
   LexiconImportMode lexiconMode = LexiconImportMode::Skip;
+  fs::path pendingLexiconFile;
+  LexiconImportMode pendingLexiconMode = LexiconImportMode::Skip;
+  bool lexiconDuplicatePrompt = false;
+  int pendingDuplicateGroups = 0;
+  std::vector<std::string> pendingDuplicateExamples;
   char fontImportName[256] = {};
 
   enum class BrowserMode { ImportConlang, ExportConlang, ImportFont, ImportImage, ImportAudio,
@@ -1543,6 +1548,36 @@ struct App {
     browserError.clear();
   }
 
+  void runLexiconImport(const fs::path& file, LexiconImportMode mode,
+                         LexiconDuplicateChoice choice) {
+    ensureVocabularyLoaded();
+    ensurePosLoaded();
+    LexiconImportSummary summary;
+    std::string error;
+    if (!importLexiconJsonl(file, store->projectDirectory(folder), mode, choice,
+                            summary, error)) {
+      showToast("导入失败：" + error);
+      return;
+    }
+    if (summary.needsDuplicateChoice) {
+      pendingLexiconFile = file;
+      pendingLexiconMode = mode;
+      pendingDuplicateGroups = summary.duplicateGroups;
+      pendingDuplicateExamples = summary.duplicateExamples;
+      lexiconDuplicatePrompt = true;
+      return;
+    }
+    if (vocabulary) vocabulary->load();
+    if (posStore) posStore->load();
+    screen = Screen::Vocabulary;
+    showToast("导入完成：新增 " + std::to_string(summary.added) + "，更新 "
+              + std::to_string(summary.updated) + "，合并 "
+              + std::to_string(summary.merged) + "，重复 "
+              + std::to_string(summary.duplicates) + "，无效 "
+              + std::to_string(summary.invalid) + "，新词性 "
+              + std::to_string(summary.newPos));
+  }
+
   void applyBrowser() {
     std::string filename = browserFileInput;
     if (filename.empty()) {
@@ -1564,22 +1599,7 @@ struct App {
     std::string error;
     if (browserMode == BrowserMode::ImportLexicon) {
       browserOpen = false;
-      ensureVocabularyLoaded();
-      ensurePosLoaded();
-      LexiconImportSummary summary;
-      if (!importLexiconJsonl(target, store->projectDirectory(folder), lexiconMode,
-                              summary, error)) {
-        showToast("导入失败：" + error);
-        return;
-      }
-      if (vocabulary) vocabulary->load();
-      if (posStore) posStore->load();
-      screen = Screen::Vocabulary;
-      showToast("导入完成：新增 " + std::to_string(summary.added) + "，更新 "
-                + std::to_string(summary.updated) + "，重复 "
-                + std::to_string(summary.duplicates) + "，无效 "
-                + std::to_string(summary.invalid) + "，新词性 "
-                + std::to_string(summary.newPos));
+      runLexiconImport(target, lexiconMode, LexiconDuplicateChoice::Ask);
       return;
     }
     if (browserMode == BrowserMode::ImportAudio) {
@@ -2348,6 +2368,7 @@ void renderAudioModals(App& app);
 void renderPos(App& app);
 void renderPosEditor(App& app);
 void renderPicker(App& app);
+void renderLexiconDuplicateModal(App& app);
 
 void renderFrame(App& app) {
   if (app.audioPlaying && ImGui::GetTime() >= app.audioPlayDeadline) app.stopAudioPlayback();
@@ -2398,6 +2419,7 @@ void renderFrame(App& app) {
   renderAudioModals(app);
   renderPosEditor(app);
   renderPicker(app);
+  renderLexiconDuplicateModal(app);
   drawToast(app);
 
   ImGui::Render();
@@ -3014,6 +3036,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
   bool lexiconOk = false;
   bool lexiconMergeOk = false;
   bool pickerCrossPageOk = false;
+  bool lexiconPromptOk = false;
+  bool lexiconUnicodeOk = false;
   bool lexiconDuplicateOk = false;
   bool lexiconOverwriteOk = false;
   bool lexiconBadLineOk = false;
@@ -3114,11 +3138,34 @@ int runSmoke(App& app, const fs::path& outputDir) {
   }
   const fs::path lexiconSample = "/tmp/lexicon-sample.jsonl";
   if (fs::exists(lexiconSample) && app.vocabulary && app.posStore) {
+    const std::size_t beforePromptEntries = app.vocabulary->entries.size();
+    const std::size_t beforePromptPos = app.posStore->entries.size();
+    LexiconImportSummary askSummary;
+    std::string askError;
+    const bool askImport = importLexiconJsonl(
+        lexiconSample, app.store->projectDirectory(app.folder),
+        LexiconImportMode::Merge, LexiconDuplicateChoice::Ask, askSummary, askError);
+    lexiconPromptOk = askImport && askSummary.needsDuplicateChoice &&
+                      askSummary.duplicateGroups == 2 && askSummary.added == 0 &&
+                      askSummary.duplicates == 0 &&
+                      app.vocabulary->entries.size() == beforePromptEntries &&
+                      app.posStore->entries.size() == beforePromptPos;
+    if (lexiconPromptOk) {
+      app.pendingLexiconFile = lexiconSample;
+      app.pendingLexiconMode = LexiconImportMode::Merge;
+      app.pendingDuplicateGroups = askSummary.duplicateGroups;
+      app.pendingDuplicateExamples = askSummary.duplicateExamples;
+      app.lexiconDuplicatePrompt = true;
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-internal-duplicate.png") && ok;
+      app.lexiconDuplicatePrompt = false;
+    }
+
     LexiconImportSummary summary;
     std::string lexiconError;
     const bool firstImport = importLexiconJsonl(
         lexiconSample, app.store->projectDirectory(app.folder),
-        LexiconImportMode::Merge, summary, lexiconError);
+        LexiconImportMode::Merge, LexiconDuplicateChoice::Merge, summary, lexiconError);
     app.vocabulary->load();
     app.posStore->load();
     VocabEntry* niz = nullptr;
@@ -3157,9 +3204,11 @@ int runSmoke(App& app, const fs::path& outputDir) {
       LexiconImportSummary duplicateSummary;
       const bool duplicateImport = importLexiconJsonl(
           lexiconSample, app.store->projectDirectory(app.folder),
-          LexiconImportMode::Skip, duplicateSummary, lexiconError);
+          LexiconImportMode::Merge, LexiconDuplicateChoice::KeepFirst,
+          duplicateSummary, lexiconError);
       lexiconDuplicateOk = duplicateImport && duplicateSummary.added == 0 &&
-                           duplicateSummary.duplicates == 5314;
+                           duplicateSummary.duplicates == 2 &&
+                           duplicateSummary.merged >= 5000;
       const fs::path badLexicon = "/tmp/lexicon-bad.jsonl";
       {
         std::ofstream bad(badLexicon);
@@ -3168,12 +3217,14 @@ int runSmoke(App& app, const fs::path& outputDir) {
       LexiconImportSummary badSummary;
       const bool badImport = importLexiconJsonl(
           badLexicon, app.store->projectDirectory(app.folder),
-          LexiconImportMode::Skip, badSummary, lexiconError);
+          LexiconImportMode::Skip, LexiconDuplicateChoice::KeepFirst,
+          badSummary, lexiconError);
       lexiconBadLineOk = badImport && badSummary.invalid == 1 && badSummary.added == 0;
       LexiconImportSummary overwriteSummary;
       const bool overwriteImport = importLexiconJsonl(
           lexiconSample, app.store->projectDirectory(app.folder),
-          LexiconImportMode::Overwrite, overwriteSummary, lexiconError);
+          LexiconImportMode::Overwrite, LexiconDuplicateChoice::KeepFirst,
+          overwriteSummary, lexiconError);
       lexiconOverwriteOk = overwriteImport && overwriteSummary.added == 0 &&
                            overwriteSummary.updated >= 5000 &&
                            overwriteSummary.duplicates == 2;
@@ -3206,6 +3257,111 @@ int runSmoke(App& app, const fs::path& outputDir) {
       renderFrame(app);
       ok = saveScreenshot(app, outputDir / "vocab-import-editor.png") && ok;
     }
+    app.vocabSearch[0] = '\0';
+    app.screen = App::Screen::Vocabulary;
+  }
+  if (app.vocabulary && app.posStore) {
+    std::string unicodeId;
+    std::vector<std::string> unicodeCodepoints = {"12ab", "34cd"};
+    for (auto& entry : app.vocabulary->entries) {
+      if (entry.type == "unicode" && entry.codepoints == unicodeCodepoints) {
+        unicodeId = entry.id;
+        entry.meanings = {"旧释义"};
+        entry.phonetics = {"old"};
+        entry.phonetic = "old";
+        entry.codes = {"u12"};
+        entry.updatedAt = 1794402000000;
+        break;
+      }
+    }
+    if (unicodeId.empty()) {
+      VocabEntry created;
+      created.id = Store::newUuid();
+      created.type = "unicode";
+      created.codepoints = unicodeCodepoints;
+      created.meanings = {"旧释义"};
+      created.phonetics = {"old"};
+      created.phonetic = "old";
+      created.codes = {"u12"};
+      created.createdAt = created.updatedAt = 1794402000000;
+      unicodeId = created.id;
+      app.vocabulary->entries.push_back(created);
+    }
+    app.vocabulary->save();
+    app.vocabulary->load();
+    const std::string unicodeDisplay = codepointsToUtf8(unicodeCodepoints);
+    const fs::path unicodeJsonl = "/tmp/lexicon-unicode.jsonl";
+    {
+      json line;
+      line["rendered"] = unicodeDisplay;
+      line["pronunciation"] = "uni-new";
+      line["type"] = "n";
+      line["definition"] = "新释义";
+      std::ofstream out(unicodeJsonl);
+      out << line.dump() << "\n";
+    }
+    LexiconImportSummary unicodeMerge;
+    std::string unicodeError;
+    const bool unicodeMergeImport = importLexiconJsonl(
+        unicodeJsonl, app.store->projectDirectory(app.folder),
+        LexiconImportMode::Merge, LexiconDuplicateChoice::KeepFirst,
+        unicodeMerge, unicodeError);
+    app.vocabulary->load();
+    const VocabEntry* unicodeAfterMerge = nullptr;
+    for (const auto& entry : app.vocabulary->entries) {
+      if (entry.id == unicodeId) unicodeAfterMerge = &entry;
+    }
+    bool unicodeMergeOk = unicodeMergeImport && unicodeMerge.added == 0 &&
+                          unicodeMerge.merged == 1 && unicodeAfterMerge &&
+                          unicodeAfterMerge->type == "unicode" &&
+                          unicodeAfterMerge->codepoints == unicodeCodepoints &&
+                          unicodeAfterMerge->id == unicodeId &&
+                          std::find(unicodeAfterMerge->meanings.begin(),
+                                    unicodeAfterMerge->meanings.end(), "旧释义") !=
+                              unicodeAfterMerge->meanings.end() &&
+                          std::find(unicodeAfterMerge->meanings.begin(),
+                                    unicodeAfterMerge->meanings.end(), "新释义") !=
+                              unicodeAfterMerge->meanings.end() &&
+                          std::find(unicodeAfterMerge->phonetics.begin(),
+                                    unicodeAfterMerge->phonetics.end(), "uni-new") !=
+                              unicodeAfterMerge->phonetics.end();
+    app.vocabSearch[0] = '\0';
+    std::snprintf(app.vocabSearch, sizeof(app.vocabSearch), "%s", "u12");
+    app.screen = App::Screen::Vocabulary;
+    app.vocabPage = 1;
+    app.vocabScrollTop = true;
+    renderFrame(app);
+    ok = saveScreenshot(app, outputDir / "vocab-unicode-merge.png") && ok;
+    LexiconImportSummary unicodeOverwrite;
+    const bool unicodeOverwriteImport = importLexiconJsonl(
+        unicodeJsonl, app.store->projectDirectory(app.folder),
+        LexiconImportMode::Overwrite, LexiconDuplicateChoice::KeepFirst,
+        unicodeOverwrite, unicodeError);
+    app.vocabulary->load();
+    const VocabEntry* unicodeAfterOverwrite = nullptr;
+    for (const auto& entry : app.vocabulary->entries) {
+      if (entry.id == unicodeId) unicodeAfterOverwrite = &entry;
+    }
+    bool unicodeOverwriteOk = unicodeOverwriteImport && unicodeOverwrite.added == 0 &&
+                              unicodeOverwrite.updated == 1 && unicodeAfterOverwrite &&
+                              unicodeAfterOverwrite->type == "unicode" &&
+                              unicodeAfterOverwrite->codepoints == unicodeCodepoints &&
+                              unicodeAfterOverwrite->id == unicodeId &&
+                              unicodeAfterOverwrite->phonetics.size() == 1 &&
+                              unicodeAfterOverwrite->phonetic == "uni-new" &&
+                              unicodeAfterOverwrite->meanings.size() == 1 &&
+                              unicodeAfterOverwrite->meanings[0] == "新释义" &&
+                              std::find(unicodeAfterOverwrite->codes.begin(),
+                                        unicodeAfterOverwrite->codes.end(),
+                                        unicodeDisplay) != unicodeAfterOverwrite->codes.end();
+    LexiconImportSummary unicodeSkip;
+    const bool unicodeSkipImport = importLexiconJsonl(
+        unicodeJsonl, app.store->projectDirectory(app.folder),
+        LexiconImportMode::Skip, LexiconDuplicateChoice::KeepFirst,
+        unicodeSkip, unicodeError);
+    lexiconUnicodeOk = unicodeMergeOk && unicodeOverwriteOk && unicodeSkipImport &&
+                       unicodeSkip.duplicates == 1 && unicodeSkip.added == 0;
+    app.vocabulary->load();
     app.vocabSearch[0] = '\0';
     app.screen = App::Screen::Vocabulary;
   }
@@ -3379,7 +3535,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           emptyGroupBlocked && posDeleteUnknown && phoneticOk && oldPhoneticCompat &&
                           lexiconOk && lexiconMergeOk && lexiconDuplicateOk &&
                           lexiconBadLineOk && lexiconId9Ok && lexiconOverwriteOk &&
-                          pickerCrossPageOk
+                          pickerCrossPageOk && lexiconPromptOk && lexiconUnicodeOk
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -3445,7 +3601,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " lexicon_id9=" << (lexiconId9Ok ? "true" : "false")
          << " lexicon_overwrite=" << (lexiconOverwriteOk ? "true" : "false")
          << " lexicon_merge=" << (lexiconMergeOk ? "true" : "false")
-         << " picker_cross_page=" << (pickerCrossPageOk ? "true" : "false") << std::endl;
+         << " picker_cross_page=" << (pickerCrossPageOk ? "true" : "false")
+         << " lexicon_prompt=" << (lexiconPromptOk ? "true" : "false")
+         << " lexicon_unicode=" << (lexiconUnicodeOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -4248,6 +4406,53 @@ void renderPicker(App& app) {
   }
   ImGui::End();
   app.pickerOpen = open;
+}
+
+void renderLexiconDuplicateModal(App& app) {
+  if (!app.lexiconDuplicatePrompt) return;
+  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 680) * 0.5f,
+                                 (ImGui::GetIO().DisplaySize.y - 300) * 0.5f),
+                          ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(680, 300), ImGuiCond_Always);
+  bool open = true;
+  if (!ImGui::Begin("文件内有重复词##lexicon_duplicate", &open,
+                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+    ImGui::End();
+    if (!open) app.lexiconDuplicatePrompt = false;
+    return;
+  }
+  ImGui::TextWrapped("文件中检测到 %d 组重复词。", app.pendingDuplicateGroups);
+  if (!app.pendingDuplicateExamples.empty()) {
+    std::string examples;
+    for (const auto& value : app.pendingDuplicateExamples) {
+      if (!examples.empty()) examples += "、";
+      examples += value;
+    }
+    ImGui::TextWrapped("例如：%s", examples.c_str());
+  }
+  ImGui::Spacing();
+  ImGui::TextWrapped("合并释义：后续重复的释义/音标合并进第一条，只生成一条词汇。");
+  ImGui::TextWrapped("保留第一条：丢弃后续重复。");
+  ImGui::TextWrapped("取消：不写入任何数据。");
+  ImGui::Spacing();
+  if (ImGui::Button("合并释义", ImVec2(130, 36))) {
+    app.lexiconDuplicatePrompt = false;
+    app.runLexiconImport(app.pendingLexiconFile, app.pendingLexiconMode,
+                         LexiconDuplicateChoice::Merge);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("保留第一条", ImVec2(130, 36))) {
+    app.lexiconDuplicatePrompt = false;
+    app.runLexiconImport(app.pendingLexiconFile, app.pendingLexiconMode,
+                         LexiconDuplicateChoice::KeepFirst);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("取消", ImVec2(100, 36))) {
+    app.lexiconDuplicatePrompt = false;
+  }
+  ImGui::End();
+  if (!open) app.lexiconDuplicatePrompt = false;
 }
 
 void renderImages(App& app) {
