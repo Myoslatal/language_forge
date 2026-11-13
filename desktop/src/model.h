@@ -23,6 +23,7 @@ struct QuestionSegment {
 };
 
 struct QuestionBlock {
+  std::string id;
   std::string text;
   bool ok = false;
   std::string vocabId;
@@ -43,6 +44,7 @@ struct Question {
   std::vector<std::string> options;
   std::string prompt;
   std::vector<QuestionBlock> blocks;
+  std::vector<std::vector<std::string>> answers;
   std::vector<std::string> alt;
   int correctIndex = -1;
 };

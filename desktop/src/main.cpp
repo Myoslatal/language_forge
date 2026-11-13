@@ -424,6 +424,9 @@ struct App {
   char questionOptions[4][256] = {};
   char arrangePromptInput[512] = {};
   char arrangeAltInput[1024] = {};
+  bool answerDialogOpen = false;
+  int answerEditIndex = -1;
+  std::vector<std::string> answerDraft;
   int questionCorrectIndex = -1;
   std::string learningCourseId;
   std::string learningQuestionId;
@@ -1193,13 +1196,22 @@ struct App {
     if (editQuestion.type == "arrange") {
       std::string prompt = trim(arrangePromptInput);
       if (prompt.empty()) { showToast("请填写题干/释义"); return; }
-      int correctCount = 0;
       for (auto& block : editQuestion.blocks) {
         block.text = trim(block.text);
         if (block.text.empty()) { showToast("词块文本不能为空"); return; }
-        if (block.ok) correctCount++;
+        if (block.id.empty()) block.id = Store::newUuid();
       }
-      if (correctCount < 2) { showToast("至少需要 2 个正确词块"); return; }
+      if (editQuestion.answers.empty()) { showToast("请至少添加一个答案"); return; }
+      for (const auto& answer : editQuestion.answers) {
+        if (answer.size() < 2) { showToast("每个答案至少 2 个词块"); return; }
+        std::set<std::string> seen;
+        for (const auto& id : answer) {
+          if (!seen.insert(id).second) { showToast("同一答案不能重复词块"); return; }
+          bool exists = false;
+          for (const auto& block : editQuestion.blocks) if (block.id == id) exists = true;
+          if (!exists) { showToast("答案引用了已删除的词块"); return; }
+        }
+      }
       editQuestion.prompt = prompt;
       editQuestion.alt.clear();
       std::string line;
@@ -1209,11 +1221,15 @@ struct App {
       }
       editQuestion.name = prompt + " · ";
       bool first = true;
-      for (const auto& block : editQuestion.blocks) {
-        if (!block.ok) continue;
-        if (!first) editQuestion.name += " ";
-        first = false;
-        editQuestion.name += block.text;
+      if (!editQuestion.answers.empty()) {
+        for (const auto& id : editQuestion.answers.front()) {
+          for (const auto& block : editQuestion.blocks) {
+            if (block.id != id) continue;
+            if (!first) editQuestion.name += " ";
+            first = false;
+            editQuestion.name += block.text;
+          }
+        }
       }
       if (questionIsNew) { course->questions.push_back(editQuestion); questionIsNew = false; }
       else {
@@ -1290,6 +1306,75 @@ struct App {
     pickerForId.clear();
     std::snprintf(pickerSearch, sizeof(pickerSearch), "%s", "");
     pickerOpen = true;
+  }
+
+  void openAnswerDialog(int index) {
+    answerEditIndex = index;
+    answerDraft.clear();
+    if (index >= 0 && index < static_cast<int>(editQuestion.answers.size())) {
+      answerDraft = editQuestion.answers[index];
+    }
+    answerDialogOpen = true;
+  }
+
+  void renderAnswerDialog() {
+    if (!answerDialogOpen) return;
+    ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_Appearing);
+    if (ImGui::Begin("编辑答案", &answerDialogOpen, ImGuiWindowFlags_NoCollapse)) {
+      ImGui::TextUnformatted("词块池（点击加入答案尾部）");
+      for (const auto& block : editQuestion.blocks) {
+        bool selected = std::find(answerDraft.begin(), answerDraft.end(), block.id) != answerDraft.end();
+        ImGui::PushID(block.id.c_str());
+        if (ImGui::Checkbox(block.text.c_str(), &selected)) {
+          if (selected) {
+            if (std::find(answerDraft.begin(), answerDraft.end(), block.id) == answerDraft.end()) {
+              answerDraft.push_back(block.id);
+            }
+          } else {
+            answerDraft.erase(std::remove(answerDraft.begin(), answerDraft.end(), block.id),
+                              answerDraft.end());
+          }
+        }
+        ImGui::PopID();
+      }
+      ImGui::Separator();
+      ImGui::TextUnformatted("已选顺序");
+      for (std::size_t i = 0; i < answerDraft.size(); ++i) {
+        std::string text;
+        for (const auto& block : editQuestion.blocks) {
+          if (block.id == answerDraft[i]) text = block.text;
+        }
+        ImGui::PushID(static_cast<int>(i) + 5000);
+        ImGui::Text("%zu. %s", i + 1, text.c_str());
+        ImGui::SameLine(360);
+        if (ImGui::Button("↑", ImVec2(28, 24)) && i > 0) std::swap(answerDraft[i], answerDraft[i - 1]);
+        ImGui::SameLine();
+        if (ImGui::Button("↓", ImVec2(28, 24)) && i + 1 < answerDraft.size()) {
+          std::swap(answerDraft[i], answerDraft[i + 1]);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("×", ImVec2(28, 24))) {
+          answerDraft.erase(answerDraft.begin() + i);
+          ImGui::PopID();
+          break;
+        }
+        ImGui::PopID();
+      }
+      ImGui::Spacing();
+      if (ImGui::Button("保存答案", ImVec2(120, 32))) {
+        if (answerDraft.size() < 2) {
+          showToast("每个答案至少 2 个词块");
+        } else {
+          if (answerEditIndex >= 0) editQuestion.answers[answerEditIndex] = answerDraft;
+          else editQuestion.answers.push_back(answerDraft);
+          questionDirty = true;
+          answerDialogOpen = false;
+        }
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("取消", ImVec2(90, 32))) answerDialogOpen = false;
+    }
+    ImGui::End();
   }
 
   void openArrangeBlockPicker() {
@@ -2367,7 +2452,8 @@ void renderQuestionEditor(App& app) {
     app.editQuestion.type = typeIndex == 1 ? "arrange" : "translation_choice";
     app.questionDirty = true;
     if (typeIndex == 1 && app.editQuestion.blocks.empty()) {
-      app.editQuestion.blocks = {{"", true}, {"", true}};
+      app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
+      app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
   }
   if (app.editQuestion.type == "arrange") {
@@ -2377,7 +2463,7 @@ void renderQuestionEditor(App& app) {
                                  app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
       app.questionDirty = true;
     }
-    ImGui::TextUnformatted("词块（勾选=正确块，顺序即答案顺序）");
+    ImGui::TextUnformatted("词块池（顺序仅用于答案编辑）");
     for (std::size_t i = 0; i < app.editQuestion.blocks.size(); ++i) {
       auto& block = app.editQuestion.blocks[i];
       ImGui::PushID(static_cast<int>(i));
@@ -2388,9 +2474,6 @@ void renderQuestionEditor(App& app) {
         block.text = buffer;
         app.questionDirty = true;
       }
-      ImGui::SameLine();
-      bool ok = block.ok;
-      if (ImGui::Checkbox("正##block_ok", &ok)) { block.ok = ok; app.questionDirty = true; }
       ImGui::SameLine();
       if (ImGui::Button("↑##block_up", ImVec2(28, 24)) && i > 0) {
         std::swap(app.editQuestion.blocks[i], app.editQuestion.blocks[i - 1]);
@@ -2408,6 +2491,27 @@ void renderQuestionEditor(App& app) {
     if (ImGui::Button("＋ 从词汇选择##arrange_add", ImVec2(150, 28))) {
       app.openArrangeBlockPicker();
     }
+    ImGui::TextUnformatted("答案列表");
+    for (std::size_t a = 0; a < app.editQuestion.answers.size(); ++a) {
+      std::string line = "答案 " + std::to_string(a + 1) + "：";
+      for (const auto& id : app.editQuestion.answers[a]) {
+        for (const auto& block : app.editQuestion.blocks) {
+          if (block.id == id) line += " " + block.text;
+        }
+      }
+      ImGui::PushID(static_cast<int>(a));
+      ImGui::TextUnformatted(line.c_str());
+      ImGui::SameLine();
+      if (ImGui::Button("编辑答案", ImVec2(90, 24))) app.openAnswerDialog(static_cast<int>(a));
+      ImGui::SameLine();
+      if (ImGui::Button("删除答案", ImVec2(90, 24))) {
+        app.editQuestion.answers.erase(app.editQuestion.answers.begin() + a);
+        app.questionDirty = true;
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::Button("＋ 添加答案##arrange_answer", ImVec2(130, 28))) app.openAnswerDialog(-1);
+    app.renderAnswerDialog();
     ImGui::TextUnformatted("等价答案（一行一个，可选）");
     ImGui::InputTextMultiline("##arrange_alt", app.arrangeAltInput,
                               sizeof(app.arrangeAltInput), ImVec2(-1, 70));
@@ -2680,10 +2784,14 @@ void renderLearning(App& app) {
       }
       return out;
     };
-    auto correctAnswer = [&]() {
-      std::vector<QuestionBlock> correct;
-      for (const auto& block : question->blocks) if (block.ok) correct.push_back(block);
-      return normalized(answerText(correct));
+    auto answerFromIds = [&](const std::vector<std::string>& ids) {
+      std::vector<QuestionBlock> chosen;
+      for (const auto& id : ids) {
+        for (const auto& block : question->blocks) {
+          if (block.id == id) { chosen.push_back(block); break; }
+        }
+      }
+      return normalized(answerText(chosen));
     };
     ImGui::TextUnformatted("已选");
     for (std::size_t i = 0; i < app.arrangeSelected.size(); ++i) {
@@ -2743,7 +2851,15 @@ void renderLearning(App& app) {
           }
         } else {
           std::string answer = normalized(answerText(app.arrangeSelected));
-          bool ok = answer == correctAnswer();
+          bool ok = false;
+          for (const auto& ids : question->answers) {
+            if (answer == answerFromIds(ids)) { ok = true; break; }
+          }
+          if (!ok) {
+            std::vector<QuestionBlock> legacy;
+            for (const auto& block : question->blocks) if (block.ok) legacy.push_back(block);
+            if (!legacy.empty() && answer == normalized(answerText(legacy))) ok = true;
+          }
           for (const auto& alt : question->alt) {
             if (answer == normalized(alt)) ok = true;
           }
@@ -5365,7 +5481,7 @@ void renderPicker(App& app) {
         for (const auto& entry : app.vocabulary->entries) {
           if (entry.id == id) {
             app.editQuestion.blocks.push_back(
-                {displayName(entry, app.vocabulary->entries), true, id});
+                {Store::newUuid(), displayName(entry, app.vocabulary->entries), false, id});
             break;
           }
         }

@@ -122,11 +122,34 @@ final class ProjectStructure {
                                                 if (block == null) continue;
                                                 String blockText = block.optString("text", "");
                                                 if (!blockText.trim().isEmpty()) {
-                                                    question.blocks.add(new Question.Block(blockText,
+                                                    Question.Block value = new Question.Block(blockText,
                                                             block.optBoolean("ok", false),
-                                                            block.optString("vocabId", "")));
+                                                            block.optString("vocabId", ""));
+                                                    value.id = block.optString("id", "");
+                                                    if (value.id.isEmpty()) value.id = java.util.UUID.randomUUID().toString();
+                                                    question.blocks.add(value);
                                                 }
                                             }
+                                        }
+                                        JSONArray answers = questionObject.optJSONArray("answers");
+                                        if (answers != null) {
+                                            for (int a = 0; a < answers.length(); a++) {
+                                                JSONArray answer = answers.optJSONArray(a);
+                                                if (answer == null) continue;
+                                                List<String> ids = new ArrayList<>();
+                                                for (int idx = 0; idx < answer.length(); idx++) {
+                                                    String id = answer.optString(idx, "");
+                                                    if (!id.isEmpty()) ids.add(id);
+                                                }
+                                                if (ids.size() >= 2) question.answers.add(ids);
+                                            }
+                                        }
+                                        if (question.answers.isEmpty()) {
+                                            List<String> migrated = new ArrayList<>();
+                                            for (Question.Block block : question.blocks) {
+                                                if (block.ok) migrated.add(block.id);
+                                            }
+                                            if (migrated.size() >= 2) question.answers.add(migrated);
                                         }
                                         JSONArray alt = questionObject.optJSONArray("alt");
                                         if (alt != null) {
@@ -229,12 +252,20 @@ final class ProjectStructure {
                             JSONArray blocks = new JSONArray();
                             for (Question.Block block : question.blocks) {
                                 JSONObject object = new JSONObject();
+                                object.put("id", block.id);
                                 object.put("text", block.text);
                                 object.put("ok", block.ok);
                                 if (!block.vocabId.isEmpty()) object.put("vocabId", block.vocabId);
                                 blocks.put(object);
                             }
                             questionObject.put("blocks", blocks);
+                            JSONArray answers = new JSONArray();
+                            for (List<String> answer : question.answers) {
+                                JSONArray item = new JSONArray();
+                                for (String id : answer) item.put(id);
+                                answers.put(item);
+                            }
+                            questionObject.put("answers", answers);
                             JSONArray alt = new JSONArray();
                             for (String value : question.alt) alt.put(value);
                             questionObject.put("alt", alt);
@@ -414,6 +445,7 @@ final class ProjectStructure {
         static final String TYPE_ARRANGE = "arrange";
 
         static final class Block {
+            String id = "";
             String text = "";
             boolean ok;
             String vocabId = "";
@@ -462,6 +494,7 @@ final class ProjectStructure {
         long audioEnd;
         final List<String> options = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
+        final List<List<String>> answers = new ArrayList<>();
         final List<String> alt = new ArrayList<>();
         String prompt = "";
         int correctIndex = -1;

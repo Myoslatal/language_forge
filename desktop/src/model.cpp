@@ -155,7 +155,7 @@ json structureToJson(const Structure& structure) {
         for (const auto& question : course.questions) {
           json blocks = json::array();
           for (const auto& block : question.blocks) {
-            blocks.push_back({{"text", block.text}, {"ok", block.ok},
+            blocks.push_back({{"id", block.id}, {"text", block.text}, {"ok", block.ok},
                               {"vocabId", block.vocabId}});
           }
           questions.push_back({{"id", question.id},
@@ -172,6 +172,7 @@ json structureToJson(const Structure& structure) {
                                {"options", question.options},
                                {"prompt", question.prompt},
                                {"blocks", blocks},
+                               {"answers", question.answers},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}});
         }
@@ -231,11 +232,30 @@ Structure structureFromJson(const json& value) {
                 if (questionValue.contains("blocks") && questionValue["blocks"].is_array()) {
                   for (const auto& block : questionValue["blocks"]) {
                     QuestionBlock qb;
+                    qb.id = block.value("id", "");
                     qb.text = block.value("text", "");
                     qb.ok = block.value("ok", false);
                     qb.vocabId = block.value("vocabId", "");
+                    if (qb.id.empty()) qb.id = Store::newUuid();
                     if (!qb.text.empty()) question.blocks.push_back(qb);
                   }
+                }
+                if (questionValue.contains("answers") && questionValue["answers"].is_array()) {
+                  for (const auto& item : questionValue["answers"]) {
+                    if (!item.is_array()) continue;
+                    std::vector<std::string> ids;
+                    for (const auto& id : item) {
+                      if (id.is_string()) ids.push_back(id.get<std::string>());
+                    }
+                    if (ids.size() >= 2) question.answers.push_back(ids);
+                  }
+                }
+                if (question.answers.empty()) {
+                  std::vector<std::string> migrated;
+                  for (const auto& block : question.blocks) {
+                    if (block.ok) migrated.push_back(block.id);
+                  }
+                  if (migrated.size() >= 2) question.answers.push_back(migrated);
                 }
                 if (questionValue.contains("alt") && questionValue["alt"].is_array()) {
                   for (const auto& value : questionValue["alt"]) {

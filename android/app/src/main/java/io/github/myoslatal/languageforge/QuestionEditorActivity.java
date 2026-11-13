@@ -90,6 +90,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private EditText arrangePrompt;
     private EditText arrangeAlt;
     private final List<ProjectStructure.Question.Block> editBlocks = new ArrayList<>();
+    private final List<List<String>> editAnswers = new ArrayList<>();
+    private LinearLayout arrangeAnswers;
     private LinearLayout editorScrollContent;
 
     @Override
@@ -182,13 +184,34 @@ public class QuestionEditorActivity extends ForgeActivity {
         addBlock.setText("＋ 从词汇选择");
         addBlock.setOnClickListener(v -> openArrangePicker());
         arrangeSection.addView(addBlock);
+        arrangeAnswers = new LinearLayout(this);
+        arrangeAnswers.setOrientation(LinearLayout.VERTICAL);
+        arrangeSection.addView(arrangeAnswers);
+        ForgeButton addAnswer = new ForgeButton(this);
+        addAnswer.setAllCaps(false);
+        addAnswer.setText("＋ 添加答案");
+        addAnswer.setOnClickListener(v -> openAnswerDialog(-1));
+        arrangeSection.addView(addAnswer);
+        TextView legacyLabel = new TextView(this);
+        legacyLabel.setText("旧版等价答案（兼容，可选）");
+        legacyLabel.setTextSize(12f);
+        arrangeSection.addView(legacyLabel);
         arrangeAlt = new EditText(this);
-        arrangeAlt.setHint("等价答案（一行一个，可选）");
+        arrangeAlt.setHint("一行一个，仅用于旧数据兼容");
         arrangeAlt.setText(String.join("\n", question.alt));
         arrangeSection.addView(arrangeAlt);
         scrollContent.addView(arrangeSection, 1);
         editBlocks.addAll(question.blocks);
+        for (List<String> answer : question.answers) editAnswers.add(new ArrayList<>(answer));
+        if (editAnswers.isEmpty()) {
+            List<String> migrated = new ArrayList<>();
+            for (ProjectStructure.Question.Block block : editBlocks) {
+                if (block.ok) migrated.add(block.id);
+            }
+            if (migrated.size() >= 2) editAnswers.add(migrated);
+        }
         renderArrangeBlocks();
+        renderArrangeAnswers();
         typeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
                                                    int position, long id) {
@@ -659,11 +682,14 @@ public class QuestionEditorActivity extends ForgeActivity {
                         if (id.equals(candidate.id)) { entry = candidate; break; }
                     }
                     if (entry == null) continue;
-                    editBlocks.add(new ProjectStructure.Question.Block(
-                            vocabulary.displayName(entry), true, id));
+                            ProjectStructure.Question.Block block = new ProjectStructure.Question.Block(
+                            vocabulary.displayName(entry), false, id);
+                    block.id = java.util.UUID.randomUUID().toString();
+                    editBlocks.add(block);
                 }
                 if (skipped > 0) toast("已跳过重复词汇块");
                 renderArrangeBlocks();
+                renderArrangeAnswers();
                 dirty = true;
             });
 
@@ -687,14 +713,6 @@ public class QuestionEditorActivity extends ForgeActivity {
                 @Override public void afterTextChanged(android.text.Editable s) {}
             });
             row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            CheckBox ok = new CheckBox(this);
-            ok.setText("正");
-            ok.setChecked(block.ok);
-            ok.setOnCheckedChangeListener((b, checked) -> {
-                block.ok = checked;
-                dirty = true;
-            });
-            row.addView(ok);
             ForgeButton up = new ForgeButton(this);
             up.setAllCaps(false);
             up.setText("↑");
@@ -706,11 +724,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             ForgeButton remove = new ForgeButton(this);
             remove.setAllCaps(false);
             remove.setText("×");
-            remove.setOnClickListener(v -> {
-                editBlocks.remove(index);
-                renderArrangeBlocks();
-                dirty = true;
-            });
+            remove.setOnClickListener(v -> confirmRemoveBlock(index));
             row.addView(remove);
             arrangeBlockRows.addView(row);
         }
@@ -767,33 +781,217 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
     }
 
+    private void renderArrangeAnswers() {
+        if (arrangeAnswers == null) return;
+        arrangeAnswers.removeAllViews();
+        for (int a = 0; a < editAnswers.size(); a++) {
+            final int answerIndex = a;
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(10), dp(8), dp(10), dp(8));
+            StringBuilder text = new StringBuilder("答案 ").append(a + 1).append("：");
+            for (String id : editAnswers.get(a)) {
+                ProjectStructure.Question.Block block = findBlock(id);
+                if (block != null) text.append(" ").append(block.text);
+            }
+            TextView label = new TextView(this);
+            label.setText(text.toString());
+            card.addView(label);
+            LinearLayout actions = new LinearLayout(this);
+            ForgeButton edit = new ForgeButton(this);
+            edit.setAllCaps(false);
+            edit.setText("编辑答案");
+            edit.setOnClickListener(v -> openAnswerDialog(answerIndex));
+            actions.addView(edit);
+            ForgeButton delete = new ForgeButton(this);
+            delete.setAllCaps(false);
+            delete.setText("删除答案");
+            delete.setOnClickListener(v -> {
+                editAnswers.remove(answerIndex);
+                renderArrangeAnswers();
+                dirty = true;
+            });
+            actions.addView(delete);
+            card.addView(actions);
+            arrangeAnswers.addView(card);
+        }
+    }
+
+    private ProjectStructure.Question.Block findBlock(String id) {
+        for (ProjectStructure.Question.Block block : editBlocks) {
+            if (id.equals(block.id)) return block;
+        }
+        return null;
+    }
+
+    private void openAnswerDialog(int editIndex) {
+        List<String> selected = new ArrayList<>();
+        if (editIndex >= 0 && editIndex < editAnswers.size()) {
+            selected.addAll(editAnswers.get(editIndex));
+        }
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(8), dp(16), dp(8));
+        TextView poolLabel = new TextView(this);
+        poolLabel.setText("词块池（点击加入末尾）");
+        root.addView(poolLabel);
+        LinearLayout pool = new LinearLayout(this);
+        pool.setOrientation(LinearLayout.VERTICAL);
+        root.addView(pool);
+        TextView orderLabel = new TextView(this);
+        orderLabel.setText("已选顺序（↑/↓/×）");
+        root.addView(orderLabel);
+        LinearLayout order = new LinearLayout(this);
+        order.setOrientation(LinearLayout.VERTICAL);
+        root.addView(order);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(root);
+        Runnable[] refresh = new Runnable[1];
+        refresh[0] = () -> {
+            pool.removeAllViews();
+            for (ProjectStructure.Question.Block block : editBlocks) {
+                if (selected.contains(block.id)) continue;
+                ForgeButton add = new ForgeButton(this);
+                add.setAllCaps(false);
+                add.setText("＋ " + block.text);
+                add.setOnClickListener(v -> {
+                    selected.add(block.id);
+                    refresh[0].run();
+                });
+                pool.addView(add);
+            }
+            order.removeAllViews();
+            for (int i = 0; i < selected.size(); i++) {
+                final int index = i;
+                ProjectStructure.Question.Block block = findBlock(selected.get(i));
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                TextView text = new TextView(this);
+                text.setText((i + 1) + ". " + (block == null ? "?" : block.text));
+                row.addView(text, new LinearLayout.LayoutParams(0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                ForgeButton up = new ForgeButton(this);
+                up.setAllCaps(false);
+                up.setText("↑");
+                up.setOnClickListener(v -> {
+                    if (index > 0) java.util.Collections.swap(selected, index, index - 1);
+                    refresh[0].run();
+                });
+                row.addView(up);
+                ForgeButton down = new ForgeButton(this);
+                down.setAllCaps(false);
+                down.setText("↓");
+                down.setOnClickListener(v -> {
+                    if (index + 1 < selected.size()) {
+                        java.util.Collections.swap(selected, index, index + 1);
+                    }
+                    refresh[0].run();
+                });
+                row.addView(down);
+                ForgeButton remove = new ForgeButton(this);
+                remove.setAllCaps(false);
+                remove.setText("×");
+                remove.setOnClickListener(v -> {
+                    selected.remove(index);
+                    refresh[0].run();
+                });
+                row.addView(remove);
+                order.addView(row);
+            }
+        };
+        refresh[0].run();
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
+        builder.setTitle(editIndex >= 0 ? "编辑答案" : "添加答案");
+        builder.setView(scroll);
+        builder.setNegativeButton("取消", null);
+        builder.setPositiveButton("保存", null);
+        android.app.AlertDialog dialog = builder.create();
+        dialog.setOnShowListener(d -> dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    if (selected.size() < 2) { toast("每个答案至少 2 个词块"); return; }
+                    if (editIndex >= 0) editAnswers.set(editIndex, new ArrayList<>(selected));
+                    else editAnswers.add(new ArrayList<>(selected));
+                    renderArrangeAnswers();
+                    dirty = true;
+                    dialog.dismiss();
+                }));
+        dialog.show();
+    }
+
+    private void confirmRemoveBlock(int index) {
+        ProjectStructure.Question.Block block = editBlocks.get(index);
+        boolean referenced = false;
+        for (List<String> answer : editAnswers) if (answer.contains(block.id)) referenced = true;
+        if (!referenced) {
+            editBlocks.remove(index);
+            renderArrangeBlocks();
+            dirty = true;
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setMessage("该词块被答案引用，删除后会从所有答案移除；不足 2 块的答案将删除。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除", (d, w) -> {
+                    editBlocks.remove(index);
+                    for (int a = editAnswers.size() - 1; a >= 0; a--) {
+                        editAnswers.get(a).remove(block.id);
+                        if (editAnswers.get(a).size() < 2) editAnswers.remove(a);
+                    }
+                    renderArrangeBlocks();
+                    renderArrangeAnswers();
+                    dirty = true;
+                }).show();
+    }
+
     private void saveArrange() {
         String prompt = arrangePrompt.getText() == null ? "" : arrangePrompt.getText().toString().trim();
         if (prompt.isEmpty()) { toast("请填写题干/释义"); return; }
         List<ProjectStructure.Question.Block> valid = new ArrayList<>();
-        int correctCount = 0;
         for (ProjectStructure.Question.Block block : editBlocks) {
             String value = block.text == null ? "" : block.text.trim();
             if (value.isEmpty()) { toast("词块文本不能为空"); return; }
-            if (block.ok) correctCount++;
-            valid.add(new ProjectStructure.Question.Block(value, block.ok, block.vocabId));
+            ProjectStructure.Question.Block copy =
+                    new ProjectStructure.Question.Block(value, block.ok, block.vocabId);
+            copy.id = block.id.isEmpty() ? java.util.UUID.randomUUID().toString() : block.id;
+            valid.add(copy);
         }
-        if (correctCount < 2) { toast("至少需要 2 个正确词块"); return; }
+        if (editAnswers.isEmpty()) { toast("请至少添加一个答案"); return; }
+        List<List<String>> answers = new ArrayList<>();
+        for (List<String> answer : editAnswers) {
+            if (answer.size() < 2) { toast("每个答案至少 2 个词块"); return; }
+            List<String> ids = new ArrayList<>();
+            for (String id : answer) {
+                boolean found = false;
+                for (ProjectStructure.Question.Block block : valid) {
+                    if (id.equals(block.id)) { found = true; break; }
+                }
+                if (!found) { toast("答案引用了已删除的词块"); return; }
+                if (ids.contains(id)) { toast("同一答案不能重复词块"); return; }
+                ids.add(id);
+            }
+            answers.add(ids);
+        }
         question.type = ProjectStructure.Question.TYPE_ARRANGE;
         question.prompt = prompt;
         question.blocks.clear();
         question.blocks.addAll(valid);
+        question.answers.clear();
+        question.answers.addAll(answers);
         question.alt.clear();
         for (String line : arrangeAlt.getText().toString().split("\n")) {
             if (!line.trim().isEmpty()) question.alt.add(line.trim());
         }
         StringBuilder name = new StringBuilder(prompt).append(" · ");
-        boolean first = true;
-        for (ProjectStructure.Question.Block block : valid) {
-            if (!block.ok) continue;
-            if (!first) name.append(' ');
-            first = false;
-            name.append(block.text);
+        int firstAnswer = editAnswers.isEmpty() ? -1 : 0;
+        if (firstAnswer >= 0) {
+            boolean first = true;
+            for (String id : editAnswers.get(firstAnswer)) {
+                ProjectStructure.Question.Block block = findBlock(id);
+                if (block == null) continue;
+                if (!first) name.append(' ');
+                first = false;
+                name.append(block.text);
+            }
         }
         question.name = name.toString();
         question.hintsEnabled = hintsEnabledView.isChecked();

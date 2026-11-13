@@ -367,11 +367,20 @@ public class LearningActivity extends ForgeActivity {
 
     private boolean arrangeCorrect(ProjectStructure.Question item) {
         String answer = arrangeAnswer(arrangeSelected);
+        for (List<String> ids : item.answers) {
+            List<ProjectStructure.Question.Block> blocks = new ArrayList<>();
+            for (String id : ids) {
+                for (ProjectStructure.Question.Block block : item.blocks) {
+                    if (id.equals(block.id)) { blocks.add(block); break; }
+                }
+            }
+            if (blocks.size() == ids.size() && answer.equals(arrangeAnswer(blocks))) return true;
+        }
         List<ProjectStructure.Question.Block> correct = new ArrayList<>();
         for (ProjectStructure.Question.Block block : item.blocks) {
             if (block.ok) correct.add(block);
         }
-        if (answer.equals(arrangeAnswer(correct))) return true;
+        if (!correct.isEmpty() && answer.equals(arrangeAnswer(correct))) return true;
         for (String alt : item.alt) {
             if (answer.equals(alt.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT))) {
                 return true;
