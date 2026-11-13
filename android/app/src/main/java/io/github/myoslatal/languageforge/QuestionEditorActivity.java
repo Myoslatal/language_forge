@@ -88,7 +88,6 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout arrangeSection;
     private LinearLayout arrangeBlockRows;
     private EditText arrangePrompt;
-    private EditText arrangeAlt;
     private final List<ProjectStructure.Question.Block> editBlocks = new ArrayList<>();
     private final List<List<String>> editAnswers = new ArrayList<>();
     private LinearLayout arrangeAnswers;
@@ -192,14 +191,6 @@ public class QuestionEditorActivity extends ForgeActivity {
         addAnswer.setText("＋ 添加答案");
         addAnswer.setOnClickListener(v -> openAnswerDialog(-1));
         arrangeSection.addView(addAnswer);
-        TextView legacyLabel = new TextView(this);
-        legacyLabel.setText("旧版等价答案（兼容，可选）");
-        legacyLabel.setTextSize(12f);
-        arrangeSection.addView(legacyLabel);
-        arrangeAlt = new EditText(this);
-        arrangeAlt.setHint("一行一个，仅用于旧数据兼容");
-        arrangeAlt.setText(String.join("\n", question.alt));
-        arrangeSection.addView(arrangeAlt);
         scrollContent.addView(arrangeSection, 1);
         editBlocks.addAll(question.blocks);
         for (List<String> answer : question.answers) editAnswers.add(new ArrayList<>(answer));
@@ -977,10 +968,6 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.blocks.addAll(valid);
         question.answers.clear();
         question.answers.addAll(answers);
-        question.alt.clear();
-        for (String line : arrangeAlt.getText().toString().split("\n")) {
-            if (!line.trim().isEmpty()) question.alt.add(line.trim());
-        }
         StringBuilder name = new StringBuilder(prompt).append(" · ");
         int firstAnswer = editAnswers.isEmpty() ? -1 : 0;
         if (firstAnswer >= 0) {

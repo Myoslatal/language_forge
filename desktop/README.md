@@ -272,7 +272,7 @@ hintsEnabled disables hints; old questions default to enabled.
 
 Learning hint cards are floating ImGui windows positioned by the word rect (no modal/dim); clicking another word moves them and outside clicks close. Options require 确认答案; correct answers lock green and offer 下一题/完成.
 
-Arrange questions use type="arrange" with prompt, blocks (text/ok) and optional alt. Desktop editor exposes 词块组句; learning page shuffles blocks and checks selected order against ok blocks/alt.
+Arrange questions use type="arrange" with prompt, blocks (id/text/vocabId) and an answers array of ordered block-id sequences. The desktop editor adds blocks through the picker and manages answer sequences from the block pool; learning accepts any configured answer order. Legacy ok/alt data remains readable, but alt is no longer edited.
 
 Arrange learning matches tapped block text to vocabulary entries and plays their audio with trim; arrange editor hides the whole-sentence recording section.
 

@@ -423,7 +423,6 @@ struct App {
   bool questionDirty = false;
   char questionOptions[4][256] = {};
   char arrangePromptInput[512] = {};
-  char arrangeAltInput[1024] = {};
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
@@ -1169,12 +1168,6 @@ struct App {
     questionCorrectIndex = editQuestion.correctIndex;
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
                   editQuestion.prompt.c_str());
-    std::string altText;
-    for (const auto& value : editQuestion.alt) {
-      if (!altText.empty()) altText += "\n";
-      altText += value;
-    }
-    std::snprintf(arrangeAltInput, sizeof(arrangeAltInput), "%s", altText.c_str());
     for (int i = 0; i < 4; ++i) {
       std::snprintf(questionOptions[i], sizeof(questionOptions[i]), "%s",
                     i < static_cast<int>(editQuestion.options.size())
@@ -1213,12 +1206,7 @@ struct App {
         }
       }
       editQuestion.prompt = prompt;
-      editQuestion.alt.clear();
-      std::string line;
-      std::istringstream altStream(arrangeAltInput);
-      while (std::getline(altStream, line)) {
-        if (!trim(line).empty()) editQuestion.alt.push_back(trim(line));
-      }
+      // Legacy alt text is preserved but no longer edited; answers are authoritative.
       editQuestion.name = prompt + " · ";
       bool first = true;
       if (!editQuestion.answers.empty()) {
@@ -2512,9 +2500,6 @@ void renderQuestionEditor(App& app) {
     }
     if (ImGui::Button("＋ 添加答案##arrange_answer", ImVec2(130, 28))) app.openAnswerDialog(-1);
     app.renderAnswerDialog();
-    ImGui::TextUnformatted("等价答案（一行一个，可选）");
-    ImGui::InputTextMultiline("##arrange_alt", app.arrangeAltInput,
-                              sizeof(app.arrangeAltInput), ImVec2(-1, 70));
     if (app.editQuestion.blocks.empty()) {
       ImGui::TextDisabled("至少添加 2 个正确词块");
     }
@@ -2852,16 +2837,20 @@ void renderLearning(App& app) {
         } else {
           std::string answer = normalized(answerText(app.arrangeSelected));
           bool ok = false;
-          for (const auto& ids : question->answers) {
-            if (answer == answerFromIds(ids)) { ok = true; break; }
-          }
-          if (!ok) {
+          if (!question->answers.empty()) {
+            for (const auto& ids : question->answers) {
+              if (answer == answerFromIds(ids)) { ok = true; break; }
+            }
+          } else {
+            // Legacy fallback for questions saved before the answer-list format.
             std::vector<QuestionBlock> legacy;
             for (const auto& block : question->blocks) if (block.ok) legacy.push_back(block);
             if (!legacy.empty() && answer == normalized(answerText(legacy))) ok = true;
-          }
-          for (const auto& alt : question->alt) {
-            if (answer == normalized(alt)) ok = true;
+            if (!ok) {
+              for (const auto& alt : question->alt) {
+                if (answer == normalized(alt)) { ok = true; break; }
+              }
+            }
           }
           if (ok) {
             app.learningAnswered = true;
