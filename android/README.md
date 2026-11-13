@@ -497,3 +497,5 @@ shows POS/meanings/phonetics and plays its vocabulary audio respecting truncatio
 Question-level hintsEnabled (default true) disables underlines, hints and auto-play.
 
 Learning hint cards are non-modal PopupWindows anchored near the tapped word; outside touch dismisses. Options are selectable and require a fixed 确认答案 button; correct answers turn green and unlock 下一题, wrong answers keep the selection editable.
+
+Learning answer UI uses ForgeButton/primary, rounded option cards, fixed bottom confirm, and a card-style floating hint popup. The hint card has no buttons; tap the same word again to replay, tap elsewhere to close.

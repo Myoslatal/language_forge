@@ -2,6 +2,7 @@ package io.github.myoslatal.languageforge;
 
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
@@ -13,6 +14,7 @@ import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.text.style.UnderlineSpan;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -24,7 +26,7 @@ import android.widget.TextView;
 import androidx.annotation.Nullable;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
-import io.github.myoslatal.languageforge.uikit.ForgeDialog;
+import io.github.myoslatal.languageforge.uikit.ForgeButton;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -50,11 +52,13 @@ public class LearningActivity extends ForgeActivity {
     private Handler handler;
     private PopupWindow hintPopup;
     private LinearLayout bottomBar;
-    private Button confirmButton;
+    private ForgeButton confirmButton;
     private int selectedOption = -1;
     private boolean answered;
     private int lastTouchX;
     private int lastTouchY;
+    private String openVocabId;
+    private TextView sentenceView;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -73,7 +77,7 @@ public class LearningActivity extends ForgeActivity {
         handler = new Handler(Looper.getMainLooper());
         setContentView(buildRoot());
         applyTopInset(topbarView);
-        applyBottomInset(scrollView);
+        applyBottomInset(bottomBar);
         showCourses();
     }
 
@@ -86,7 +90,8 @@ public class LearningActivity extends ForgeActivity {
         topbar.setOrientation(LinearLayout.HORIZONTAL);
         topbar.setGravity(Gravity.CENTER_VERTICAL);
         topbar.setPadding(dp(12), dp(12), dp(12), dp(8));
-        Button back = new Button(this);
+        ForgeButton back = new ForgeButton(this);
+        back.setVariant(ForgeButton.VARIANT_GHOST);
         back.setText("←");
         back.setOnClickListener(v -> goBack());
         topbar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(44)));
@@ -113,8 +118,10 @@ public class LearningActivity extends ForgeActivity {
         bottomBar = new LinearLayout(this);
         bottomBar.setPadding(dp(16), dp(8), dp(16), dp(8));
         bottomBar.setOrientation(LinearLayout.VERTICAL);
-        confirmButton = new Button(this);
+        confirmButton = new ForgeButton(this);
+        confirmButton.setVariant(ForgeButton.VARIANT_PRIMARY);
         confirmButton.setText("确认答案");
+        confirmButton.setTextSize(15f);
         confirmButton.setVisibility(View.GONE);
         confirmButton.setOnClickListener(v -> {
             if (answered) nextQuestion(); else confirmAnswer();
@@ -123,6 +130,19 @@ public class LearningActivity extends ForgeActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
         root.addView(bottomBar);
         return root;
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (hintPopup != null && sentenceView != null && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            int[] location = new int[2];
+            sentenceView.getLocationOnScreen(location);
+            float y = event.getY();
+            if (y < location[1] - dp(8) || y > location[1] + sentenceView.getHeight() + dp(8)) {
+                dismissHint();
+            }
+        }
+        return super.dispatchTouchEvent(event);
     }
 
     private void showCourses() {
@@ -191,6 +211,7 @@ public class LearningActivity extends ForgeActivity {
         sentence.setLineSpacing(dp(6), 1f);
         CharSequence rendered = renderSentence(item, sentence);
         sentence.setText(rendered);
+        sentenceView = sentence;
         sentence.setMovementMethod(LinkMovementMethod.getInstance());
         sentence.setOnTouchListener((v, event) -> {
             lastTouchX = (int) event.getRawX();
@@ -213,10 +234,13 @@ public class LearningActivity extends ForgeActivity {
         content.addView(text("选项（选择后确认）", 14, R.color.forge_muted));
         for (int i = 0; i < item.options.size(); i++) {
             final int index = i;
-            Button option = new Button(this);
+            ForgeButton option = new ForgeButton(this);
             option.setAllCaps(false);
             option.setText((i + 1) + ". " + item.options.get(i));
             option.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            option.setTextSize(16f);
+            option.setPadding(dp(16), 0, dp(16), 0);
+            styleOption(option, false, false);
             option.setTag("option");
             option.setOnClickListener(v -> {
                 if (answered) return;
@@ -241,18 +265,29 @@ public class LearningActivity extends ForgeActivity {
                 View earlier = content.getChildAt(j);
                 if (earlier instanceof Button && "option".equals(earlier.getTag())) optionIndex++;
             }
-            if (answered && question.correctIndex == optionIndex) {
-                button.setBackgroundColor(getColor(R.color.forge_ok_bg));
-                button.setTextColor(getColor(R.color.forge_ok));
-            } else if (selectedOption == optionIndex) {
-                button.setBackgroundColor(getColor(R.color.forge_accent_soft));
-                button.setTextColor(getColor(R.color.forge_text));
-            } else {
-                button.setBackgroundColor(Color.TRANSPARENT);
-                button.setTextColor(getColor(R.color.forge_text));
-            }
-            button.setEnabled(!answered);
+            styleOption(button,
+                    answered && question.correctIndex == optionIndex,
+                    selectedOption == optionIndex);
+            button.setEnabled(true);
+            button.setAlpha(1f);
         }
+    }
+
+    private void styleOption(Button button, boolean correct, boolean selected) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(14));
+        if (correct) {
+            shape.setColor(getColor(R.color.forge_ok_bg));
+            button.setTextColor(getColor(R.color.forge_ok));
+        } else if (selected) {
+            shape.setColor(getColor(R.color.forge_accent_soft));
+            button.setTextColor(getColor(R.color.forge_accent));
+        } else {
+            shape.setColor(getColor(R.color.forge_panel));
+            button.setTextColor(getColor(R.color.forge_text));
+        }
+        shape.setStroke(dp(1), getColor(R.color.forge_panel3));
+        button.setBackground(shape);
     }
 
     private void confirmAnswer() {
@@ -330,6 +365,10 @@ public class LearningActivity extends ForgeActivity {
             toast("词汇已删除");
             return;
         }
+        if (hintPopup != null && vocabId.equals(openVocabId)) {
+            play(entry.audio, entry.audioStart, entry.audioEnd);
+            return;
+        }
         StringBuilder text = new StringBuilder();
         if (!entry.phonetics.isEmpty()) {
             text.append("音标：").append(String.join(" / ", entry.phonetics)).append("\n\n");
@@ -350,6 +389,7 @@ public class LearningActivity extends ForgeActivity {
         }
         text.append("\n\n").append(entry.audio.isEmpty()
                 ? "示例发音：暂无" : "示例发音：已自动播放");
+        openVocabId = vocabId;
         showHintPopup(entry, text.toString().trim());
         play(entry.audio, entry.audioStart, entry.audioEnd);
     }
@@ -359,7 +399,12 @@ public class LearningActivity extends ForgeActivity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackgroundColor(getColor(R.color.forge_panel));
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(getColor(R.color.forge_panel));
+        cardBg.setCornerRadius(dp(16));
+        cardBg.setStroke(dp(1), getColor(R.color.forge_panel3));
+        card.setBackground(cardBg);
+        card.setElevation(dp(8));
         TextView title = new TextView(this);
         title.setText(vocabulary.displayName(entry));
         title.setTextSize(16f);
@@ -374,22 +419,21 @@ public class LearningActivity extends ForgeActivity {
         scroll.addView(contentText);
         card.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(180)));
-        Button replay = new Button(this);
-        replay.setAllCaps(false);
-        replay.setText("再听一次");
-        replay.setOnClickListener(v -> play(entry.audio, entry.audioStart, entry.audioEnd));
-        card.addView(replay);
-        Button close = new Button(this);
-        close.setAllCaps(false);
-        close.setText("关闭");
-        close.setOnClickListener(v -> dismissHint());
-        card.addView(close);
+        TextView replayHint = new TextView(this);
+        replayHint.setText("再次点击词汇可重播");
+        replayHint.setTextSize(11f);
+        replayHint.setTextColor(getColor(R.color.forge_muted));
+        replayHint.setPadding(0, dp(6), 0, 0);
+        card.addView(replayHint);
 
         hintPopup = new PopupWindow(card, dp(320), ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        hintPopup.setOutsideTouchable(true);
-        hintPopup.setFocusable(true);
+        hintPopup.setOutsideTouchable(false);
+        hintPopup.setFocusable(false);
         hintPopup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        hintPopup.setOnDismissListener(this::stopAudio);
+        hintPopup.setOnDismissListener(() -> {
+            openVocabId = null;
+            stopAudio();
+        });
         int[] location = new int[2];
         content.getLocationOnScreen(location);
         int x = Math.max(dp(8), Math.min(lastTouchX - location[0], content.getWidth() - dp(320)));
