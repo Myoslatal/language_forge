@@ -123,7 +123,8 @@ final class ProjectStructure {
                                                 String blockText = block.optString("text", "");
                                                 if (!blockText.trim().isEmpty()) {
                                                     question.blocks.add(new Question.Block(blockText,
-                                                            block.optBoolean("ok", false)));
+                                                            block.optBoolean("ok", false),
+                                                            block.optString("vocabId", "")));
                                                 }
                                             }
                                         }
@@ -230,6 +231,7 @@ final class ProjectStructure {
                                 JSONObject object = new JSONObject();
                                 object.put("text", block.text);
                                 object.put("ok", block.ok);
+                                if (!block.vocabId.isEmpty()) object.put("vocabId", block.vocabId);
                                 blocks.put(object);
                             }
                             questionObject.put("blocks", blocks);
@@ -414,10 +416,16 @@ final class ProjectStructure {
         static final class Block {
             String text = "";
             boolean ok;
+            String vocabId = "";
 
             Block(String text, boolean ok) {
+                this(text, ok, "");
+            }
+
+            Block(String text, boolean ok, String vocabId) {
                 this.text = text;
                 this.ok = ok;
+                this.vocabId = vocabId == null ? "" : vocabId;
             }
         }
 

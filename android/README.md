@@ -503,3 +503,5 @@ Learning answer UI uses ForgeButton/primary, rounded option cards, fixed bottom 
 Arrange questions use type="arrange" with prompt, blocks (text/ok) and optional alt. The editor exposes 词块组句 with block add/up/delete and ok toggle; learning shuffles blocks into a pool, tap to add/remove, then confirm.
 
 Arrange learning plays the vocabulary audio of a tapped block (pool or selected) by matching block text to vocabulary text/display name; no match/no audio is silent. Arrange editor has no whole-sentence recording section.
+
+Arrange blocks are added via the shared vocabulary picker; new blocks store vocabId and display-name text, deduplicate by vocabId, and learning audio prefers vocabId then text.

@@ -179,12 +179,8 @@ public class QuestionEditorActivity extends ForgeActivity {
         arrangeSection.addView(arrangeBlockRows);
         ForgeButton addBlock = new ForgeButton(this);
         addBlock.setAllCaps(false);
-        addBlock.setText("＋ 添加词块");
-        addBlock.setOnClickListener(v -> {
-            editBlocks.add(new ProjectStructure.Question.Block("", true));
-            renderArrangeBlocks();
-            dirty = true;
-        });
+        addBlock.setText("＋ 从词汇选择");
+        addBlock.setOnClickListener(v -> openArrangePicker());
         arrangeSection.addView(addBlock);
         arrangeAlt = new EditText(this);
         arrangeAlt.setHint("等价答案（一行一个，可选）");
@@ -631,6 +627,46 @@ public class QuestionEditorActivity extends ForgeActivity {
         updateAudioUi();
     }
 
+    private void openArrangePicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "选择词块词汇");
+        ArrayList<String> selected = new ArrayList<>();
+        for (ProjectStructure.Question.Block block : editBlocks) {
+            if (!block.vocabId.isEmpty()) selected.add(block.vocabId);
+        }
+        intent.putStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS, selected);
+        arrangePickerLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> arrangePickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> selected = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (selected == null) return;
+                int skipped = 0;
+                for (String id : selected) {
+                    if (id == null || id.isEmpty()) continue;
+                    boolean exists = false;
+                    for (ProjectStructure.Question.Block block : editBlocks) {
+                        if (id.equals(block.vocabId)) { exists = true; break; }
+                    }
+                    if (exists) { skipped++; continue; }
+                    VocabularyEntry entry = null;
+                    for (VocabularyEntry candidate : vocabulary.entries) {
+                        if (id.equals(candidate.id)) { entry = candidate; break; }
+                    }
+                    if (entry == null) continue;
+                    editBlocks.add(new ProjectStructure.Question.Block(
+                            vocabulary.displayName(entry), true, id));
+                }
+                if (skipped > 0) toast("已跳过重复词汇块");
+                renderArrangeBlocks();
+                dirty = true;
+            });
+
     private void renderArrangeBlocks() {
         arrangeBlockRows.removeAllViews();
         for (int i = 0; i < editBlocks.size(); i++) {
@@ -740,7 +776,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             String value = block.text == null ? "" : block.text.trim();
             if (value.isEmpty()) { toast("词块文本不能为空"); return; }
             if (block.ok) correctCount++;
-            valid.add(new ProjectStructure.Question.Block(value, block.ok));
+            valid.add(new ProjectStructure.Question.Block(value, block.ok, block.vocabId));
         }
         if (correctCount < 2) { toast("至少需要 2 个正确词块"); return; }
         question.type = ProjectStructure.Question.TYPE_ARRANGE;

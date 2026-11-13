@@ -416,6 +416,7 @@ struct App {
   bool editDirty = false;
   bool pickerOpen = false;
   bool pickerForQuestion = false;
+  bool pickerForBlocks = false;
   std::string pickerForId;
   Question editQuestion;
   bool questionIsNew = false;
@@ -1287,6 +1288,18 @@ struct App {
     pickerForQuestion = true;
     pickerSelected = editQuestion.parts;
     pickerForId.clear();
+    std::snprintf(pickerSearch, sizeof(pickerSearch), "%s", "");
+    pickerOpen = true;
+  }
+
+  void openArrangeBlockPicker() {
+    if (!vocabulary) loadVocabularyData();
+    pickerForQuestion = false;
+    pickerForBlocks = true;
+    pickerSelected.clear();
+    for (const auto& block : editQuestion.blocks) {
+      if (!block.vocabId.empty()) pickerSelected.push_back(block.vocabId);
+    }
     std::snprintf(pickerSearch, sizeof(pickerSearch), "%s", "");
     pickerOpen = true;
   }
@@ -2392,9 +2405,8 @@ void renderQuestionEditor(App& app) {
       }
       ImGui::PopID();
     }
-    if (ImGui::Button("＋ 添加词块##arrange_add", ImVec2(130, 28))) {
-      app.editQuestion.blocks.push_back({"", true});
-      app.questionDirty = true;
+    if (ImGui::Button("＋ 从词汇选择##arrange_add", ImVec2(150, 28))) {
+      app.openArrangeBlockPicker();
     }
     ImGui::TextUnformatted("等价答案（一行一个，可选）");
     ImGui::InputTextMultiline("##arrange_alt", app.arrangeAltInput,
@@ -2615,18 +2627,25 @@ void renderLearning(App& app) {
         return value;
       };
       needle = trimCopy(needle);
-      for (const auto& entry : app.vocabulary->entries) {
-        const std::string name = displayName(entry, app.vocabulary->entries);
-        if (iequals(trimCopy(name), needle) || iequals(trimCopy(entry.text), needle)) {
-          if (!entry.audio.empty()) {
-            std::fprintf(stderr, "FORGE_LEARN blockAudio %s -> %s %d..%d\n",
-                         needle.c_str(), entry.audio.c_str(),
-                         static_cast<int>(entry.audioStart), static_cast<int>(entry.audioEnd));
-            app.playAudioFile(entry.audio, static_cast<int>(entry.audioStart),
-                              static_cast<int>(entry.audioEnd));
+      const VocabEntry* match = nullptr;
+      if (!block.vocabId.empty()) {
+        match = app.vocabulary->find(block.vocabId);
+      }
+      if (!match) {
+        for (const auto& entry : app.vocabulary->entries) {
+          const std::string name = displayName(entry, app.vocabulary->entries);
+          if (iequals(trimCopy(name), needle) || iequals(trimCopy(entry.text), needle)) {
+            match = &entry;
+            break;
           }
-          return;
         }
+      }
+      if (match && !match->audio.empty()) {
+        std::fprintf(stderr, "FORGE_LEARN blockAudio %s vocabId=%s -> %s %d..%d\n",
+                     needle.c_str(), block.vocabId.c_str(), match->audio.c_str(),
+                     static_cast<int>(match->audioStart), static_cast<int>(match->audioEnd));
+        app.playAudioFile(match->audio, static_cast<int>(match->audioStart),
+                          static_cast<int>(match->audioEnd));
       }
     };
     if (app.arrangeQuestionId != question->id) {
@@ -5329,11 +5348,32 @@ void renderPicker(App& app) {
   ImGui::Spacing();
   if (ImGui::Button("取消", ImVec2(110, 34))) {
     app.pickerOpen = false;
+    app.pickerForBlocks = false;
     open = false;
   }
   ImGui::SameLine();
   if (ImGui::Button("确定", ImVec2(120, 34))) {
-    if (app.pickerForQuestion) {
+    if (app.pickerForBlocks) {
+      int skipped = 0;
+      for (const auto& id : app.pickerSelected) {
+        bool exists = false;
+        for (const auto& block : app.editQuestion.blocks) {
+          if (!block.vocabId.empty() && block.vocabId == id) { exists = true; break; }
+        }
+        if (exists) { skipped++; continue; }
+        if (!app.vocabulary) continue;
+        for (const auto& entry : app.vocabulary->entries) {
+          if (entry.id == id) {
+            app.editQuestion.blocks.push_back(
+                {displayName(entry, app.vocabulary->entries), true, id});
+            break;
+          }
+        }
+      }
+      if (skipped > 0) app.showToast("已跳过重复词汇块");
+      app.questionDirty = true;
+      app.pickerForBlocks = false;
+    } else if (app.pickerForQuestion) {
       std::vector<QuestionSegment> punctuation;
       for (const auto& segment : app.editQuestion.segments) {
         if (segment.kind == "punct") punctuation.push_back(segment);
@@ -5351,6 +5391,7 @@ void renderPicker(App& app) {
       app.editDirty = true;
     }
     app.pickerOpen = false;
+    app.pickerForBlocks = false;
     open = false;
   }
   ImGui::End();

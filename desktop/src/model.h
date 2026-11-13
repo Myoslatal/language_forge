@@ -25,6 +25,7 @@ struct QuestionSegment {
 struct QuestionBlock {
   std::string text;
   bool ok = false;
+  std::string vocabId;
 };
 
 struct Question {

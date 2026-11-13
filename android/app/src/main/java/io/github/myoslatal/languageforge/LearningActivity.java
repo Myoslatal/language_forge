@@ -291,7 +291,7 @@ public class LearningActivity extends ForgeActivity {
             styleOption(chip, answered, false);
             chip.setOnClickListener(v -> {
                 if (answered) return;
-                playVocabularyForBlock(block.text);
+                playVocabularyForBlock(block);
                 arrangeSelected.remove(block);
                 arrangePool.add(block);
                 renderArrangeQuestion(question);
@@ -317,7 +317,7 @@ public class LearningActivity extends ForgeActivity {
             chip.setOnClickListener(v -> {
                 if (answered) return;
                 dismissHint();
-                playVocabularyForBlock(block.text);
+                playVocabularyForBlock(block);
                 arrangePool.remove(block);
                 arrangeSelected.add(block);
                 renderArrangeQuestion(question);
@@ -330,20 +330,28 @@ public class LearningActivity extends ForgeActivity {
         if (!answered) confirmButton.setText("确认答案");
     }
 
-    private void playVocabularyForBlock(String text) {
-        String needle = text == null ? "" : text.trim();
-        if (needle.isEmpty()) return;
-        for (VocabularyEntry entry : vocabulary.entries) {
-            String name = vocabulary.displayName(entry);
-            if (name.equalsIgnoreCase(needle)
-                    || (entry.text != null && entry.text.trim().equalsIgnoreCase(needle))) {
-                if (!entry.audio.isEmpty()) {
-                    android.util.Log.d("FORGE_LEARN", "blockAudio " + needle + " -> "
-                            + entry.audio + " " + entry.audioStart + ".." + entry.audioEnd);
-                    play(entry.audio, entry.audioStart, entry.audioEnd);
+    private void playVocabularyForBlock(ProjectStructure.Question.Block block) {
+        if (block == null) return;
+        String needle = block.text == null ? "" : block.text.trim();
+        VocabularyEntry match = null;
+        if (block.vocabId != null && !block.vocabId.isEmpty()) {
+            match = findEntry(block.vocabId);
+        }
+        if (match == null) {
+            for (VocabularyEntry entry : vocabulary.entries) {
+                String name = vocabulary.displayName(entry);
+                if (name.equalsIgnoreCase(needle)
+                        || (entry.text != null && entry.text.trim().equalsIgnoreCase(needle))) {
+                    match = entry;
+                    break;
                 }
-                return;
             }
+        }
+        if (match != null && !match.audio.isEmpty()) {
+            android.util.Log.d("FORGE_LEARN", "blockAudio " + needle + " vocabId="
+                    + block.vocabId + " -> " + match.audio + " " + match.audioStart
+                    + ".." + match.audioEnd);
+            play(match.audio, match.audioStart, match.audioEnd);
         }
     }
 

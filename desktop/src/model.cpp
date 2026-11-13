@@ -155,7 +155,8 @@ json structureToJson(const Structure& structure) {
         for (const auto& question : course.questions) {
           json blocks = json::array();
           for (const auto& block : question.blocks) {
-            blocks.push_back({{"text", block.text}, {"ok", block.ok}});
+            blocks.push_back({{"text", block.text}, {"ok", block.ok},
+                              {"vocabId", block.vocabId}});
           }
           questions.push_back({{"id", question.id},
                                {"name", question.name},
@@ -232,6 +233,7 @@ Structure structureFromJson(const json& value) {
                     QuestionBlock qb;
                     qb.text = block.value("text", "");
                     qb.ok = block.value("ok", false);
+                    qb.vocabId = block.value("vocabId", "");
                     if (!qb.text.empty()) question.blocks.push_back(qb);
                   }
                 }

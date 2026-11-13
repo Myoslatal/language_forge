@@ -275,3 +275,5 @@ Learning hint cards are floating ImGui windows positioned by the word rect (no m
 Arrange questions use type="arrange" with prompt, blocks (text/ok) and optional alt. Desktop editor exposes 词块组句; learning page shuffles blocks and checks selected order against ok blocks/alt.
 
 Arrange learning matches tapped block text to vocabulary entries and plays their audio with trim; arrange editor hides the whole-sentence recording section.
+
+Arrange blocks are added from the shared vocabulary picker, storing vocabId + display-name text; duplicates are skipped by vocabId and learning audio prefers vocabId.
