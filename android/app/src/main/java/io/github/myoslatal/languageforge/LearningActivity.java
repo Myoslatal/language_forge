@@ -291,6 +291,7 @@ public class LearningActivity extends ForgeActivity {
             styleOption(chip, answered, false);
             chip.setOnClickListener(v -> {
                 if (answered) return;
+                playVocabularyForBlock(block.text);
                 arrangeSelected.remove(block);
                 arrangePool.add(block);
                 renderArrangeQuestion(question);
@@ -316,6 +317,7 @@ public class LearningActivity extends ForgeActivity {
             chip.setOnClickListener(v -> {
                 if (answered) return;
                 dismissHint();
+                playVocabularyForBlock(block.text);
                 arrangePool.remove(block);
                 arrangeSelected.add(block);
                 renderArrangeQuestion(question);
@@ -326,6 +328,23 @@ public class LearningActivity extends ForgeActivity {
         content.addView(pool);
         confirmButton.setVisibility(arrangeSelected.isEmpty() ? View.GONE : View.VISIBLE);
         if (!answered) confirmButton.setText("确认答案");
+    }
+
+    private void playVocabularyForBlock(String text) {
+        String needle = text == null ? "" : text.trim();
+        if (needle.isEmpty()) return;
+        for (VocabularyEntry entry : vocabulary.entries) {
+            String name = vocabulary.displayName(entry);
+            if (name.equalsIgnoreCase(needle)
+                    || (entry.text != null && entry.text.trim().equalsIgnoreCase(needle))) {
+                if (!entry.audio.isEmpty()) {
+                    android.util.Log.d("FORGE_LEARN", "blockAudio " + needle + " -> "
+                            + entry.audio + " " + entry.audioStart + ".." + entry.audioEnd);
+                    play(entry.audio, entry.audioStart, entry.audioEnd);
+                }
+                return;
+            }
+        }
     }
 
     private String arrangeAnswer(List<ProjectStructure.Question.Block> blocks) {

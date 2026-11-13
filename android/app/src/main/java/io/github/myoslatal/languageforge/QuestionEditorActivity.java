@@ -696,6 +696,13 @@ public class QuestionEditorActivity extends ForgeActivity {
             View view = findViewById(id);
             if (view != null) view.setVisibility(arrange ? View.GONE : View.VISIBLE);
         }
+        int[] audioIds = {R.id.question_audio_hint, R.id.question_audio_trim,
+                R.id.question_audio_start, R.id.question_audio_end, R.id.btn_question_record,
+                R.id.btn_question_play, R.id.btn_question_remove_audio, R.id.btn_question_trim_play};
+        for (int id : audioIds) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(arrange ? View.GONE : View.VISIBLE);
+        }
         for (int i = 0; i < 4; i++) {
             int optionId = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
             int correctId = getResources().getIdentifier("question_correct_" + i, "id", getPackageName());
@@ -710,7 +717,9 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (view instanceof TextView) {
             String text = ((TextView) view).getText().toString();
             if (text.startsWith("句子词汇") || text.startsWith("四个选项")
-                    || text.contains("选择一个正确答案")) {
+                    || text.contains("选择一个正确答案") || text.startsWith("整句录音")
+                    || text.startsWith("裁剪：") || text.startsWith("试听裁剪")
+                    || text.startsWith("可选；录制")) {
                 view.setVisibility(arrange ? View.GONE : View.VISIBLE);
             }
         }

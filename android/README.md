@@ -501,3 +501,5 @@ Learning hint cards are non-modal PopupWindows anchored near the tapped word; ou
 Learning answer UI uses ForgeButton/primary, rounded option cards, fixed bottom confirm, and a card-style floating hint popup. The hint card has no buttons; tap the same word again to replay, tap elsewhere to close.
 
 Arrange questions use type="arrange" with prompt, blocks (text/ok) and optional alt. The editor exposes 词块组句 with block add/up/delete and ok toggle; learning shuffles blocks into a pool, tap to add/remove, then confirm.
+
+Arrange learning plays the vocabulary audio of a tapped block (pool or selected) by matching block text to vocabulary text/display name; no match/no audio is silent. Arrange editor has no whole-sentence recording section.

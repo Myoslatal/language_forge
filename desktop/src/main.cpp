@@ -2597,6 +2597,38 @@ void renderLearning(App& app) {
   }
   if (!question) return;
   if (question->type == "arrange") {
+    app.ensureVocabularyLoaded();
+    auto iequals = [](std::string a, std::string b) {
+      std::transform(a.begin(), a.end(), a.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      std::transform(b.begin(), b.end(), b.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      return a == b;
+    };
+    auto playBlockAudio = [&](const QuestionBlock& block) {
+      if (!app.vocabulary) return;
+      std::string needle = block.text;
+      auto trimCopy = [](std::string value) {
+        auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+        value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+        value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+        return value;
+      };
+      needle = trimCopy(needle);
+      for (const auto& entry : app.vocabulary->entries) {
+        const std::string name = displayName(entry, app.vocabulary->entries);
+        if (iequals(trimCopy(name), needle) || iequals(trimCopy(entry.text), needle)) {
+          if (!entry.audio.empty()) {
+            std::fprintf(stderr, "FORGE_LEARN blockAudio %s -> %s %d..%d\n",
+                         needle.c_str(), entry.audio.c_str(),
+                         static_cast<int>(entry.audioStart), static_cast<int>(entry.audioEnd));
+            app.playAudioFile(entry.audio, static_cast<int>(entry.audioStart),
+                              static_cast<int>(entry.audioEnd));
+          }
+          return;
+        }
+      }
+    };
     if (app.arrangeQuestionId != question->id) {
       app.arrangeQuestionId = question->id;
       app.arrangePool = question->blocks;
@@ -2641,6 +2673,7 @@ void renderLearning(App& app) {
       if (green) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
       if (ImGui::Button(app.arrangeSelected[i].text.c_str(), ImVec2(0, 36))) {
         if (!app.learningAnswered) {
+          playBlockAudio(app.arrangeSelected[i]);
           app.arrangePool.push_back(app.arrangeSelected[i]);
           app.arrangeSelected.erase(app.arrangeSelected.begin() + i);
           if (green) ImGui::PopStyleColor();
@@ -2658,6 +2691,7 @@ void renderLearning(App& app) {
       ImGui::PushID(static_cast<int>(i) + 1000);
       if (ImGui::Button((app.arrangePool[i].text + "##arrange_pool").c_str(), ImVec2(-1, 38))) {
         if (!app.learningAnswered) {
+          playBlockAudio(app.arrangePool[i]);
           app.arrangeSelected.push_back(app.arrangePool[i]);
           app.arrangePool.erase(app.arrangePool.begin() + i);
           ImGui::PopID();
