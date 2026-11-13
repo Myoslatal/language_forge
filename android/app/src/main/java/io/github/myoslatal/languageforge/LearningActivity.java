@@ -30,6 +30,7 @@ import io.github.myoslatal.languageforge.uikit.ForgeButton;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -59,6 +60,8 @@ public class LearningActivity extends ForgeActivity {
     private int lastTouchY;
     private String openVocabId;
     private TextView sentenceView;
+    private final List<ProjectStructure.Question.Block> arrangePool = new ArrayList<>();
+    private final List<ProjectStructure.Question.Block> arrangeSelected = new ArrayList<>();
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -182,7 +185,9 @@ public class LearningActivity extends ForgeActivity {
             Button row = new Button(this);
             row.setAllCaps(false);
             String sentence = item.sentence == null || item.sentence.isEmpty() ? item.name : item.sentence;
-            row.setText(sentence + "\n选择正确翻译" + (item.hintsEnabled ? " · 学习提示" : " · 无提示"));
+            boolean arrange = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type);
+            row.setText(sentence + "\n" + (arrange ? "词块组句" : "选择正确翻译") +
+                    (item.hintsEnabled ? " · 学习提示" : " · 无提示"));
             row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             row.setOnClickListener(v -> showQuestion(selected, item));
             content.addView(row, new LinearLayout.LayoutParams(
@@ -197,13 +202,20 @@ public class LearningActivity extends ForgeActivity {
         dismissHint();
         selectedOption = -1;
         answered = false;
+        arrangePool.clear();
+        arrangeSelected.clear();
         confirmButton.setVisibility(View.GONE);
         confirmButton.setText("确认答案");
         course = selected;
         question = item;
         titleView.setText(item.name == null || item.name.isEmpty() ? "题目" : item.name);
-        subtitleView.setText(selected.name + " · 选择正确翻译");
+        subtitleView.setText(selected.name + " · " +
+                (ProjectStructure.Question.TYPE_ARRANGE.equals(item.type) ? "词块组句" : "选择正确翻译"));
         content.removeAllViews();
+        if (ProjectStructure.Question.TYPE_ARRANGE.equals(item.type)) {
+            renderArrangeQuestion(item);
+            return;
+        }
 
         TextView sentence = new TextView(this);
         sentence.setTextSize(22f);
@@ -254,6 +266,93 @@ public class LearningActivity extends ForgeActivity {
         }
     }
 
+    private void renderArrangeQuestion(ProjectStructure.Question item) {
+        if (arrangePool.isEmpty() && arrangeSelected.isEmpty()) {
+            arrangePool.addAll(item.blocks);
+            Collections.shuffle(arrangePool);
+        }
+        content.removeAllViews();
+        content.addView(text(item.prompt == null || item.prompt.isEmpty()
+                ? "词块组句" : item.prompt, 20, R.color.forge_text));
+        content.addView(text("按正确顺序点击词块", 12, R.color.forge_muted));
+
+        content.addView(text("已选", 13, R.color.forge_muted));
+        LinearLayout selectedRow = new LinearLayout(this);
+        selectedRow.setOrientation(LinearLayout.HORIZONTAL);
+        selectedRow.setPadding(0, dp(6), 0, dp(6));
+        if (arrangeSelected.isEmpty()) {
+            selectedRow.addView(text("点击下方词块加入", 13, R.color.forge_muted));
+        }
+        for (ProjectStructure.Question.Block block : arrangeSelected) {
+            ForgeButton chip = new ForgeButton(this);
+            chip.setAllCaps(false);
+            chip.setText(block.text);
+            chip.setTextSize(15f);
+            styleOption(chip, answered, false);
+            chip.setOnClickListener(v -> {
+                if (answered) return;
+                arrangeSelected.remove(block);
+                arrangePool.add(block);
+                renderArrangeQuestion(question);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
+            lp.setMargins(0, 0, dp(6), 0);
+            selectedRow.addView(chip, lp);
+        }
+        content.addView(selectedRow);
+
+        content.addView(text("词块池", 13, R.color.forge_muted));
+        LinearLayout pool = new LinearLayout(this);
+        pool.setOrientation(LinearLayout.VERTICAL);
+        for (ProjectStructure.Question.Block block : arrangePool) {
+            ForgeButton chip = new ForgeButton(this);
+            chip.setAllCaps(false);
+            chip.setText(block.text);
+            chip.setTextSize(16f);
+            chip.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            chip.setPadding(dp(16), 0, dp(16), 0);
+            styleOption(chip, false, false);
+            chip.setOnClickListener(v -> {
+                if (answered) return;
+                dismissHint();
+                arrangePool.remove(block);
+                arrangeSelected.add(block);
+                renderArrangeQuestion(question);
+            });
+            pool.addView(chip, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+        }
+        content.addView(pool);
+        confirmButton.setVisibility(arrangeSelected.isEmpty() ? View.GONE : View.VISIBLE);
+        if (!answered) confirmButton.setText("确认答案");
+    }
+
+    private String arrangeAnswer(List<ProjectStructure.Question.Block> blocks) {
+        StringBuilder builder = new StringBuilder();
+        for (ProjectStructure.Question.Block block : blocks) {
+            if (builder.length() > 0) builder.append(' ');
+            builder.append(block.text.trim());
+        }
+        String value = builder.toString().trim().replaceAll("\\s+", " ");
+        return value.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean arrangeCorrect(ProjectStructure.Question item) {
+        String answer = arrangeAnswer(arrangeSelected);
+        List<ProjectStructure.Question.Block> correct = new ArrayList<>();
+        for (ProjectStructure.Question.Block block : item.blocks) {
+            if (block.ok) correct.add(block);
+        }
+        if (answer.equals(arrangeAnswer(correct))) return true;
+        for (String alt : item.alt) {
+            if (answer.equals(alt.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void updateOptionStyles() {
         for (int i = 0; i < content.getChildCount(); i++) {
             View child = content.getChildAt(i);
@@ -291,7 +390,21 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void confirmAnswer() {
-        if (question == null || selectedOption < 0 || answered) return;
+        if (question == null || answered) return;
+        if (ProjectStructure.Question.TYPE_ARRANGE.equals(question.type)) {
+            if (arrangeSelected.isEmpty()) return;
+            dismissHint();
+            if (arrangeCorrect(question)) {
+                answered = true;
+                renderArrangeQuestion(question);
+                confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
+                confirmButton.setVisibility(View.VISIBLE);
+            } else {
+                toast("回答错误，请重新选择");
+            }
+            return;
+        }
+        if (selectedOption < 0) return;
         dismissHint();
         if (selectedOption == question.correctIndex) {
             answered = true;

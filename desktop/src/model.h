@@ -22,6 +22,11 @@ struct QuestionSegment {
   std::string text;
 };
 
+struct QuestionBlock {
+  std::string text;
+  bool ok = false;
+};
+
 struct Question {
   std::string id;
   std::string name;
@@ -35,6 +40,9 @@ struct Question {
   long long audioEnd = 0;
   bool hintsEnabled = true;
   std::vector<std::string> options;
+  std::string prompt;
+  std::vector<QuestionBlock> blocks;
+  std::vector<std::string> alt;
   int correctIndex = -1;
 };
 

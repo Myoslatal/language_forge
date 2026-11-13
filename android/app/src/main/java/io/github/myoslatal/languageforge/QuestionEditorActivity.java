@@ -9,8 +9,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.RadioButton;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -79,6 +84,13 @@ public class QuestionEditorActivity extends ForgeActivity {
     private String originalAudio = "";
     private long existingDuration;
     private boolean audioRemoved;
+    private Spinner typeSpinner;
+    private LinearLayout arrangeSection;
+    private LinearLayout arrangeBlockRows;
+    private EditText arrangePrompt;
+    private EditText arrangeAlt;
+    private final List<ProjectStructure.Question.Block> editBlocks = new ArrayList<>();
+    private LinearLayout editorScrollContent;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -144,6 +156,51 @@ public class QuestionEditorActivity extends ForgeActivity {
                 isNew ? "新建题目" : "编辑题目");
         ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
                 "选择正确翻译 · " + course.name);
+        LinearLayout scrollContent = (LinearLayout) ((ScrollView)
+                findViewById(R.id.question_editor_scroll)).getChildAt(0);
+        editorScrollContent = scrollContent;
+        typeSpinner = new Spinner(this);
+        ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item,
+                new String[]{"选择正确翻译", "词块组句"});
+        typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        typeSpinner.setAdapter(typeAdapter);
+        typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1 : 0);
+        scrollContent.addView(typeSpinner, 0);
+        arrangeSection = new LinearLayout(this);
+        arrangeSection.setOrientation(LinearLayout.VERTICAL);
+        arrangeSection.setVisibility(View.GONE);
+        arrangePrompt = new EditText(this);
+        arrangePrompt.setHint("题干/释义（必填）");
+        arrangePrompt.setText(question.prompt == null ? "" : question.prompt);
+        arrangeSection.addView(arrangePrompt);
+        arrangeBlockRows = new LinearLayout(this);
+        arrangeBlockRows.setOrientation(LinearLayout.VERTICAL);
+        arrangeSection.addView(arrangeBlockRows);
+        ForgeButton addBlock = new ForgeButton(this);
+        addBlock.setAllCaps(false);
+        addBlock.setText("＋ 添加词块");
+        addBlock.setOnClickListener(v -> {
+            editBlocks.add(new ProjectStructure.Question.Block("", true));
+            renderArrangeBlocks();
+            dirty = true;
+        });
+        arrangeSection.addView(addBlock);
+        arrangeAlt = new EditText(this);
+        arrangeAlt.setHint("等价答案（一行一个，可选）");
+        arrangeAlt.setText(String.join("\n", question.alt));
+        arrangeSection.addView(arrangeAlt);
+        scrollContent.addView(arrangeSection, 1);
+        editBlocks.addAll(question.blocks);
+        renderArrangeBlocks();
+        typeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                                   int position, long id) {
+                applyType(position == 1);
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        applyType(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type));
         partsContainer = findViewById(R.id.question_parts);
         sentenceView = findViewById(R.id.question_sentence);
         audioHint = findViewById(R.id.question_audio_hint);
@@ -197,6 +254,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             });
         }
         findViewById(R.id.btn_question_back).setOnClickListener(v -> confirmBack());
+        applyType(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type));
         findViewById(R.id.btn_save_question).setOnClickListener(v -> save());
         findViewById(R.id.btn_choose_question_parts).setOnClickListener(v -> openPicker());
         findViewById(R.id.btn_insert_punct).setOnClickListener(v -> showPunctuationMenu(v));
@@ -573,7 +631,139 @@ public class QuestionEditorActivity extends ForgeActivity {
         updateAudioUi();
     }
 
+    private void renderArrangeBlocks() {
+        arrangeBlockRows.removeAllViews();
+        for (int i = 0; i < editBlocks.size(); i++) {
+            final int index = i;
+            ProjectStructure.Question.Block block = editBlocks.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            EditText text = new EditText(this);
+            text.setHint("词块文本");
+            text.setText(block.text);
+            text.addTextChangedListener(new android.text.TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                @Override public void onTextChanged(CharSequence s, int st, int b, int c) {
+                    block.text = s.toString();
+                    dirty = true;
+                }
+                @Override public void afterTextChanged(android.text.Editable s) {}
+            });
+            row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            CheckBox ok = new CheckBox(this);
+            ok.setText("正");
+            ok.setChecked(block.ok);
+            ok.setOnCheckedChangeListener((b, checked) -> {
+                block.ok = checked;
+                dirty = true;
+            });
+            row.addView(ok);
+            ForgeButton up = new ForgeButton(this);
+            up.setAllCaps(false);
+            up.setText("↑");
+            up.setOnClickListener(v -> {
+                if (index > 0) java.util.Collections.swap(editBlocks, index, index - 1);
+                renderArrangeBlocks();
+            });
+            row.addView(up);
+            ForgeButton remove = new ForgeButton(this);
+            remove.setAllCaps(false);
+            remove.setText("×");
+            remove.setOnClickListener(v -> {
+                editBlocks.remove(index);
+                renderArrangeBlocks();
+                dirty = true;
+            });
+            row.addView(remove);
+            arrangeBlockRows.addView(row);
+        }
+    }
+
+    private void applyType(boolean arrange) {
+        if (arrangeSection == null) return;
+        arrangeSection.setVisibility(arrange ? View.VISIBLE : View.GONE);
+        ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                (arrange ? "词块组句" : "选择正确翻译") + " · " + course.name);
+        if (editorScrollContent != null) {
+            hideChoiceSections(editorScrollContent, arrange);
+        }
+        View hints = findViewById(R.id.question_hints_enabled);
+        if (hints != null) hints.setVisibility(arrange ? View.GONE : View.VISIBLE);
+        int[] hide = {R.id.question_sentence, R.id.question_parts,
+                R.id.btn_choose_question_parts, R.id.btn_insert_punct};
+        for (int id : hide) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(arrange ? View.GONE : View.VISIBLE);
+        }
+        for (int i = 0; i < 4; i++) {
+            int optionId = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
+            int correctId = getResources().getIdentifier("question_correct_" + i, "id", getPackageName());
+            View option = findViewById(optionId);
+            View correct = findViewById(correctId);
+            if (option != null) option.setVisibility(arrange ? View.GONE : View.VISIBLE);
+            if (correct != null) correct.setVisibility(arrange ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void hideChoiceSections(View view, boolean arrange) {
+        if (view instanceof TextView) {
+            String text = ((TextView) view).getText().toString();
+            if (text.startsWith("句子词汇") || text.startsWith("四个选项")
+                    || text.contains("选择一个正确答案")) {
+                view.setVisibility(arrange ? View.GONE : View.VISIBLE);
+            }
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                hideChoiceSections(group.getChildAt(i), arrange);
+            }
+        }
+    }
+
+    private void saveArrange() {
+        String prompt = arrangePrompt.getText() == null ? "" : arrangePrompt.getText().toString().trim();
+        if (prompt.isEmpty()) { toast("请填写题干/释义"); return; }
+        List<ProjectStructure.Question.Block> valid = new ArrayList<>();
+        int correctCount = 0;
+        for (ProjectStructure.Question.Block block : editBlocks) {
+            String value = block.text == null ? "" : block.text.trim();
+            if (value.isEmpty()) { toast("词块文本不能为空"); return; }
+            if (block.ok) correctCount++;
+            valid.add(new ProjectStructure.Question.Block(value, block.ok));
+        }
+        if (correctCount < 2) { toast("至少需要 2 个正确词块"); return; }
+        question.type = ProjectStructure.Question.TYPE_ARRANGE;
+        question.prompt = prompt;
+        question.blocks.clear();
+        question.blocks.addAll(valid);
+        question.alt.clear();
+        for (String line : arrangeAlt.getText().toString().split("\n")) {
+            if (!line.trim().isEmpty()) question.alt.add(line.trim());
+        }
+        StringBuilder name = new StringBuilder(prompt).append(" · ");
+        boolean first = true;
+        for (ProjectStructure.Question.Block block : valid) {
+            if (!block.ok) continue;
+            if (!first) name.append(' ');
+            first = false;
+            name.append(block.text);
+        }
+        question.name = name.toString();
+        question.hintsEnabled = hintsEnabledView.isChecked();
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true;
+        toast("已保存词块组句");
+        finish();
+    }
+
     private void save() {
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 1) {
+            saveArrange();
+            return;
+        }
         if (recording) {
             toast("请先停止录音");
             return;

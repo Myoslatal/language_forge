@@ -114,6 +114,26 @@ final class ProjectStructure {
                                                 questionObject.optInt("correctIndex", -1);
                                         question.hintsEnabled =
                                                 questionObject.optBoolean("hintsEnabled", true);
+                                        question.prompt = questionObject.optString("prompt", "");
+                                        JSONArray blocks = questionObject.optJSONArray("blocks");
+                                        if (blocks != null) {
+                                            for (int b = 0; b < blocks.length(); b++) {
+                                                JSONObject block = blocks.optJSONObject(b);
+                                                if (block == null) continue;
+                                                String blockText = block.optString("text", "");
+                                                if (!blockText.trim().isEmpty()) {
+                                                    question.blocks.add(new Question.Block(blockText,
+                                                            block.optBoolean("ok", false)));
+                                                }
+                                            }
+                                        }
+                                        JSONArray alt = questionObject.optJSONArray("alt");
+                                        if (alt != null) {
+                                            for (int a = 0; a < alt.length(); a++) {
+                                                String value = alt.optString(a, "").trim();
+                                                if (!value.isEmpty()) question.alt.add(value);
+                                            }
+                                        }
                                         JSONArray segments = questionObject.optJSONArray("segments");
                                         if (segments != null) {
                                             for (int s = 0; s < segments.length(); s++) {
@@ -204,6 +224,18 @@ final class ProjectStructure {
                             questionObject.put("options", options);
                             questionObject.put("correctIndex", question.correctIndex);
                             questionObject.put("hintsEnabled", question.hintsEnabled);
+                            questionObject.put("prompt", question.prompt);
+                            JSONArray blocks = new JSONArray();
+                            for (Question.Block block : question.blocks) {
+                                JSONObject object = new JSONObject();
+                                object.put("text", block.text);
+                                object.put("ok", block.ok);
+                                blocks.put(object);
+                            }
+                            questionObject.put("blocks", blocks);
+                            JSONArray alt = new JSONArray();
+                            for (String value : question.alt) alt.put(value);
+                            questionObject.put("alt", alt);
                             JSONArray segments = new JSONArray();
                             for (Question.Segment segment : question.segments) {
                                 JSONObject object = new JSONObject();
@@ -377,6 +409,17 @@ final class ProjectStructure {
 
     static final class Question {
         static final String TYPE_TRANSLATION_CHOICE = "translation_choice";
+        static final String TYPE_ARRANGE = "arrange";
+
+        static final class Block {
+            String text = "";
+            boolean ok;
+
+            Block(String text, boolean ok) {
+                this.text = text;
+                this.ok = ok;
+            }
+        }
 
         final String id;
         String name;
@@ -410,6 +453,9 @@ final class ProjectStructure {
         long audioStart;
         long audioEnd;
         final List<String> options = new ArrayList<>();
+        final List<Block> blocks = new ArrayList<>();
+        final List<String> alt = new ArrayList<>();
+        String prompt = "";
         int correctIndex = -1;
 
         Question(String id, String name) {

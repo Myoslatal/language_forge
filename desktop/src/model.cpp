@@ -153,6 +153,10 @@ json structureToJson(const Structure& structure) {
       for (const auto& course : unit.courses) {
         json questions = json::array();
         for (const auto& question : course.questions) {
+          json blocks = json::array();
+          for (const auto& block : question.blocks) {
+            blocks.push_back({{"text", block.text}, {"ok", block.ok}});
+          }
           questions.push_back({{"id", question.id},
                                {"name", question.name},
                                {"type", question.type},
@@ -165,6 +169,9 @@ json structureToJson(const Structure& structure) {
                                {"audioEnd", question.audioEnd},
                                {"hintsEnabled", question.hintsEnabled},
                                {"options", question.options},
+                               {"prompt", question.prompt},
+                               {"blocks", blocks},
+                               {"alt", question.alt},
                                {"correctIndex", question.correctIndex}});
         }
         courses.push_back(
@@ -219,6 +226,20 @@ Structure structureFromJson(const json& value) {
                 question.audioStart = questionValue.value("audioStart", 0LL);
                 question.audioEnd = questionValue.value("audioEnd", question.audioDuration);
                 question.hintsEnabled = questionValue.value("hintsEnabled", true);
+                question.prompt = questionValue.value("prompt", "");
+                if (questionValue.contains("blocks") && questionValue["blocks"].is_array()) {
+                  for (const auto& block : questionValue["blocks"]) {
+                    QuestionBlock qb;
+                    qb.text = block.value("text", "");
+                    qb.ok = block.value("ok", false);
+                    if (!qb.text.empty()) question.blocks.push_back(qb);
+                  }
+                }
+                if (questionValue.contains("alt") && questionValue["alt"].is_array()) {
+                  for (const auto& value : questionValue["alt"]) {
+                    if (value.is_string()) question.alt.push_back(value.get<std::string>());
+                  }
+                }
                 question.correctIndex = questionValue.value("correctIndex", -1);
                 if (questionValue.contains("segments") && questionValue["segments"].is_array()) {
                   for (const auto& segment : questionValue["segments"]) {
