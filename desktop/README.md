@@ -269,3 +269,5 @@ audioEnd trim, and audio-management question reference counts with delete protec
 Learning mode: Home -> 学习 opens read-only course/question lists and a learning page with
 underlined clickable word tokens, POS/meaning/phonetic hints and vocabulary audio.
 hintsEnabled disables hints; old questions default to enabled.
+
+Learning hint cards are floating ImGui windows positioned by the word rect (no modal/dim); clicking another word moves them and outside clicks close. Options require 确认答案; correct answers lock green and offer 下一题/完成.

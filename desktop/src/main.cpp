@@ -424,6 +424,10 @@ struct App {
   std::string learningCourseId;
   std::string learningQuestionId;
   std::string learningHintId;
+  ImVec2 learningHintPos{0, 0};
+  bool learningHintJustOpened = false;
+  int learningSelected = -1;
+  bool learningAnswered = false;
   std::vector<std::string> pickerSelected;
   char pickerSearch[256] = {};
   char vocabSearch[256] = {};
@@ -1486,6 +1490,7 @@ struct App {
   }
 
   void stopAudioPlayback() {
+    std::fprintf(stderr, "FORGE_LEARN stopAudio\n");
     if (Mix_PlayingMusic()) Mix_HaltMusic();
     if (currentMusic) {
       Mix_FreeMusic(currentMusic);
@@ -2423,6 +2428,8 @@ void renderLearning(App& app) {
     app.store->loadProject(app.folder, app.project, app.structure);
   }
   auto back = [&] {
+    app.learningHintId.clear();
+    app.stopAudioPlayback();
     if (!app.learningQuestionId.empty()) app.learningQuestionId.clear();
     else if (!app.learningCourseId.empty()) app.learningCourseId.clear();
     else app.screen = App::Screen::Home;
@@ -2468,6 +2475,10 @@ void renderLearning(App& app) {
                          (question.hintsEnabled ? "  ·  学习提示" : "  ·  无提示")).c_str(),
                         ImVec2(-1, 44))) {
         app.learningQuestionId = question.id;
+        app.learningSelected = -1;
+        app.learningAnswered = false;
+        app.learningHintId.clear();
+        app.stopAudioPlayback();
       }
       ImGui::PopID();
     }
@@ -2482,6 +2493,8 @@ void renderLearning(App& app) {
   pageTitle("LEARN", question->name, "选择正确翻译 · " + course->name);
   app.ensureVocabularyLoaded();
   PosStore posStore(app.currentProjectDirectory());
+  bool wordClickedThisFrame = false;
+  float sentenceEndX = 0.0f;
   if (app.vocabulary) {
     for (auto& segment : question->segments) {
       if (segment.kind == "word") {
@@ -2500,6 +2513,9 @@ void renderLearning(App& app) {
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.43f, 0.92f, 0.18f));
             if (ImGui::Button(name.c_str(), ImVec2(0, 0))) {
               app.learningHintId = entry->id;
+              app.learningHintPos = ImGui::GetItemRectMax();
+              app.learningHintJustOpened = true;
+              wordClickedThisFrame = true;
               app.playAudioFile(entry->audio, static_cast<int>(entry->audioStart),
                                 static_cast<int>(entry->audioEnd));
             }
@@ -2513,64 +2529,141 @@ void renderLearning(App& app) {
           } else {
             ImGui::TextUnformatted(name.c_str());
           }
+          sentenceEndX = std::max(sentenceEndX, ImGui::GetItemRectMax().x);
           ImGui::SameLine(0, 4);
         }
       } else {
         ImGui::TextUnformatted(segment.text.c_str());
+        sentenceEndX = std::max(sentenceEndX, ImGui::GetItemRectMax().x);
         ImGui::SameLine(0, 0);
       }
     }
     ImGui::NewLine();
-  }
-  if (!question->hintsEnabled) {
-    ImGui::TextDisabled("本题未启用学习提示");
-  } else if (!app.learningHintId.empty()) {
-    VocabEntry* entry = app.vocabulary->find(app.learningHintId);
-    if (entry) {
-      ImGui::Separator();
-      ImGui::TextUnformatted(("提示：" + entry->text).c_str());
-      if (!entry->phonetics.empty()) {
-        std::string phonetics;
-        for (const auto& value : entry->phonetics) {
-          if (!phonetics.empty()) phonetics += " / ";
-          phonetics += value;
-        }
-        ImGui::TextDisabled("音标：%s", phonetics.c_str());
-      } else if (!entry->phonetic.empty()) {
-        ImGui::TextDisabled("音标：%s", entry->phonetic.c_str());
-      }
-      if (entry->posMeanings.empty()) {
-        std::string meanings;
-        for (const auto& value : entry->meanings) {
-          if (!meanings.empty()) meanings += "、";
-          meanings += value;
-        }
-        ImGui::TextWrapped("释义：%s", meanings.empty() ? "暂无释义" : meanings.c_str());
-      } else {
-        for (const auto& group : entry->posMeanings) {
-          const PosEntry* pos = posStore.find(group.posId);
-          std::string meanings;
-          for (const auto& value : group.meanings) {
-            if (!meanings.empty()) meanings += "、";
-            meanings += value;
-          }
-          ImGui::TextWrapped("%s%s：%s", pos ? pos->name.c_str() : "未标注词性",
-                             pos && !pos->code.empty() ? ("（" + pos->code + "）").c_str() : "",
-                             meanings.c_str());
-        }
-      }
-      if (entry->audio.empty()) ImGui::TextDisabled("暂无示例发音");
+    if (app.learningHintJustOpened) {
+      app.learningHintPos.x = std::max(sentenceEndX + 12.0f, app.learningHintPos.x);
     }
   }
   ImGui::Separator();
-  ImGui::TextDisabled("选项（只读）");
+  ImGui::TextDisabled("选项（选择后确认）");
   for (std::size_t i = 0; i < question->options.size(); ++i) {
     ImGui::PushID(static_cast<int>(i));
+    const bool selected = app.learningSelected == static_cast<int>(i);
+    const bool correct = app.learningAnswered && static_cast<int>(i) == question->correctIndex;
+    if (correct) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
+    else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
     if (ImGui::Button((std::to_string(i + 1) + ". " + question->options[i]).c_str(),
                       ImVec2(-1, 42))) {
-      app.showToast("已选择选项 " + std::to_string(i + 1));
+      if (!app.learningAnswered) {
+        app.learningSelected = static_cast<int>(i);
+        app.learningHintId.clear();
+        app.stopAudioPlayback();
+      }
     }
+    if (correct || selected) ImGui::PopStyleColor();
     ImGui::PopID();
+  }
+  if (app.learningSelected >= 0) {
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 58);
+    const bool last = course->questions.empty() ||
+                      course->questions.back().id == question->id;
+    const std::string label = app.learningAnswered ? (last ? "完成" : "下一题") : "确认答案";
+    if (ImGui::Button((label + "##learn_confirm").c_str(), ImVec2(-1, 42))) {
+      app.learningHintId.clear();
+      app.stopAudioPlayback();
+      if (app.learningAnswered) {
+        if (last) {
+          app.learningQuestionId.clear();
+          app.learningSelected = -1;
+          app.learningAnswered = false;
+          app.showToast("本课完成");
+        } else {
+          for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+            if (course->questions[i].id == question->id) {
+              app.learningQuestionId = course->questions[i + 1].id;
+              break;
+            }
+          }
+          app.learningSelected = -1;
+          app.learningAnswered = false;
+        }
+      } else if (app.learningSelected == question->correctIndex) {
+        app.learningAnswered = true;
+        if (last) app.showToast("回答正确，本课完成");
+      } else {
+        app.showToast("回答错误，请重新选择");
+      }
+    }
+  }
+  if (question->hintsEnabled && !app.learningHintId.empty()) {
+    VocabEntry* entry = app.vocabulary->find(app.learningHintId);
+    if (entry) {
+      const ImVec2 display = ImGui::GetIO().DisplaySize;
+      ImVec2 pos(app.learningHintPos.x, app.learningHintPos.y + 4);
+      pos.x = std::max(8.0f, std::min(pos.x, display.x - 330.0f));
+      pos.y = std::max(8.0f, std::min(pos.y, display.y - 220.0f));
+      ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+      ImGui::SetNextWindowSizeConstraints(ImVec2(280, 0), ImVec2(320, 300));
+      ImVec2 hintMin;
+      ImVec2 hintMax;
+      if (ImGui::Begin("##learn_floating_hint", nullptr,
+                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
+                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse)) {
+        ImGui::TextUnformatted(("提示：" + entry->text).c_str());
+        if (!entry->phonetics.empty()) {
+          std::string phonetics;
+          for (const auto& value : entry->phonetics) {
+            if (!phonetics.empty()) phonetics += " / ";
+            phonetics += value;
+          }
+          ImGui::TextDisabled("音标：%s", phonetics.c_str());
+        } else if (!entry->phonetic.empty()) {
+          ImGui::TextDisabled("音标：%s", entry->phonetic.c_str());
+        }
+        if (entry->posMeanings.empty()) {
+          std::string meanings;
+          for (const auto& value : entry->meanings) {
+            if (!meanings.empty()) meanings += "、";
+            meanings += value;
+          }
+          ImGui::TextWrapped("释义：%s", meanings.empty() ? "暂无释义" : meanings.c_str());
+        } else {
+          for (const auto& group : entry->posMeanings) {
+            const PosEntry* posEntry = posStore.find(group.posId);
+            std::string meanings;
+            for (const auto& value : group.meanings) {
+              if (!meanings.empty()) meanings += "、";
+              meanings += value;
+            }
+            ImGui::TextWrapped("%s%s：%s", posEntry ? posEntry->name.c_str() : "未标注词性",
+                               posEntry && !posEntry->code.empty()
+                                   ? ("（" + posEntry->code + "）").c_str() : "",
+                               meanings.c_str());
+          }
+        }
+        if (entry->audio.empty()) ImGui::TextDisabled("暂无示例发音");
+        if (ImGui::Button("再听一次##learn_replay", ImVec2(-1, 28))) {
+          app.playAudioFile(entry->audio, static_cast<int>(entry->audioStart),
+                            static_cast<int>(entry->audioEnd));
+        }
+        if (ImGui::Button("关闭##learn_close", ImVec2(-1, 26))) {
+          app.learningHintId.clear();
+          app.stopAudioPlayback();
+        }
+        hintMin = ImGui::GetWindowPos();
+        hintMax = ImVec2(hintMin.x + ImGui::GetWindowSize().x,
+                         hintMin.y + ImGui::GetWindowSize().y);
+      }
+      ImGui::End();
+      const ImVec2 mouse = ImGui::GetIO().MousePos;
+      const bool insideHint = mouse.x >= hintMin.x && mouse.x <= hintMax.x &&
+                              mouse.y >= hintMin.y && mouse.y <= hintMax.y;
+      if (!app.learningHintJustOpened && !wordClickedThisFrame &&
+          ImGui::IsMouseClicked(0) && !insideHint && !ImGui::IsAnyItemHovered()) {
+        app.learningHintId.clear();
+        app.stopAudioPlayback();
+      }
+      app.learningHintJustOpened = false;
+    }
   }
 }
 
@@ -2662,7 +2755,7 @@ void renderCardDialog(App& app) {
     ImGui::PopFont();
     ImGui::TextDisabled("%s", found.courseLine.empty() ? "未设置课程线" : found.courseLine.c_str());
     ImGui::Spacing();
-    ImGui::TextWrapped("选择进入方式：学习播放器将在后续阶段实现；编辑可进入项目结构。");
+    ImGui::TextWrapped("选择进入方式：学习进入只读学习模式；编辑可进入项目结构。");
     ImGui::Spacing();
     if (ImGui::Button("学习", ImVec2(180, 36))) {
       app.cardDialog = false;

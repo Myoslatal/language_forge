@@ -17,6 +17,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -47,6 +48,13 @@ public class LearningActivity extends ForgeActivity {
     private ProjectStructure.Question question;
     private MediaPlayer player;
     private Handler handler;
+    private PopupWindow hintPopup;
+    private LinearLayout bottomBar;
+    private Button confirmButton;
+    private int selectedOption = -1;
+    private boolean answered;
+    private int lastTouchX;
+    private int lastTouchY;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -102,11 +110,23 @@ public class LearningActivity extends ForgeActivity {
         content.setPadding(dp(16), dp(8), dp(16), dp(24));
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        bottomBar = new LinearLayout(this);
+        bottomBar.setPadding(dp(16), dp(8), dp(16), dp(8));
+        bottomBar.setOrientation(LinearLayout.VERTICAL);
+        confirmButton = new Button(this);
+        confirmButton.setText("确认答案");
+        confirmButton.setVisibility(View.GONE);
+        confirmButton.setOnClickListener(v -> {
+            if (answered) nextQuestion(); else confirmAnswer();
+        });
+        bottomBar.addView(confirmButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        root.addView(bottomBar);
         return root;
     }
 
     private void showCourses() {
-        stopAudio();
+        dismissHint();
         course = null;
         question = null;
         titleView.setText("学习");
@@ -132,7 +152,7 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void showQuestions(ProjectStructure.Course selected) {
-        stopAudio();
+        dismissHint();
         course = selected;
         question = null;
         titleView.setText(selected.name);
@@ -154,7 +174,11 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void showQuestion(ProjectStructure.Course selected, ProjectStructure.Question item) {
-        stopAudio();
+        dismissHint();
+        selectedOption = -1;
+        answered = false;
+        confirmButton.setVisibility(View.GONE);
+        confirmButton.setText("确认答案");
         course = selected;
         question = item;
         titleView.setText(item.name == null || item.name.isEmpty() ? "题目" : item.name);
@@ -168,6 +192,11 @@ public class LearningActivity extends ForgeActivity {
         CharSequence rendered = renderSentence(item, sentence);
         sentence.setText(rendered);
         sentence.setMovementMethod(LinkMovementMethod.getInstance());
+        sentence.setOnTouchListener((v, event) -> {
+            lastTouchX = (int) event.getRawX();
+            lastTouchY = (int) event.getRawY();
+            return false;
+        });
         content.addView(sentence);
 
         content.addView(text(item.hintsEnabled ? "点击带下划线的词查看提示" : "本题未启用学习提示",
@@ -181,20 +210,78 @@ public class LearningActivity extends ForgeActivity {
             content.addView(playQuestion);
         }
 
-        content.addView(text("选项（只读）", 14, R.color.forge_muted));
+        content.addView(text("选项（选择后确认）", 14, R.color.forge_muted));
         for (int i = 0; i < item.options.size(); i++) {
+            final int index = i;
             Button option = new Button(this);
             option.setAllCaps(false);
             option.setText((i + 1) + ". " + item.options.get(i));
             option.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            final boolean[] chosen = {false};
+            option.setTag("option");
             option.setOnClickListener(v -> {
-                chosen[0] = !chosen[0];
-                option.setBackgroundColor(chosen[0]
-                        ? getColor(R.color.forge_accent_soft) : Color.TRANSPARENT);
+                if (answered) return;
+                dismissHint();
+                selectedOption = index;
+                updateOptionStyles();
+                confirmButton.setVisibility(View.VISIBLE);
             });
             content.addView(option, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+        }
+    }
+
+    private void updateOptionStyles() {
+        for (int i = 0; i < content.getChildCount(); i++) {
+            View child = content.getChildAt(i);
+            if (!(child instanceof Button) || !"option".equals(child.getTag())) continue;
+            Button button = (Button) child;
+            int index = content.indexOfChild(button);
+            int optionIndex = 0;
+            for (int j = 0; j < index; j++) {
+                View earlier = content.getChildAt(j);
+                if (earlier instanceof Button && "option".equals(earlier.getTag())) optionIndex++;
+            }
+            if (answered && question.correctIndex == optionIndex) {
+                button.setBackgroundColor(getColor(R.color.forge_ok_bg));
+                button.setTextColor(getColor(R.color.forge_ok));
+            } else if (selectedOption == optionIndex) {
+                button.setBackgroundColor(getColor(R.color.forge_accent_soft));
+                button.setTextColor(getColor(R.color.forge_text));
+            } else {
+                button.setBackgroundColor(Color.TRANSPARENT);
+                button.setTextColor(getColor(R.color.forge_text));
+            }
+            button.setEnabled(!answered);
+        }
+    }
+
+    private void confirmAnswer() {
+        if (question == null || selectedOption < 0 || answered) return;
+        dismissHint();
+        if (selectedOption == question.correctIndex) {
+            answered = true;
+            updateOptionStyles();
+            confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
+            confirmButton.setVisibility(View.VISIBLE);
+            if (isLastQuestion()) toast("本课完成");
+        } else {
+            toast("回答错误，请重新选择");
+        }
+    }
+
+    private boolean isLastQuestion() {
+        if (course == null || question == null) return true;
+        int index = course.questions.indexOf(question);
+        return index < 0 || index >= course.questions.size() - 1;
+    }
+
+    private void nextQuestion() {
+        if (course == null || question == null) return;
+        int index = course.questions.indexOf(question);
+        if (index >= 0 && index + 1 < course.questions.size()) {
+            showQuestion(course, course.questions.get(index + 1));
+        } else {
+            showQuestions(course);
         }
     }
 
@@ -263,13 +350,61 @@ public class LearningActivity extends ForgeActivity {
         }
         text.append("\n\n").append(entry.audio.isEmpty()
                 ? "示例发音：暂无" : "示例发音：已自动播放");
-        ForgeDialog dialog = new ForgeDialog(this);
-        dialog.setTitle(vocabulary.displayName(entry));
-        dialog.setBodyText(text.toString().trim());
-        dialog.setNegativeButton("关闭", null);
-        dialog.setPositiveButton("再听一次", (d, w) -> play(entry.audio, entry.audioStart, entry.audioEnd));
-        dialog.show();
+        showHintPopup(entry, text.toString().trim());
         play(entry.audio, entry.audioStart, entry.audioEnd);
+    }
+
+    private void showHintPopup(VocabularyEntry entry, String body) {
+        dismissHint();
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackgroundColor(getColor(R.color.forge_panel));
+        TextView title = new TextView(this);
+        title.setText(vocabulary.displayName(entry));
+        title.setTextSize(16f);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(getColor(R.color.forge_text));
+        card.addView(title);
+        ScrollView scroll = new ScrollView(this);
+        TextView contentText = new TextView(this);
+        contentText.setText(body);
+        contentText.setTextSize(13f);
+        contentText.setTextColor(getColor(R.color.forge_text));
+        scroll.addView(contentText);
+        card.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(180)));
+        Button replay = new Button(this);
+        replay.setAllCaps(false);
+        replay.setText("再听一次");
+        replay.setOnClickListener(v -> play(entry.audio, entry.audioStart, entry.audioEnd));
+        card.addView(replay);
+        Button close = new Button(this);
+        close.setAllCaps(false);
+        close.setText("关闭");
+        close.setOnClickListener(v -> dismissHint());
+        card.addView(close);
+
+        hintPopup = new PopupWindow(card, dp(320), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        hintPopup.setOutsideTouchable(true);
+        hintPopup.setFocusable(true);
+        hintPopup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        hintPopup.setOnDismissListener(this::stopAudio);
+        int[] location = new int[2];
+        content.getLocationOnScreen(location);
+        int x = Math.max(dp(8), Math.min(lastTouchX - location[0], content.getWidth() - dp(320)));
+        int y = Math.max(dp(8), lastTouchY - location[1] + dp(12));
+        hintPopup.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START,
+                x + location[0], y + location[1]);
+    }
+
+    private void dismissHint() {
+        android.util.Log.d("FORGE_LEARN", "dismissHint -> stopAudio");
+        if (hintPopup != null) {
+            hintPopup.dismiss();
+            hintPopup = null;
+        }
+        stopAudio();
     }
 
     private VocabularyEntry findEntry(String id) {
@@ -306,6 +441,7 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void stopAudio() {
+        android.util.Log.d("FORGE_LEARN", "stopAudio");
         if (player != null) {
             try { player.stop(); } catch (Exception ignored) { }
             player.release();
@@ -314,6 +450,7 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void goBack() {
+        dismissHint();
         if (question != null) {
             showQuestions(course);
         } else if (course != null) {

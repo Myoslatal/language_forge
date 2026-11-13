@@ -495,3 +495,5 @@ Home -> 学习 opens a read-only course list, question list and learning page. Q
 tokens are underlined via Spannable/ClickableSpan (punctuation excluded); tapping a word
 shows POS/meanings/phonetics and plays its vocabulary audio respecting truncation.
 Question-level hintsEnabled (default true) disables underlines, hints and auto-play.
+
+Learning hint cards are non-modal PopupWindows anchored near the tapped word; outside touch dismisses. Options are selectable and require a fixed 确认答案 button; correct answers turn green and unlock 下一题, wrong answers keep the selection editable.
