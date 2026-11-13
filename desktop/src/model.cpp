@@ -158,6 +158,10 @@ json structureToJson(const Structure& structure) {
             blocks.push_back({{"id", block.id}, {"text", block.text}, {"ok", block.ok},
                               {"vocabId", block.vocabId}});
           }
+          json pairs = json::array();
+          for (const auto& pair : question.pairs) {
+            pairs.push_back({{"l", pair.left}, {"r", pair.right}});
+          }
           questions.push_back({{"id", question.id},
                                {"name", question.name},
                                {"type", question.type},
@@ -173,6 +177,7 @@ json structureToJson(const Structure& structure) {
                                {"prompt", question.prompt},
                                {"blocks", blocks},
                                {"answers", question.answers},
+                               {"pairs", pairs},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}});
         }
@@ -238,6 +243,14 @@ Structure structureFromJson(const json& value) {
                     qb.vocabId = block.value("vocabId", "");
                     if (qb.id.empty()) qb.id = Store::newUuid();
                     if (!qb.text.empty()) question.blocks.push_back(qb);
+                  }
+                }
+                if (questionValue.contains("pairs") && questionValue["pairs"].is_array()) {
+                  for (const auto& item : questionValue["pairs"]) {
+                    MatchPair pair;
+                    pair.left = item.value("l", "");
+                    pair.right = item.value("r", "");
+                    if (!pair.left.empty() && !pair.right.empty()) question.pairs.push_back(pair);
                   }
                 }
                 if (questionValue.contains("answers") && questionValue["answers"].is_array()) {

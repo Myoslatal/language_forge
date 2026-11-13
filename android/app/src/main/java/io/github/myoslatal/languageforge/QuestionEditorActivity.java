@@ -91,6 +91,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     private final List<ProjectStructure.Question.Block> editBlocks = new ArrayList<>();
     private final List<List<String>> editAnswers = new ArrayList<>();
     private LinearLayout arrangeAnswers;
+    private LinearLayout matchSection;
+    private LinearLayout matchRows;
+    private EditText matchPrompt;
+    private final List<ProjectStructure.Question.MatchPair> editPairs = new ArrayList<>();
     private LinearLayout editorScrollContent;
 
     @Override
@@ -163,10 +167,11 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句"});
+                new String[]{"选择正确翻译", "词块组句", "配对"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
-        typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1 : 0);
+        typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
+                : ProjectStructure.Question.TYPE_MATCH.equals(question.type) ? 2 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -192,6 +197,27 @@ public class QuestionEditorActivity extends ForgeActivity {
         addAnswer.setOnClickListener(v -> openAnswerDialog(-1));
         arrangeSection.addView(addAnswer);
         scrollContent.addView(arrangeSection, 1);
+        matchSection = new LinearLayout(this);
+        matchSection.setOrientation(LinearLayout.VERTICAL);
+        matchPrompt = new EditText(this);
+        matchPrompt.setHint("配对说明/题干（可选）");
+        matchPrompt.setText(question.prompt == null ? "" : question.prompt);
+        matchSection.addView(matchPrompt);
+        matchRows = new LinearLayout(this);
+        matchRows.setOrientation(LinearLayout.VERTICAL);
+        matchSection.addView(matchRows);
+        ForgeButton addPair = new ForgeButton(this);
+        addPair.setAllCaps(false);
+        addPair.setText("＋ 添加配对");
+        addPair.setOnClickListener(v -> {
+            editPairs.add(new ProjectStructure.Question.MatchPair("", ""));
+            renderMatchRows();
+            dirty = true;
+        });
+        matchSection.addView(addPair);
+        scrollContent.addView(matchSection, 2);
+        editPairs.addAll(question.pairs);
+        renderMatchRows();
         editBlocks.addAll(question.blocks);
         for (List<String> answer : question.answers) editAnswers.add(new ArrayList<>(answer));
         if (editAnswers.isEmpty()) {
@@ -206,11 +232,26 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
                                                    int position, long id) {
-                applyType(position == 1);
+                if (position == 2) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "配对 · " + course.name);
+                    hideForMatch(true);
+                } else {
+                    if (matchSection != null) matchSection.setVisibility(View.GONE);
+                    applyType(position == 1);
+                }
             }
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
-        applyType(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type));
+        if (ProjectStructure.Question.TYPE_MATCH.equals(question.type)) {
+            if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            hideForMatch(true);
+        } else {
+            applyType(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type));
+        }
         partsContainer = findViewById(R.id.question_parts);
         sentenceView = findViewById(R.id.question_sentence);
         audioHint = findViewById(R.id.question_audio_hint);
@@ -760,7 +801,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (text.startsWith("句子词汇") || text.startsWith("四个选项")
                     || text.contains("选择一个正确答案") || text.startsWith("整句录音")
                     || text.startsWith("裁剪：") || text.startsWith("试听裁剪")
-                    || text.startsWith("可选；录制")) {
+                    || text.startsWith("可选；录制") || text.startsWith("尚未选择词汇")) {
                 view.setVisibility(arrange ? View.GONE : View.VISIBLE);
             }
         }
@@ -770,6 +811,94 @@ public class QuestionEditorActivity extends ForgeActivity {
                 hideChoiceSections(group.getChildAt(i), arrange);
             }
         }
+    }
+
+    private void renderMatchRows() {
+        if (matchRows == null) return;
+        matchRows.removeAllViews();
+        for (int i = 0; i < editPairs.size(); i++) {
+            final int index = i;
+            ProjectStructure.Question.MatchPair pair = editPairs.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            EditText left = new EditText(this);
+            left.setHint("左（词形）");
+            left.setText(pair.left);
+            left.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                public void onTextChanged(CharSequence s, int a, int b, int c) { pair.left = s.toString(); dirty = true; }
+                public void afterTextChanged(android.text.Editable s) {}
+            });
+            row.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            EditText right = new EditText(this);
+            right.setHint("右（释义）");
+            right.setText(pair.right);
+            right.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                public void onTextChanged(CharSequence s, int a, int b, int c) { pair.right = s.toString(); dirty = true; }
+                public void afterTextChanged(android.text.Editable s) {}
+            });
+            row.addView(right, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton remove = new ForgeButton(this);
+            remove.setAllCaps(false);
+            remove.setText("×");
+            remove.setOnClickListener(v -> {
+                editPairs.remove(index);
+                renderMatchRows();
+                dirty = true;
+            });
+            row.addView(remove);
+            matchRows.addView(row);
+        }
+    }
+
+    private void hideForMatch(boolean match) {
+        if (editorScrollContent != null) hideChoiceSections(editorScrollContent, match);
+        if (hintsEnabledView != null) hintsEnabledView.setVisibility(match ? View.GONE : View.VISIBLE);
+        int[] audioIds = {R.id.question_audio_hint, R.id.question_audio_trim,
+            R.id.question_audio_start, R.id.question_audio_end, R.id.btn_question_record,
+            R.id.btn_question_play, R.id.btn_question_remove_audio, R.id.btn_question_trim_play};
+        for (int id : audioIds) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(match ? View.GONE : View.VISIBLE);
+        }
+        int[] choiceIds = {R.id.btn_choose_question_parts, R.id.btn_insert_punct};
+        for (int id : choiceIds) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(match ? View.GONE : View.VISIBLE);
+        }
+        for (int i = 0; i < 4; i++) {
+            int optionId = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
+            int correctId = getResources().getIdentifier("question_correct_" + i, "id", getPackageName());
+            View option = findViewById(optionId);
+            View correct = findViewById(correctId);
+            if (option != null) option.setVisibility(match ? View.GONE : View.VISIBLE);
+            if (correct != null) correct.setVisibility(match ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void saveMatch() {
+        String prompt = matchPrompt.getText() == null ? "" : matchPrompt.getText().toString().trim();
+        if (editPairs.size() < 2) { toast("至少需要 2 对配对"); return; }
+        List<ProjectStructure.Question.MatchPair> valid = new ArrayList<>();
+        for (ProjectStructure.Question.MatchPair pair : editPairs) {
+            String left = pair.left == null ? "" : pair.left.trim();
+            String right = pair.right == null ? "" : pair.right.trim();
+            if (left.isEmpty() || right.isEmpty()) { toast("每对左右都不能为空"); return; }
+            valid.add(new ProjectStructure.Question.MatchPair(left, right));
+        }
+        question.type = ProjectStructure.Question.TYPE_MATCH;
+        question.prompt = prompt;
+        question.pairs.clear();
+        question.pairs.addAll(valid);
+        String base = prompt.isEmpty() ? "配对" : prompt;
+        question.name = base + " · " + valid.size() + " 对";
+        question.hintsEnabled = false;
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true;
+        toast("已保存配对题");
+        finish();
     }
 
     private void renderArrangeAnswers() {
@@ -990,6 +1119,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 2) {
+            saveMatch();
+            return;
+        }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 1) {
             saveArrange();
             return;

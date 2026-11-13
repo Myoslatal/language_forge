@@ -426,6 +426,12 @@ struct App {
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
+  std::string matchQuestionId;
+  std::vector<int> matchLeftOrder;
+  std::vector<int> matchRightOrder;
+  std::vector<int> matchMatched;
+  int matchSelLeft = -1;
+  int matchSelRight = -1;
   int questionCorrectIndex = -1;
   std::string learningCourseId;
   std::string learningQuestionId;
@@ -1186,6 +1192,28 @@ struct App {
       value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
       return value;
     };
+    if (editQuestion.type == "match") {
+      if (editQuestion.pairs.size() < 2) { showToast("至少需要 2 对配对"); return; }
+      for (auto& pair : editQuestion.pairs) {
+        pair.left = trim(pair.left);
+        pair.right = trim(pair.right);
+        if (pair.left.empty() || pair.right.empty()) { showToast("每对左右都不能为空"); return; }
+      }
+      editQuestion.prompt = trim(arrangePromptInput);
+      editQuestion.name = (editQuestion.prompt.empty() ? "配对" : editQuestion.prompt) +
+                          " · " + std::to_string(editQuestion.pairs.size()) + " 对";
+      editQuestion.hintsEnabled = false;
+      if (questionIsNew) { course->questions.push_back(editQuestion); questionIsNew = false; }
+      else {
+        for (auto& question : course->questions) {
+          if (question.id == editQuestion.id) question = editQuestion;
+        }
+      }
+      if (!persist()) return;
+      showToast("配对题已保存");
+      screen = Screen::Course;
+      return;
+    }
     if (editQuestion.type == "arrange") {
       std::string prompt = trim(arrangePromptInput);
       if (prompt.empty()) { showToast("请填写题干/释义"); return; }
@@ -2436,13 +2464,58 @@ void renderQuestionEditor(App& app) {
   ImGui::Spacing();
   int typeIndex = app.editQuestion.type == "arrange" ? 1 : 0;
   ImGui::SetNextItemWidth(220);
-  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0")) {
-    app.editQuestion.type = typeIndex == 1 ? "arrange" : "translation_choice";
+  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0")) {
+    app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match" : "translation_choice";
     app.questionDirty = true;
+    if (typeIndex == 2 && app.editQuestion.pairs.empty()) {
+      app.editQuestion.pairs.push_back({"", ""});
+      app.editQuestion.pairs.push_back({"", ""});
+    }
     if (typeIndex == 1 && app.editQuestion.blocks.empty()) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
+  }
+  if (app.editQuestion.type == "match") {
+    ImGui::TextUnformatted("配对说明/题干（可选）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputTextWithHint("##match_prompt", "配对说明/题干",
+                                 app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
+      app.questionDirty = true;
+    }
+    ImGui::TextUnformatted("配对列表（左=词形，右=释义）");
+    for (std::size_t i = 0; i < app.editQuestion.pairs.size(); ++i) {
+      auto& pair = app.editQuestion.pairs[i];
+      ImGui::PushID(static_cast<int>(i));
+      char left[256];
+      char right[256];
+      std::snprintf(left, sizeof(left), "%s", pair.left.c_str());
+      std::snprintf(right, sizeof(right), "%s", pair.right.c_str());
+      ImGui::SetNextItemWidth(300);
+      if (ImGui::InputText("##pair_left", left, sizeof(left))) {
+        pair.left = left; app.questionDirty = true;
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(300);
+      if (ImGui::InputText("##pair_right", right, sizeof(right))) {
+        pair.right = right; app.questionDirty = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("×##pair_del", ImVec2(28, 24))) {
+        app.editQuestion.pairs.erase(app.editQuestion.pairs.begin() + i);
+        app.questionDirty = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::Button("＋ 添加配对##match_add", ImVec2(130, 28))) {
+      app.editQuestion.pairs.push_back({"", ""});
+      app.questionDirty = true;
+    }
+    ImGui::Spacing();
+    if (ImGui::Button("保存题目##match_save", ImVec2(120, 34))) app.saveQuestion();
+    return;
   }
   if (app.editQuestion.type == "arrange") {
     ImGui::TextUnformatted("题干/释义（必填）");
@@ -2697,6 +2770,104 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (question->type == "match") {
+    if (app.matchQuestionId != question->id) {
+      app.matchQuestionId = question->id;
+      app.matchLeftOrder.clear();
+      app.matchRightOrder.clear();
+      app.matchMatched.clear();
+      for (int i = 0; i < static_cast<int>(question->pairs.size()); ++i) {
+        app.matchLeftOrder.push_back(i);
+        app.matchRightOrder.push_back(i);
+      }
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::shuffle(app.matchLeftOrder.begin(), app.matchLeftOrder.end(), gen);
+      std::shuffle(app.matchRightOrder.begin(), app.matchRightOrder.end(), gen);
+      app.matchSelLeft = -1;
+      app.matchSelRight = -1;
+      app.learningAnswered = false;
+    }
+    pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
+              "配对 · " + course->name);
+    ImGui::TextDisabled("已配对 %zu / %zu", app.matchMatched.size(), question->pairs.size());
+    ImGui::BeginChild("##match_left", ImVec2(ImGui::GetWindowWidth() / 2 - 8, 260), true);
+    for (int index : app.matchLeftOrder) {
+      bool matched = std::find(app.matchMatched.begin(), app.matchMatched.end(), index) != app.matchMatched.end();
+      bool selected = app.matchSelLeft == index;
+      if (matched) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
+      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
+      ImGui::PushID(index);
+      if (ImGui::Button(question->pairs[index].left.c_str(), ImVec2(-1, 42))) {
+        if (!matched) {
+          app.matchSelLeft = index;
+          if (app.matchSelRight >= 0) {
+            if (app.matchSelLeft == app.matchSelRight) {
+              app.matchMatched.push_back(index);
+              if (app.matchMatched.size() == question->pairs.size()) app.learningAnswered = true;
+              app.showToast("配对正确");
+            } else {
+              app.showToast("配对错误，请重试");
+            }
+            app.matchSelLeft = -1;
+            app.matchSelRight = -1;
+          }
+        }
+      }
+      if (matched || selected) ImGui::PopStyleColor();
+      ImGui::PopID();
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##match_right", ImVec2(ImGui::GetWindowWidth() / 2 - 8, 260), true);
+    for (int index : app.matchRightOrder) {
+      bool matched = std::find(app.matchMatched.begin(), app.matchMatched.end(), index) != app.matchMatched.end();
+      bool selected = app.matchSelRight == index;
+      if (matched) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
+      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
+      ImGui::PushID(index + 1000);
+      if (ImGui::Button(question->pairs[index].right.c_str(), ImVec2(-1, 42))) {
+        if (!matched) {
+          app.matchSelRight = index;
+          if (app.matchSelLeft >= 0) {
+            if (app.matchSelLeft == app.matchSelRight) {
+              app.matchMatched.push_back(index);
+              if (app.matchMatched.size() == question->pairs.size()) app.learningAnswered = true;
+              app.showToast("配对正确");
+            } else {
+              app.showToast("配对错误，请重试");
+            }
+            app.matchSelLeft = -1;
+            app.matchSelRight = -1;
+          }
+        }
+      }
+      if (matched || selected) ImGui::PopStyleColor();
+      ImGui::PopID();
+    }
+    ImGui::EndChild();
+    if (app.matchMatched.size() == question->pairs.size()) {
+      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 58);
+      const bool last = course->questions.back().id == question->id;
+      const std::string label = last ? "完成" : "下一题";
+      if (ImGui::Button((label + "##match_next").c_str(), ImVec2(-1, 42))) {
+        if (last) {
+          app.learningQuestionId.clear();
+          app.matchQuestionId.clear();
+          app.showToast("本课完成");
+        } else {
+          for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+            if (course->questions[i].id == question->id) {
+              app.learningQuestionId = course->questions[i + 1].id;
+              break;
+            }
+          }
+          app.matchQuestionId.clear();
+        }
+      }
+    }
+    return;
+  }
   if (question->type == "arrange") {
     app.ensureVocabularyLoaded();
     auto iequals = [](std::string a, std::string b) {

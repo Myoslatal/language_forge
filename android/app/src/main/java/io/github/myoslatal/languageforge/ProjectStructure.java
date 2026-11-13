@@ -131,6 +131,18 @@ final class ProjectStructure {
                                                 }
                                             }
                                         }
+                                        JSONArray pairs = questionObject.optJSONArray("pairs");
+                                        if (pairs != null) {
+                                            for (int pIndex = 0; pIndex < pairs.length(); pIndex++) {
+                                                JSONObject pair = pairs.optJSONObject(pIndex);
+                                                if (pair == null) continue;
+                                                String left = pair.optString("l", "");
+                                                String right = pair.optString("r", "");
+                                                if (!left.trim().isEmpty() && !right.trim().isEmpty()) {
+                                                    question.pairs.add(new Question.MatchPair(left, right));
+                                                }
+                                            }
+                                        }
                                         JSONArray answers = questionObject.optJSONArray("answers");
                                         if (answers != null) {
                                             for (int a = 0; a < answers.length(); a++) {
@@ -266,6 +278,14 @@ final class ProjectStructure {
                                 answers.put(item);
                             }
                             questionObject.put("answers", answers);
+                            JSONArray pairs = new JSONArray();
+                            for (Question.MatchPair pair : question.pairs) {
+                                JSONObject object = new JSONObject();
+                                object.put("l", pair.left);
+                                object.put("r", pair.right);
+                                pairs.put(object);
+                            }
+                            questionObject.put("pairs", pairs);
                             JSONArray alt = new JSONArray();
                             for (String value : question.alt) alt.put(value);
                             questionObject.put("alt", alt);
@@ -443,6 +463,13 @@ final class ProjectStructure {
     static final class Question {
         static final String TYPE_TRANSLATION_CHOICE = "translation_choice";
         static final String TYPE_ARRANGE = "arrange";
+        static final String TYPE_MATCH = "match";
+
+        static final class MatchPair {
+            String left = "";
+            String right = "";
+            MatchPair(String left, String right) { this.left = left; this.right = right; }
+        }
 
         static final class Block {
             String id = "";
@@ -495,6 +522,7 @@ final class ProjectStructure {
         final List<String> options = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();
+        final List<MatchPair> pairs = new ArrayList<>();
         final List<String> alt = new ArrayList<>();
         String prompt = "";
         int correctIndex = -1;

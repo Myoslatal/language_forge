@@ -32,6 +32,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.Locale;
 
 /** Read-only learning flow: course list -> question list -> sentence hints. */
@@ -62,6 +63,11 @@ public class LearningActivity extends ForgeActivity {
     private TextView sentenceView;
     private final List<ProjectStructure.Question.Block> arrangePool = new ArrayList<>();
     private final List<ProjectStructure.Question.Block> arrangeSelected = new ArrayList<>();
+    private final List<Integer> matchLeftOrder = new ArrayList<>();
+    private final List<Integer> matchRightOrder = new ArrayList<>();
+    private final List<Integer> matchMatched = new ArrayList<>();
+    private int matchLeft = -1;
+    private int matchRight = -1;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -186,7 +192,8 @@ public class LearningActivity extends ForgeActivity {
             row.setAllCaps(false);
             String sentence = item.sentence == null || item.sentence.isEmpty() ? item.name : item.sentence;
             boolean arrange = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type);
-            row.setText(sentence + "\n" + (arrange ? "词块组句" : "选择正确翻译") +
+            boolean match = ProjectStructure.Question.TYPE_MATCH.equals(item.type);
+            row.setText(sentence + "\n" + (arrange ? "词块组句" : match ? "配对" : "选择正确翻译") +
                     (item.hintsEnabled ? " · 学习提示" : " · 无提示"));
             row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             row.setOnClickListener(v -> showQuestion(selected, item));
@@ -204,14 +211,24 @@ public class LearningActivity extends ForgeActivity {
         answered = false;
         arrangePool.clear();
         arrangeSelected.clear();
+        matchLeftOrder.clear();
+        matchRightOrder.clear();
+        matchMatched.clear();
+        matchLeft = -1;
+        matchRight = -1;
         confirmButton.setVisibility(View.GONE);
         confirmButton.setText("确认答案");
         course = selected;
         question = item;
         titleView.setText(item.name == null || item.name.isEmpty() ? "题目" : item.name);
-        subtitleView.setText(selected.name + " · " +
-                (ProjectStructure.Question.TYPE_ARRANGE.equals(item.type) ? "词块组句" : "选择正确翻译"));
+        String mode = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type) ? "词块组句"
+                : ProjectStructure.Question.TYPE_MATCH.equals(item.type) ? "配对" : "选择正确翻译";
+        subtitleView.setText(selected.name + " · " + mode);
         content.removeAllViews();
+        if (ProjectStructure.Question.TYPE_MATCH.equals(item.type)) {
+            renderMatchQuestion(item);
+            return;
+        }
         if (ProjectStructure.Question.TYPE_ARRANGE.equals(item.type)) {
             renderArrangeQuestion(item);
             return;
@@ -264,6 +281,105 @@ public class LearningActivity extends ForgeActivity {
             content.addView(option, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
         }
+    }
+
+    private void renderMatchQuestion(ProjectStructure.Question item) {
+        if (matchLeftOrder.isEmpty()) {
+            for (int i = 0; i < item.pairs.size(); i++) {
+                matchLeftOrder.add(i);
+                matchRightOrder.add(i);
+            }
+            Collections.shuffle(matchLeftOrder, new Random());
+            Collections.shuffle(matchRightOrder, new Random());
+        }
+        content.removeAllViews();
+        if (!item.prompt.isEmpty()) content.addView(text(item.prompt, 20, R.color.forge_text));
+        content.addView(text("已配对 " + matchMatched.size() + " / " + item.pairs.size(),
+                12, R.color.forge_muted));
+        LinearLayout columns = new LinearLayout(this);
+        columns.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout leftColumn = new LinearLayout(this);
+        leftColumn.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout rightColumn = new LinearLayout(this);
+        rightColumn.setOrientation(LinearLayout.VERTICAL);
+        for (int index : matchLeftOrder) {
+            ForgeButton button = new ForgeButton(this);
+            button.setAllCaps(false);
+            button.setText(item.pairs.get(index).left);
+            button.setTextSize(15f);
+            styleMatch(button, matchMatched.contains(index), matchLeft == index);
+            button.setOnClickListener(v -> {
+                if (matchMatched.contains(index)) return;
+                matchLeft = index;
+                tryMatch(item);
+            });
+            leftColumn.addView(button, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        }
+        for (int index : matchRightOrder) {
+            ForgeButton button = new ForgeButton(this);
+            button.setAllCaps(false);
+            button.setText(item.pairs.get(index).right);
+            button.setTextSize(15f);
+            styleMatch(button, matchMatched.contains(index), matchRight == index);
+            button.setOnClickListener(v -> {
+                if (matchMatched.contains(index)) return;
+                matchRight = index;
+                tryMatch(item);
+            });
+            rightColumn.addView(button, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        }
+        LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        columnParams.setMargins(0, 0, dp(6), 0);
+        columns.addView(leftColumn, columnParams);
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        rightParams.setMargins(dp(6), 0, 0, 0);
+        columns.addView(rightColumn, rightParams);
+        content.addView(columns);
+    }
+
+    private void tryMatch(ProjectStructure.Question item) {
+        if (matchLeft < 0 || matchRight < 0) {
+            renderMatchQuestion(item);
+            return;
+        }
+        if (matchLeft == matchRight) {
+            matchMatched.add(matchLeft);
+            matchLeft = -1;
+            matchRight = -1;
+            if (matchMatched.size() == item.pairs.size()) {
+                answered = true;
+                confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
+                confirmButton.setVisibility(View.VISIBLE);
+                toast("全部配对完成");
+            }
+            renderMatchQuestion(item);
+        } else {
+            matchLeft = -1;
+            matchRight = -1;
+            toast("配对错误，请重试");
+            renderMatchQuestion(item);
+        }
+    }
+
+    private void styleMatch(Button button, boolean correct, boolean selected) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(12));
+        if (correct) {
+            shape.setColor(getColor(R.color.forge_ok_bg));
+            button.setTextColor(getColor(R.color.forge_ok));
+        } else if (selected) {
+            shape.setColor(getColor(R.color.forge_accent_soft));
+            button.setTextColor(getColor(R.color.forge_accent));
+        } else {
+            shape.setColor(getColor(R.color.forge_panel));
+            button.setTextColor(getColor(R.color.forge_text));
+        }
+        shape.setStroke(dp(1), getColor(R.color.forge_panel3));
+        button.setBackground(shape);
     }
 
     private void renderArrangeQuestion(ProjectStructure.Question item) {

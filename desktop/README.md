@@ -277,3 +277,5 @@ Arrange questions use type="arrange" with prompt, blocks (id/text/vocabId) and a
 Arrange learning matches tapped block text to vocabulary entries and plays their audio with trim; arrange editor hides the whole-sentence recording section.
 
 Arrange blocks are added from the shared vocabulary picker, storing vocabId + display-name text; duplicates are skipped by vocabId and learning audio prefers vocabId.
+
+Match questions use type="match" with prompt and pairs[{l,r}]; desktop learning shows shuffled two columns with immediate pairing and 下一题/完成 after all pairs.

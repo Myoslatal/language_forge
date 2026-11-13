@@ -22,6 +22,11 @@ struct QuestionSegment {
   std::string text;
 };
 
+struct MatchPair {
+  std::string left;
+  std::string right;
+};
+
 struct QuestionBlock {
   std::string id;
   std::string text;
@@ -45,6 +50,7 @@ struct Question {
   std::string prompt;
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;
+  std::vector<MatchPair> pairs;
   std::vector<std::string> alt;
   int correctIndex = -1;
 };
