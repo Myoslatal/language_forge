@@ -62,6 +62,7 @@ struct Question {
   bool ignoreCase = true;
   bool ignoreSpace = true;
   bool near = true;
+  std::string audioSource;
   std::vector<std::string> alt;
   int correctIndex = -1;
 };

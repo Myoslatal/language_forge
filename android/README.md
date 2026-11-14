@@ -511,3 +511,5 @@ Match questions use type="match" with prompt and pairs[{l,r}]; editor hides unre
 Type questions use type="type" with prompt/acceptedAnswers/ignoreCase/ignoreSpace/near; learning normalizes input and shows a near-miss hint.
 
 Type prompt supports vocabulary picker composition and punctuation; warn rules (m/k/t) are checked before near-miss.
+
+Listen questions use type="listen" with prompt/audio/audioStart/audioEnd and four text options plus correctIndex. The editor requires an existing audio file; audio can be recorded/trimmed or taken from a vocabulary entry's example audio. Learning auto-plays once, shows 播放中…/重新播放, disables playback/options when audio is missing, and uses the existing Forge option/confirm/next flow.

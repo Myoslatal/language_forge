@@ -418,6 +418,7 @@ struct App {
   bool pickerForQuestion = false;
   bool pickerForBlocks = false;
   bool pickerForTypePrompt = false;
+  bool pickerForListenAudio = false;
   std::string pickerForId;
   Question editQuestion;
   bool questionIsNew = false;
@@ -429,6 +430,8 @@ struct App {
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
   std::string matchQuestionId;
+  int listenSel = -1;
+  std::string listenAutoId;
   std::vector<int> matchLeftOrder;
   std::vector<int> matchRightOrder;
   std::vector<int> matchMatched;
@@ -1203,6 +1206,36 @@ struct App {
       value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
       return value;
     };
+    if (editQuestion.type == "listen") {
+      editQuestion.prompt = trim(arrangePromptInput);
+      if (editQuestion.audio.empty()) { showToast("请先选择或录制音频"); return; }
+      if (!fs::exists(currentProjectDirectory() / pathFromUtf8(editQuestion.audio))) {
+        showToast("音频文件不存在，请重新选择"); return;
+      }
+      for (int i = 0; i < 4; ++i) {
+        editQuestion.options.clear();
+        for (int j = 0; j < 4; ++j) {
+          std::string value = trim(questionOptions[j]);
+          if (value.empty()) { showToast("四个选项都不能为空"); return; }
+          editQuestion.options.push_back(value);
+        }
+      }
+      if (questionCorrectIndex < 0 || questionCorrectIndex > 3) { showToast("请选择一个正确答案"); return; }
+      editQuestion.correctIndex = questionCorrectIndex;
+      editQuestion.hintsEnabled = false;
+      editQuestion.name = (editQuestion.prompt.empty() ? "听音选择" : editQuestion.prompt) +
+                          " · " + editQuestion.options[questionCorrectIndex];
+      if (questionIsNew) { course->questions.push_back(editQuestion); questionIsNew = false; }
+      else {
+        for (auto& question : course->questions) {
+          if (question.id == editQuestion.id) question = editQuestion;
+        }
+      }
+      if (!persist()) return;
+      showToast("听音题已保存");
+      screen = Screen::Course;
+      return;
+    }
     if (editQuestion.type == "type") {
       std::string prompt = trim(arrangePromptInput);
       if (prompt.empty()) { showToast("请填写题干"); return; }
@@ -2512,6 +2545,7 @@ std::string questionTypeLabel(const std::string& type) {
   if (type == "arrange") return "词块组句";
   if (type == "match") return "配对";
   if (type == "type") return "输入翻译";
+  if (type == "listen") return "听音选择";
   return "选择正确翻译";
 }
 
@@ -2532,11 +2566,12 @@ void renderQuestionEditor(App& app) {
   ImGui::Spacing();
   int typeIndex = app.editQuestion.type == "arrange" ? 1
                   : app.editQuestion.type == "match" ? 2
-                  : app.editQuestion.type == "type" ? 3 : 0;
+                  : app.editQuestion.type == "type" ? 3
+                  : app.editQuestion.type == "listen" ? 4 : 0;
   ImGui::SetNextItemWidth(220);
-  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0")) {
+  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0")) {
     app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match"
-                             : typeIndex == 3 ? "type" : "translation_choice";
+                             : typeIndex == 3 ? "type" : typeIndex == 4 ? "listen" : "translation_choice";
     app.questionDirty = true;
     if (typeIndex == 2 && app.editQuestion.pairs.empty()) {
       app.editQuestion.pairs.push_back({"", ""});
@@ -2546,6 +2581,70 @@ void renderQuestionEditor(App& app) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
+  }
+  if (app.editQuestion.type == "listen") {
+    ImGui::TextUnformatted("题干/说明（可选）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputTextWithHint("##listen_prompt", "题干/说明",
+                                 app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
+      app.questionDirty = true;
+    }
+    ImGui::Text("音频：%s  %lld..%lld", app.editQuestion.audio.c_str(),
+                static_cast<long long>(app.editQuestion.audioStart),
+                static_cast<long long>(app.editQuestion.audioEnd));
+    if (app.recording) {
+      if (ImGui::Button("停止录制##listen_rec", ImVec2(110, 28))) app.stopRecording();
+    } else if (ImGui::Button("录制##listen_rec", ImVec2(110, 28))) {
+      app.startRecording();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("播放##listen_play", ImVec2(90, 28))) {
+      app.playAudioFile(app.editQuestion.audio, static_cast<int>(app.editQuestion.audioStart),
+                        static_cast<int>(app.editQuestion.audioEnd));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("移除##listen_remove", ImVec2(90, 28))) {
+      app.editQuestion.audio.clear();
+      app.editQuestion.audioDuration = 0;
+      app.editQuestion.audioStart = 0;
+      app.editQuestion.audioEnd = 0;
+      app.questionDirty = true;
+    }
+    int listenDuration = static_cast<int>(app.editQuestion.audioDuration);
+    int listenStart = static_cast<int>(app.editQuestion.audioStart);
+    int listenEnd = static_cast<int>(app.editQuestion.audioEnd > 0
+                                        ? app.editQuestion.audioEnd : listenDuration);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("开始##listen_start", &listenStart, 0, std::max(0, listenDuration))) {
+      app.editQuestion.audioStart = listenStart; app.questionDirty = true;
+    }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("结束##listen_end", &listenEnd, 0, std::max(0, listenDuration))) {
+      app.editQuestion.audioEnd = std::max<long long>(listenEnd,
+          app.editQuestion.audioStart + 100);
+      app.questionDirty = true;
+    }
+    if (ImGui::Button("从词汇示例音频选择##listen_audio", ImVec2(200, 28))) {
+      app.pickerForListenAudio = true;
+      app.pickerForQuestion = false;
+      app.pickerForBlocks = false;
+      app.pickerForTypePrompt = false;
+      app.pickerSelected.clear();
+      app.pickerOpen = true;
+    }
+    ImGui::TextUnformatted("四个选项（选择正确项）");
+    for (int i = 0; i < 4; ++i) {
+      ImGui::PushID(i);
+      ImGui::SetNextItemWidth(-1);
+      if (ImGui::InputText("##listen_option", app.questionOptions[i],
+                           sizeof(app.questionOptions[i]))) {
+        app.questionDirty = true;
+      }
+      ImGui::RadioButton("正确", &app.questionCorrectIndex, i);
+      ImGui::PopID();
+    }
+    if (ImGui::Button("保存题目##listen_save", ImVec2(120, 34))) app.saveQuestion();
+    return;
   }
   if (app.editQuestion.type == "type") {
     ImGui::TextUnformatted("题干/要翻译的内容（必填）");
@@ -2921,6 +3020,81 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (question->type == "listen") {
+    if (app.listenAutoId != question->id) {
+      app.listenAutoId = question->id;
+      app.listenSel = -1;
+      app.learningAnswered = false;
+      if (!question->audio.empty()) {
+        std::fprintf(stderr, "FORGE_LEARN listenPlay %s %lld..%lld\n", question->audio.c_str(),
+                     static_cast<long long>(question->audioStart),
+                     static_cast<long long>(question->audioEnd));
+        app.playAudioFile(question->audio, static_cast<int>(question->audioStart),
+                          static_cast<int>(question->audioEnd));
+      }
+    }
+    pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
+              "听音选择 · " + course->name);
+    bool listenFileExists = !question->audio.empty() &&
+        fs::exists(app.currentProjectDirectory() / pathFromUtf8(question->audio));
+    bool listenIsPlaying = app.audioPlaying && app.playingAudioFile == question->audio;
+    if (!listenFileExists) {
+      ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "本题缺少音频");
+    }
+    std::string playLabel = listenIsPlaying ? "播放中…##listen_play"
+        : (app.listenAutoId == question->id ? "重新播放##listen_play" : "播放音频##listen_play");
+    if (!listenFileExists) ImGui::BeginDisabled();
+    if (ImGui::Button(playLabel.c_str(), ImVec2(140, 32)) && listenFileExists) {
+      std::fprintf(stderr, "FORGE_LEARN listenPlay %s %lld..%lld\n", question->audio.c_str(),
+                   static_cast<long long>(question->audioStart),
+                   static_cast<long long>(question->audioEnd));
+      app.playAudioFile(question->audio, static_cast<int>(question->audioStart),
+                        static_cast<int>(question->audioEnd));
+    }
+    if (!listenFileExists) ImGui::EndDisabled();
+
+    for (int i = 0; i < static_cast<int>(question->options.size()); ++i) {
+      bool selected = app.listenSel == i;
+      bool correct = app.learningAnswered && i == question->correctIndex;
+      if (correct) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.94f, 0.82f, 1));
+      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
+      ImGui::PushID(i);
+      if (ImGui::Button(question->options[i].c_str(), ImVec2(-1, 42)) && !app.learningAnswered && listenFileExists) {
+        app.listenSel = i;
+      }
+      if (correct || selected) ImGui::PopStyleColor();
+      ImGui::PopID();
+    }
+    if (!app.learningAnswered && app.listenSel >= 0) {
+      if (ImGui::Button("确认答案##listen_confirm", ImVec2(-1, 42)) && listenFileExists) {
+        app.stopAudioPlayback();
+        if (app.listenSel == question->correctIndex) {
+          app.learningAnswered = true;
+          app.showToast("回答正确");
+        } else {
+          app.listenSel = -1;
+          app.showToast("回答错误，请重新选择");
+        }
+      }
+    } else if (app.learningAnswered) {
+      const bool last = course->questions.back().id == question->id;
+      const std::string nextLabel = (last ? "完成" : "下一题") + std::string("##listen_next");
+      if (ImGui::Button(nextLabel.c_str(), ImVec2(-1, 42))) {
+        app.stopAudioPlayback();
+        if (last) { app.learningQuestionId.clear(); app.listenAutoId.clear(); app.showToast("本课完成"); }
+        else {
+          for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+            if (course->questions[i].id == question->id) {
+              app.learningQuestionId = course->questions[i + 1].id;
+              break;
+            }
+          }
+          app.listenAutoId.clear();
+        }
+      }
+    }
+    return;
+  }
   if (question->type == "type") {
     if (app.typeLearnQuestionId != question->id) {
       app.typeLearnQuestionId = question->id;
@@ -5885,7 +6059,24 @@ void renderPicker(App& app) {
   }
   ImGui::SameLine();
   if (ImGui::Button("确定", ImVec2(120, 34))) {
-    if (app.pickerForTypePrompt) {
+    if (app.pickerForListenAudio) {
+      if (!app.pickerSelected.empty() && app.vocabulary) {
+        for (const auto& entry : app.vocabulary->entries) {
+          if (entry.id != app.pickerSelected.front()) continue;
+          if (entry.audio.empty()) {
+            app.showToast("该词汇没有音频，已保持原音频");
+          } else {
+            app.editQuestion.audio = entry.audio;
+            app.editQuestion.audioDuration = entry.audioDuration;
+            app.editQuestion.audioStart = entry.audioStart;
+            app.editQuestion.audioEnd = entry.audioEnd;
+            app.editQuestion.audioSource = "vocab";
+          }
+          break;
+        }
+      }
+      app.pickerForListenAudio = false;
+    } else if (app.pickerForTypePrompt) {
       std::string prompt = app.arrangePromptInput;
       for (const auto& id : app.pickerSelected) {
         if (!app.vocabulary) continue;

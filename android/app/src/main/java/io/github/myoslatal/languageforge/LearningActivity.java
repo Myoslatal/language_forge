@@ -70,6 +70,10 @@ public class LearningActivity extends ForgeActivity {
     private int matchLeft = -1;
     private int matchRight = -1;
     private EditText typeInput;
+    private int listenSelected = -1;
+    private String listenAutoId = "";
+    private ForgeButton listenPlayButton;
+    private boolean listenPlaying;
     private TextView typeNearView;
 
     @Override
@@ -197,9 +201,12 @@ public class LearningActivity extends ForgeActivity {
             boolean arrange = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type);
             boolean match = ProjectStructure.Question.TYPE_MATCH.equals(item.type);
             boolean typing = ProjectStructure.Question.TYPE_TYPE.equals(item.type);
-            row.setText(sentence + "\n" + (arrange ? "词块组句" : match ? "配对"
-                    : typing ? "输入翻译" : "选择正确翻译") +
-                    (item.hintsEnabled ? " · 学习提示" : " · 无提示"));
+            boolean listening = ProjectStructure.Question.TYPE_LISTEN.equals(item.type);
+            String typeLabel = arrange ? "词块组句" : match ? "配对"
+                    : typing ? "输入翻译" : listening ? "听音选择" : "选择正确翻译";
+            boolean choice = ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(item.type);
+            row.setText(sentence + "\n" + typeLabel +
+                    (choice ? (item.hintsEnabled ? " · 学习提示" : " · 无提示") : ""));
             row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             row.setOnClickListener(v -> showQuestion(selected, item));
             content.addView(row, new LinearLayout.LayoutParams(
@@ -223,6 +230,10 @@ public class LearningActivity extends ForgeActivity {
         matchRight = -1;
         typeInput = null;
         typeNearView = null;
+        listenSelected = -1;
+        listenAutoId = "";
+        listenPlaying = false;
+        listenPlayButton = null;
         confirmButton.setVisibility(View.GONE);
         confirmButton.setText("确认答案");
         course = selected;
@@ -230,9 +241,14 @@ public class LearningActivity extends ForgeActivity {
         titleView.setText(item.name == null || item.name.isEmpty() ? "题目" : item.name);
         String mode = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type) ? "词块组句"
                 : ProjectStructure.Question.TYPE_MATCH.equals(item.type) ? "配对"
-                : ProjectStructure.Question.TYPE_TYPE.equals(item.type) ? "输入翻译" : "选择正确翻译";
+                : ProjectStructure.Question.TYPE_TYPE.equals(item.type) ? "输入翻译"
+                : ProjectStructure.Question.TYPE_LISTEN.equals(item.type) ? "听音选择" : "选择正确翻译";
         subtitleView.setText(selected.name + " · " + mode);
         content.removeAllViews();
+        if (ProjectStructure.Question.TYPE_LISTEN.equals(item.type)) {
+            renderListenQuestion(item);
+            return;
+        }
         if (ProjectStructure.Question.TYPE_TYPE.equals(item.type)) {
             renderTypeQuestion(item);
             return;
@@ -292,6 +308,54 @@ public class LearningActivity extends ForgeActivity {
             });
             content.addView(option, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+        }
+    }
+
+    private void renderListenQuestion(ProjectStructure.Question item) {
+        content.removeAllViews();
+        if (!item.prompt.isEmpty()) content.addView(text(item.prompt, 20, R.color.forge_text));
+        java.io.File audioFile = item.audio == null || item.audio.isEmpty()
+                ? null : MediaFiles.resolveProjectFile(projectDirectory, item.audio);
+        boolean missingAudio = audioFile == null || !audioFile.exists();
+        if (missingAudio) content.addView(text("本题缺少音频", 16, R.color.forge_warn));
+        listenPlayButton = new ForgeButton(this);
+        listenPlayButton.setAllCaps(false);
+        listenPlayButton.setText(listenPlaying ? "播放中…"
+                : (listenAutoId.equals(item.id) ? "重新播放" : "播放音频"));
+        listenPlayButton.setEnabled(!missingAudio);
+        listenPlayButton.setOnClickListener(v -> {
+            if (missingAudio) return;
+            android.util.Log.d("FORGE_LEARN", "listenPlay " + item.audio + " " + item.audioStart + ".." + item.audioEnd);
+            play(item.audio, item.audioStart, item.audioEnd);
+            listenPlaying = true;
+            renderListenQuestion(item);
+        });
+        content.addView(listenPlayButton);
+        for (int i = 0; i < item.options.size(); i++) {
+            final int index = i;
+            ForgeButton option = new ForgeButton(this);
+            option.setAllCaps(false);
+            option.setText((i + 1) + ". " + item.options.get(i));
+            option.setOnClickListener(v -> {
+                if (answered || missingAudio) return;
+                listenSelected = index;
+                confirmButton.setVisibility(View.VISIBLE);
+                renderListenQuestion(item);
+            });
+            option.setEnabled(!answered && !missingAudio);
+            option.setAlpha(answered || !missingAudio ? 1f : 0.55f);
+            styleMatch(option, answered && index == item.correctIndex, listenSelected == index);
+            content.addView(option, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+        }
+        if (missingAudio) confirmButton.setVisibility(View.GONE);
+        if (!answered && listenSelected < 0) confirmButton.setVisibility(View.GONE);
+        if (!listenAutoId.equals(item.id) && !missingAudio) {
+            listenAutoId = item.id;
+            android.util.Log.d("FORGE_LEARN", "listenPlay " + item.audio + " " + item.audioStart + ".." + item.audioEnd);
+            play(item.audio, item.audioStart, item.audioEnd);
+            listenPlaying = true;
+            listenPlayButton.setText("播放中…");
         }
     }
 
@@ -603,6 +667,28 @@ public class LearningActivity extends ForgeActivity {
 
     private void confirmAnswer() {
         if (question == null || answered) return;
+        if (ProjectStructure.Question.TYPE_LISTEN.equals(question.type)) {
+            stopAudio();
+            File questionAudio = question.audio == null || question.audio.isEmpty()
+                    ? null : MediaFiles.resolveProjectFile(projectDirectory, question.audio);
+            if (questionAudio == null || !questionAudio.isFile()) {
+                toast("本题缺少音频");
+                return;
+            }
+            if (listenSelected < 0) return;
+            if (listenSelected == question.correctIndex) {
+                answered = true;
+                confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
+                confirmButton.setVisibility(View.VISIBLE);
+                toast("回答正确");
+                renderListenQuestion(question);
+            } else {
+                toast("回答错误，请重新选择");
+                listenSelected = -1;
+                renderListenQuestion(question);
+            }
+            return;
+        }
         if (ProjectStructure.Question.TYPE_TYPE.equals(question.type)) {
             if (typeInput == null) return;
             String value = typeInput.getText().toString();
@@ -858,6 +944,8 @@ public class LearningActivity extends ForgeActivity {
 
     private void stopAudio() {
         android.util.Log.d("FORGE_LEARN", "stopAudio");
+        listenPlaying = false;
+        if (listenPlayButton != null) listenPlayButton.setText("重新播放");
         if (player != null) {
             try { player.stop(); } catch (Exception ignored) { }
             player.release();

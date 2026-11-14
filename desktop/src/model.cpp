@@ -187,6 +187,7 @@ json structureToJson(const Structure& structure) {
                                {"ignoreCase", question.ignoreCase},
                                {"ignoreSpace", question.ignoreSpace},
                                {"near", question.near},
+                               {"audioSource", question.audioSource},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}});
         }
@@ -273,6 +274,7 @@ Structure structureFromJson(const json& value) {
                 question.ignoreCase = questionValue.value("ignoreCase", true);
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
+                question.audioSource = questionValue.value("audioSource", "");
                 if (questionValue.contains("pairs") && questionValue["pairs"].is_array()) {
                   for (const auto& item : questionValue["pairs"]) {
                     MatchPair pair;

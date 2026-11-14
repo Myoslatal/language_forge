@@ -152,6 +152,7 @@ final class ProjectStructure {
                                         question.ignoreCase = questionObject.optBoolean("ignoreCase", true);
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
+                                        question.audioSource = questionObject.optString("audioSource", "");
                                         JSONArray pairs = questionObject.optJSONArray("pairs");
                                         if (pairs != null) {
                                             for (int pIndex = 0; pIndex < pairs.length(); pIndex++) {
@@ -314,6 +315,9 @@ final class ProjectStructure {
                             questionObject.put("ignoreCase", question.ignoreCase);
                             questionObject.put("ignoreSpace", question.ignoreSpace);
                             questionObject.put("near", question.near);
+                            if (!question.audioSource.isEmpty()) {
+                                questionObject.put("audioSource", question.audioSource);
+                            }
                             JSONArray pairs = new JSONArray();
                             for (Question.MatchPair pair : question.pairs) {
                                 JSONObject object = new JSONObject();
@@ -501,6 +505,7 @@ final class ProjectStructure {
         static final String TYPE_ARRANGE = "arrange";
         static final String TYPE_MATCH = "match";
         static final String TYPE_TYPE = "type";
+        static final String TYPE_LISTEN = "listen";
 
         static final class WarnRule {
             String match = "";
@@ -574,6 +579,7 @@ final class ProjectStructure {
         boolean ignoreCase = true;
         boolean ignoreSpace = true;
         boolean near = true;
+        String audioSource = "";
         final List<String> alt = new ArrayList<>();
         String prompt = "";
         int correctIndex = -1;

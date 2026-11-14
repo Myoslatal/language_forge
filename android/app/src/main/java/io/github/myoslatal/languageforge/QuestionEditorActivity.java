@@ -93,6 +93,13 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout arrangeAnswers;
     private LinearLayout matchSection;
     private LinearLayout typeSection;
+    private LinearLayout listenSection;
+    private String audioRelative = "";
+    private String audioSource = "";
+    private EditText listenPrompt;
+    private EditText[] listenOptions = new EditText[4];
+    private android.widget.RadioGroup listenCorrect;
+    private TextView listenAudioLabel;
     private EditText typePrompt;
     private EditText typeAnswers;
     private CheckBox typeIgnoreCase;
@@ -175,12 +182,13 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译"});
+                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
         typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
                 : ProjectStructure.Question.TYPE_MATCH.equals(question.type) ? 2
-                : ProjectStructure.Question.TYPE_TYPE.equals(question.type) ? 3 : 0);
+                : ProjectStructure.Question.TYPE_TYPE.equals(question.type) ? 3
+                : ProjectStructure.Question.TYPE_LISTEN.equals(question.type) ? 4 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -285,6 +293,43 @@ public class QuestionEditorActivity extends ForgeActivity {
         renderWarnRows();
         typeSection.setVisibility(View.GONE);
         scrollContent.addView(typeSection, 3);
+        listenSection = new LinearLayout(this);
+        listenSection.setOrientation(LinearLayout.VERTICAL);
+        listenPrompt = new EditText(this);
+        listenPrompt.setHint("题干/说明（可选）");
+        listenSection.addView(listenPrompt);
+        listenAudioLabel = new TextView(this);
+        listenSection.addView(listenAudioLabel);
+        ForgeButton pickAudio = new ForgeButton(this);
+        pickAudio.setAllCaps(false);
+        pickAudio.setText("从词汇示例音频选择");
+        pickAudio.setOnClickListener(v -> openListenAudioPicker());
+        listenSection.addView(pickAudio);
+        listenCorrect = new android.widget.RadioGroup(this);
+        for (int i = 0; i < 4; i++) {
+            final int index = i;
+            listenOptions[i] = new EditText(this);
+            listenOptions[i].setHint("选项 " + (i + 1));
+            listenSection.addView(listenOptions[i]);
+            android.widget.RadioButton radio = new android.widget.RadioButton(this);
+            radio.setText("正确 " + (i + 1));
+            radio.setId(1000 + i);
+            listenCorrect.addView(radio);
+        }
+        listenSection.addView(listenCorrect);
+        listenSection.setVisibility(View.GONE);
+        scrollContent.addView(listenSection, 4);
+        listenPrompt.setText(question.prompt == null ? "" : question.prompt);
+        for (int i = 0; i < 4; i++) {
+            listenOptions[i].setText(i < question.options.size() ? question.options.get(i) : "");
+        }
+        if (question.correctIndex >= 0 && question.correctIndex < 4) {
+            listenCorrect.check(1000 + question.correctIndex);
+        }
+        audioRelative = question.audio == null ? "" : question.audio;
+        audioStart = question.audioStart;
+        audioEnd = question.audioEnd;
+        listenAudioLabel.setText(audioRelative.isEmpty() ? "尚未选择音频" : audioRelative);
         editPairs.addAll(question.pairs);
         renderMatchRows();
         editBlocks.addAll(question.blocks);
@@ -303,7 +348,14 @@ public class QuestionEditorActivity extends ForgeActivity {
                                                    int position, long id) {
                 if (matchSection != null) matchSection.setVisibility(View.GONE);
                 if (typeSection != null) typeSection.setVisibility(View.GONE);
-                if (position == 3) {
+                if (listenSection != null) listenSection.setVisibility(View.GONE);
+                if (position == 4) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (listenSection != null) listenSection.setVisibility(View.VISIBLE);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "听音选择 · " + course.name);
+                    showListenAudio();
+                } else if (position == 3) {
                     if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
                     if (typeSection != null) typeSection.setVisibility(View.VISIBLE);
                     ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
@@ -325,6 +377,10 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
             hideForMatch(true);
+        } else if (ProjectStructure.Question.TYPE_LISTEN.equals(question.type)) {
+            if (listenSection != null) listenSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            showListenAudio();
         } else if (ProjectStructure.Question.TYPE_TYPE.equals(question.type)) {
             if (typeSection != null) typeSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
@@ -1047,6 +1103,28 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
     }
 
+    private void showListenAudio() {
+        hideForMatch(true);
+        int[] audioIds = {R.id.question_audio_hint, R.id.question_audio_trim,
+            R.id.question_audio_start, R.id.question_audio_end, R.id.btn_question_record,
+            R.id.btn_question_play, R.id.btn_question_remove_audio, R.id.btn_question_trim_play};
+        for (int id : audioIds) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(View.VISIBLE);
+        }
+        int[] hideIds = {R.id.btn_choose_question_parts, R.id.btn_insert_punct};
+        for (int id : hideIds) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(View.GONE);
+        }
+        for (int i = 0; i < 4; i++) {
+            int optionId = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
+            View option = findViewById(optionId);
+            if (option != null) option.setVisibility(View.GONE);
+        }
+        if (hintsEnabledView != null) hintsEnabledView.setVisibility(View.GONE);
+    }
+
     private void hideForMatch(boolean match) {
         if (editorScrollContent != null) hideChoiceSections(editorScrollContent, match);
         if (hintsEnabledView != null) hintsEnabledView.setVisibility(match ? View.GONE : View.VISIBLE);
@@ -1070,6 +1148,90 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (option != null) option.setVisibility(match ? View.GONE : View.VISIBLE);
             if (correct != null) correct.setVisibility(match ? View.GONE : View.VISIBLE);
         }
+    }
+
+    private void openListenAudioPicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "选择示例音频词汇");
+        listenAudioLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> listenAudioLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> ids = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (ids == null || ids.isEmpty()) return;
+                for (VocabularyEntry entry : vocabulary.entries) {
+                    if (!ids.get(0).equals(entry.id)) continue;
+                    if (entry.audio == null || entry.audio.isEmpty()) {
+                        toast("该词汇没有音频，已保持原音频");
+                        return;
+                    }
+                    if (pendingAudio != null) {
+                        MediaFiles.deleteQuietly(new java.io.File(pendingAudio));
+                        pendingAudio = null;
+                    }
+                    existingAudio = entry.audio;
+                    existingDuration = entry.audioDuration;
+                    audioRelative = entry.audio;
+                    audioStart = entry.audioStart;
+                    audioEnd = entry.audioEnd > 0 ? entry.audioEnd : entry.audioDuration;
+                    audioRemoved = false;
+                    audioSource = "vocab";
+                    updateAudioUi();
+                    listenAudioLabel.setText(audioRelative + "  " + audioStart + ".." + audioEnd);
+                    dirty = true;
+                    return;
+                }
+            });
+
+    private void saveListen() {
+        String prompt = listenPrompt.getText() == null ? "" : listenPrompt.getText().toString().trim();
+        String path = audioRemoved ? "" : existingAudio;
+        if (pendingAudio != null) {
+            try {
+                java.io.File copied = MediaFiles.copyAudioToProject(projectDirectory,
+                        new java.io.File(pendingAudio), question.id);
+                path = MediaFiles.relativePath(projectDirectory, copied);
+                audioSource = "recording";
+            } catch (Exception ex) {
+                toast("保存录音失败");
+                return;
+            }
+        }
+        if (path.isEmpty()) { toast("请先选择或录制音频"); return; }
+        java.io.File audioFile = MediaFiles.resolveProjectFile(projectDirectory, path);
+        if (!audioFile.exists()) { toast("音频文件不存在，请重新选择"); return; }
+        List<String> options = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            String value = listenOptions[i].getText().toString().trim();
+            if (value.isEmpty()) { toast("四个选项都不能为空"); return; }
+            options.add(value);
+        }
+        int correct = -1;
+        int checked = listenCorrect.getCheckedRadioButtonId();
+        if (checked >= 1000 && checked < 1004) correct = checked - 1000;
+        if (correct < 0) { toast("请选择一个正确答案"); return; }
+        question.type = ProjectStructure.Question.TYPE_LISTEN;
+        question.prompt = prompt;
+        question.audio = path;
+        question.audioDuration = pendingAudio != null ? pendingDuration : existingDuration;
+        question.audioStart = Math.max(0, audioStart);
+        question.audioEnd = Math.max(question.audioStart, audioEnd);
+        question.audioSource = audioSource;
+        question.options.clear();
+        question.options.addAll(options);
+        question.correctIndex = correct;
+        question.hintsEnabled = false;
+        question.name = (prompt.isEmpty() ? "听音选择" : prompt) + " · " + options.get(correct);
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true;
+        toast("已保存听音题");
+        finish();
     }
 
     private void saveTypeQuestion() {
@@ -1352,6 +1514,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 4) {
+            saveListen();
+            return;
+        }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 3) {
             saveTypeQuestion();
             return;
