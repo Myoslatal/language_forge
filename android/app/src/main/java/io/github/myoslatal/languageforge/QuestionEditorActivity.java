@@ -92,6 +92,12 @@ public class QuestionEditorActivity extends ForgeActivity {
     private final List<List<String>> editAnswers = new ArrayList<>();
     private LinearLayout arrangeAnswers;
     private LinearLayout matchSection;
+    private LinearLayout typeSection;
+    private EditText typePrompt;
+    private EditText typeAnswers;
+    private CheckBox typeIgnoreCase;
+    private CheckBox typeIgnoreSpace;
+    private CheckBox typeNear;
     private LinearLayout matchRows;
     private EditText matchPrompt;
     private final List<ProjectStructure.Question.MatchPair> editPairs = new ArrayList<>();
@@ -167,11 +173,12 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句", "配对"});
+                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
         typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
-                : ProjectStructure.Question.TYPE_MATCH.equals(question.type) ? 2 : 0);
+                : ProjectStructure.Question.TYPE_MATCH.equals(question.type) ? 2
+                : ProjectStructure.Question.TYPE_TYPE.equals(question.type) ? 3 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -215,7 +222,33 @@ public class QuestionEditorActivity extends ForgeActivity {
             dirty = true;
         });
         matchSection.addView(addPair);
+        matchSection.setVisibility(View.GONE);
         scrollContent.addView(matchSection, 2);
+        typeSection = new LinearLayout(this);
+        typeSection.setOrientation(LinearLayout.VERTICAL);
+        typePrompt = new EditText(this);
+        typePrompt.setHint("题干/要翻译的内容（必填）");
+        typePrompt.setText(question.prompt == null ? "" : question.prompt);
+        typeSection.addView(typePrompt);
+        typeAnswers = new EditText(this);
+        typeAnswers.setHint("可接受答案，一行一个");
+        typeAnswers.setMinLines(3);
+        typeAnswers.setText(String.join("\n", question.acceptedAnswers));
+        typeSection.addView(typeAnswers);
+        typeIgnoreCase = new CheckBox(this);
+        typeIgnoreCase.setText("忽略大小写");
+        typeIgnoreCase.setChecked(question.ignoreCase);
+        typeSection.addView(typeIgnoreCase);
+        typeIgnoreSpace = new CheckBox(this);
+        typeIgnoreSpace.setText("忽略空格与标点");
+        typeIgnoreSpace.setChecked(question.ignoreSpace);
+        typeSection.addView(typeIgnoreSpace);
+        typeNear = new CheckBox(this);
+        typeNear.setText("自动识别拼写相近（差 1 字母）");
+        typeNear.setChecked(question.near);
+        typeSection.addView(typeNear);
+        typeSection.setVisibility(View.GONE);
+        scrollContent.addView(typeSection, 3);
         editPairs.addAll(question.pairs);
         renderMatchRows();
         editBlocks.addAll(question.blocks);
@@ -232,14 +265,21 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
                                                    int position, long id) {
-                if (position == 2) {
+                if (matchSection != null) matchSection.setVisibility(View.GONE);
+                if (typeSection != null) typeSection.setVisibility(View.GONE);
+                if (position == 3) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (typeSection != null) typeSection.setVisibility(View.VISIBLE);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "输入翻译 · " + course.name);
+                    hideForMatch(true);
+                } else if (position == 2) {
                     if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
                     if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
                     ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
                             "配对 · " + course.name);
                     hideForMatch(true);
                 } else {
-                    if (matchSection != null) matchSection.setVisibility(View.GONE);
                     applyType(position == 1);
                 }
             }
@@ -247,6 +287,10 @@ public class QuestionEditorActivity extends ForgeActivity {
         });
         if (ProjectStructure.Question.TYPE_MATCH.equals(question.type)) {
             if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            hideForMatch(true);
+        } else if (ProjectStructure.Question.TYPE_TYPE.equals(question.type)) {
+            if (typeSection != null) typeSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
             hideForMatch(true);
         } else {
@@ -877,6 +921,31 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
     }
 
+    private void saveTypeQuestion() {
+        String prompt = typePrompt.getText() == null ? "" : typePrompt.getText().toString().trim();
+        if (prompt.isEmpty()) { toast("请填写题干"); return; }
+        List<String> accepted = new ArrayList<>();
+        for (String line : typeAnswers.getText().toString().split("\n")) {
+            String value = line.trim();
+            if (!value.isEmpty()) accepted.add(value);
+        }
+        if (accepted.isEmpty()) { toast("请至少填写一条可接受答案"); return; }
+        question.type = ProjectStructure.Question.TYPE_TYPE;
+        question.prompt = prompt;
+        question.acceptedAnswers.clear();
+        question.acceptedAnswers.addAll(accepted);
+        question.ignoreCase = typeIgnoreCase.isChecked();
+        question.ignoreSpace = typeIgnoreSpace.isChecked();
+        question.near = typeNear.isChecked();
+        question.name = prompt + " → " + accepted.get(0);
+        question.hintsEnabled = false;
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true;
+        toast("已保存输入题");
+        finish();
+    }
+
     private void saveMatch() {
         String prompt = matchPrompt.getText() == null ? "" : matchPrompt.getText().toString().trim();
         if (editPairs.size() < 2) { toast("至少需要 2 对配对"); return; }
@@ -1119,6 +1188,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 3) {
+            saveTypeQuestion();
+            return;
+        }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 2) {
             saveMatch();
             return;

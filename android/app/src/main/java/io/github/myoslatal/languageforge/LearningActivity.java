@@ -18,6 +18,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
@@ -68,6 +69,8 @@ public class LearningActivity extends ForgeActivity {
     private final List<Integer> matchMatched = new ArrayList<>();
     private int matchLeft = -1;
     private int matchRight = -1;
+    private EditText typeInput;
+    private TextView typeNearView;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -193,7 +196,9 @@ public class LearningActivity extends ForgeActivity {
             String sentence = item.sentence == null || item.sentence.isEmpty() ? item.name : item.sentence;
             boolean arrange = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type);
             boolean match = ProjectStructure.Question.TYPE_MATCH.equals(item.type);
-            row.setText(sentence + "\n" + (arrange ? "词块组句" : match ? "配对" : "选择正确翻译") +
+            boolean typing = ProjectStructure.Question.TYPE_TYPE.equals(item.type);
+            row.setText(sentence + "\n" + (arrange ? "词块组句" : match ? "配对"
+                    : typing ? "输入翻译" : "选择正确翻译") +
                     (item.hintsEnabled ? " · 学习提示" : " · 无提示"));
             row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             row.setOnClickListener(v -> showQuestion(selected, item));
@@ -216,15 +221,22 @@ public class LearningActivity extends ForgeActivity {
         matchMatched.clear();
         matchLeft = -1;
         matchRight = -1;
+        typeInput = null;
+        typeNearView = null;
         confirmButton.setVisibility(View.GONE);
         confirmButton.setText("确认答案");
         course = selected;
         question = item;
         titleView.setText(item.name == null || item.name.isEmpty() ? "题目" : item.name);
         String mode = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type) ? "词块组句"
-                : ProjectStructure.Question.TYPE_MATCH.equals(item.type) ? "配对" : "选择正确翻译";
+                : ProjectStructure.Question.TYPE_MATCH.equals(item.type) ? "配对"
+                : ProjectStructure.Question.TYPE_TYPE.equals(item.type) ? "输入翻译" : "选择正确翻译";
         subtitleView.setText(selected.name + " · " + mode);
         content.removeAllViews();
+        if (ProjectStructure.Question.TYPE_TYPE.equals(item.type)) {
+            renderTypeQuestion(item);
+            return;
+        }
         if (ProjectStructure.Question.TYPE_MATCH.equals(item.type)) {
             renderMatchQuestion(item);
             return;
@@ -281,6 +293,50 @@ public class LearningActivity extends ForgeActivity {
             content.addView(option, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
         }
+    }
+
+    private void renderTypeQuestion(ProjectStructure.Question item) {
+        content.addView(text(item.prompt, 20, R.color.forge_text));
+        typeInput = new EditText(this);
+        typeInput.setHint("输入翻译");
+        typeInput.setTextSize(16f);
+        typeInput.setEnabled(!answered);
+        typeInput.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b, int c) {
+                if (answered) return;
+                confirmButton.setVisibility(s.toString().trim().isEmpty() ? View.GONE : View.VISIBLE);
+            }
+            public void afterTextChanged(android.text.Editable s) {}
+        });
+        content.addView(typeInput);
+        typeNearView = new TextView(this);
+        typeNearView.setTextColor(getColor(R.color.forge_warn));
+        typeNearView.setVisibility(View.GONE);
+        content.addView(typeNearView);
+        confirmButton.setVisibility(View.GONE);
+    }
+
+    private String normalizeType(String value, boolean ignoreCase, boolean ignoreSpace) {
+        String result = value == null ? "" : value.trim().replaceAll("\s+", " ");
+        if (ignoreCase) result = result.toLowerCase(Locale.ROOT);
+        if (ignoreSpace) result = result.replaceAll("[\s\\p{Punct}，。！？、；：‘’“”（）《》…—]", "");
+        return result;
+    }
+
+    private int editDistance(String a, String b) {
+        int[] prev = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            int[] cur = new int[b.length() + 1];
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            prev = cur;
+        }
+        return prev[b.length()];
     }
 
     private void renderMatchQuestion(ProjectStructure.Question item) {
@@ -547,6 +603,39 @@ public class LearningActivity extends ForgeActivity {
 
     private void confirmAnswer() {
         if (question == null || answered) return;
+        if (ProjectStructure.Question.TYPE_TYPE.equals(question.type)) {
+            if (typeInput == null) return;
+            String value = typeInput.getText().toString();
+            if (value.trim().isEmpty()) return;
+            String normalized = normalizeType(value, question.ignoreCase, question.ignoreSpace);
+            boolean ok = false;
+            for (String answer : question.acceptedAnswers) {
+                if (normalized.equals(normalizeType(answer, question.ignoreCase,
+                        question.ignoreSpace))) { ok = true; break; }
+            }
+            if (ok) {
+                answered = true;
+                typeInput.setEnabled(false);
+                typeInput.setTextColor(getColor(R.color.forge_ok));
+                typeInput.setBackgroundColor(getColor(R.color.forge_ok_bg));
+                typeNearView.setVisibility(View.GONE);
+                confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
+                confirmButton.setVisibility(View.VISIBLE);
+            } else {
+                toast("回答错误，请再试一次");
+                if (question.near) {
+                    for (String answer : question.acceptedAnswers) {
+                        if (editDistance(normalized, normalizeType(answer, question.ignoreCase,
+                                question.ignoreSpace)) <= 1) {
+                            typeNearView.setText("差一点就对了，应该是 " + answer);
+                            typeNearView.setVisibility(View.VISIBLE);
+                            break;
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if (ProjectStructure.Question.TYPE_ARRANGE.equals(question.type)) {
             if (arrangeSelected.isEmpty()) return;
             dismissHint();

@@ -51,6 +51,10 @@ struct Question {
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;
   std::vector<MatchPair> pairs;
+  std::vector<std::string> acceptedAnswers;
+  bool ignoreCase = true;
+  bool ignoreSpace = true;
+  bool near = true;
   std::vector<std::string> alt;
   int correctIndex = -1;
 };

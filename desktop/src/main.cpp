@@ -423,6 +423,7 @@ struct App {
   bool questionDirty = false;
   char questionOptions[4][256] = {};
   char arrangePromptInput[512] = {};
+  char typeAnswersInput[2048] = {};
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
@@ -432,6 +433,9 @@ struct App {
   std::vector<int> matchMatched;
   int matchSelLeft = -1;
   int matchSelRight = -1;
+  char typeLearnInput[512] = {};
+  bool typeLearnCorrect = false;
+  std::string typeLearnQuestionId;
   int questionCorrectIndex = -1;
   std::string learningCourseId;
   std::string learningQuestionId;
@@ -1172,6 +1176,12 @@ struct App {
       while (editQuestion.options.size() < 4) editQuestion.options.push_back("");
     }
     questionCorrectIndex = editQuestion.correctIndex;
+    std::string acceptedText;
+    for (const auto& value : editQuestion.acceptedAnswers) {
+      if (!acceptedText.empty()) acceptedText += "\n";
+      acceptedText += value;
+    }
+    std::snprintf(typeAnswersInput, sizeof(typeAnswersInput), "%s", acceptedText.c_str());
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
                   editQuestion.prompt.c_str());
     for (int i = 0; i < 4; ++i) {
@@ -1192,6 +1202,32 @@ struct App {
       value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
       return value;
     };
+    if (editQuestion.type == "type") {
+      std::string prompt = trim(arrangePromptInput);
+      if (prompt.empty()) { showToast("请填写题干"); return; }
+      std::vector<std::string> accepted;
+      std::istringstream input(typeAnswersInput);
+      std::string line;
+      while (std::getline(input, line)) {
+        line = trim(line);
+        if (!line.empty()) accepted.push_back(line);
+      }
+      if (accepted.empty()) { showToast("请至少填写一条可接受答案"); return; }
+      editQuestion.prompt = prompt;
+      editQuestion.acceptedAnswers = accepted;
+      editQuestion.name = prompt + " → " + accepted.front();
+      editQuestion.hintsEnabled = false;
+      if (questionIsNew) { course->questions.push_back(editQuestion); questionIsNew = false; }
+      else {
+        for (auto& question : course->questions) {
+          if (question.id == editQuestion.id) question = editQuestion;
+        }
+      }
+      if (!persist()) return;
+      showToast("输入题已保存");
+      screen = Screen::Course;
+      return;
+    }
     if (editQuestion.type == "match") {
       if (editQuestion.pairs.size() < 2) { showToast("至少需要 2 对配对"); return; }
       for (auto& pair : editQuestion.pairs) {
@@ -2462,10 +2498,13 @@ void renderQuestionEditor(App& app) {
   if (right > 0) ImGui::SetCursorPosX(right);
   if (ImGui::Button("保存题目##question_save_top", ImVec2(120, 34))) app.saveQuestion();
   ImGui::Spacing();
-  int typeIndex = app.editQuestion.type == "arrange" ? 1 : 0;
+  int typeIndex = app.editQuestion.type == "arrange" ? 1
+                  : app.editQuestion.type == "match" ? 2
+                  : app.editQuestion.type == "type" ? 3 : 0;
   ImGui::SetNextItemWidth(220);
-  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0")) {
-    app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match" : "translation_choice";
+  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0")) {
+    app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match"
+                             : typeIndex == 3 ? "type" : "translation_choice";
     app.questionDirty = true;
     if (typeIndex == 2 && app.editQuestion.pairs.empty()) {
       app.editQuestion.pairs.push_back({"", ""});
@@ -2475,6 +2514,27 @@ void renderQuestionEditor(App& app) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
+  }
+  if (app.editQuestion.type == "type") {
+    ImGui::TextUnformatted("题干/要翻译的内容（必填）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputTextWithHint("##type_prompt", "题干/要翻译的内容",
+                                 app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
+      app.questionDirty = true;
+    }
+    ImGui::TextUnformatted("可接受答案（一行一个）");
+    if (ImGui::InputTextMultiline("##type_answers", app.typeAnswersInput,
+                                  sizeof(app.typeAnswersInput), ImVec2(-1, 100))) {
+      app.questionDirty = true;
+    }
+    bool ignoreCase = app.editQuestion.ignoreCase;
+    bool ignoreSpace = app.editQuestion.ignoreSpace;
+    bool near = app.editQuestion.near;
+    if (ImGui::Checkbox("忽略大小写", &ignoreCase)) { app.editQuestion.ignoreCase = ignoreCase; app.questionDirty = true; }
+    if (ImGui::Checkbox("忽略空格与标点", &ignoreSpace)) { app.editQuestion.ignoreSpace = ignoreSpace; app.questionDirty = true; }
+    if (ImGui::Checkbox("自动识别拼写相近（差 1 字母）", &near)) { app.editQuestion.near = near; app.questionDirty = true; }
+    if (ImGui::Button("保存题目##type_save", ImVec2(120, 34))) app.saveQuestion();
+    return;
   }
   if (app.editQuestion.type == "match") {
     ImGui::TextUnformatted("配对说明/题干（可选）");
@@ -2770,6 +2830,95 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (question->type == "type") {
+    if (app.typeLearnQuestionId != question->id) {
+      app.typeLearnQuestionId = question->id;
+      std::snprintf(app.typeLearnInput, sizeof(app.typeLearnInput), "%s", "");
+      app.typeLearnCorrect = false;
+      app.learningAnswered = false;
+    }
+    auto normalize = [](std::string value, bool ignoreCase, bool ignoreSpace) {
+      value.erase(0, value.find_first_not_of(" \t\n\r"));
+      value.erase(value.find_last_not_of(" \t\n\r") + 1);
+      std::string out;
+      bool space = false;
+      for (char c : value) {
+        if (std::isspace(static_cast<unsigned char>(c))) { space = true; continue; }
+        if (space && !out.empty()) out += ' ';
+        space = false;
+        out += static_cast<char>(ignoreCase ? std::tolower(static_cast<unsigned char>(c)) : c);
+      }
+      if (ignoreSpace) {
+        std::string compact;
+        for (char c : out) {
+          if (std::isspace(static_cast<unsigned char>(c)) || std::ispunct(static_cast<unsigned char>(c))) continue;
+          compact += c;
+        }
+        out = compact;
+      }
+      return out;
+    };
+    auto distance = [](const std::string& a, const std::string& b) {
+      std::vector<int> prev(b.size() + 1), cur(b.size() + 1);
+      for (std::size_t j = 0; j <= b.size(); ++j) prev[j] = static_cast<int>(j);
+      for (std::size_t i = 1; i <= a.size(); ++i) {
+        cur[0] = static_cast<int>(i);
+        for (std::size_t j = 1; j <= b.size(); ++j) {
+          int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+          cur[j] = std::min(std::min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+        }
+        prev = cur;
+      }
+      return prev[b.size()];
+    };
+    pageTitle("LEARN", question->prompt, "输入翻译 · " + course->name);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##type_learn_input", app.typeLearnInput, sizeof(app.typeLearnInput))) {
+      app.learningAnswered = false;
+    }
+    std::string typed = normalize(app.typeLearnInput, question->ignoreCase, question->ignoreSpace);
+    std::string matched;
+    for (const auto& answer : question->acceptedAnswers) {
+      if (typed == normalize(answer, question->ignoreCase, question->ignoreSpace)) matched = answer;
+    }
+    if (!matched.empty() && app.typeLearnCorrect) {
+      ImGui::TextColored(ImVec4(0.08f, 0.58f, 0.28f, 1), "回答正确：%s", matched.c_str());
+    }
+    if (!app.typeLearnInput[0]) ImGui::TextDisabled("输入答案后确认");
+    else {
+      ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 58);
+      const bool last = course->questions.back().id == question->id;
+      std::string label = app.typeLearnCorrect ? (last ? "完成" : "下一题") : "确认答案";
+      if (ImGui::Button((label + "##type_confirm").c_str(), ImVec2(-1, 42))) {
+        if (app.typeLearnCorrect) {
+          if (last) { app.learningQuestionId.clear(); app.typeLearnQuestionId.clear(); app.showToast("本课完成"); }
+          else {
+            for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+              if (course->questions[i].id == question->id) {
+                app.learningQuestionId = course->questions[i + 1].id;
+                break;
+              }
+            }
+            app.typeLearnQuestionId.clear();
+          }
+        } else if (!matched.empty()) {
+          app.typeLearnCorrect = true;
+          app.showToast("回答正确");
+        } else {
+          app.showToast("回答错误，请再试一次");
+          if (question->near) {
+            for (const auto& answer : question->acceptedAnswers) {
+              if (distance(typed, normalize(answer, question->ignoreCase, question->ignoreSpace)) <= 1) {
+                app.showToast("差一点就对了，应该是 " + answer);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
   if (question->type == "match") {
     if (app.matchQuestionId != question->id) {
       app.matchQuestionId = question->id;

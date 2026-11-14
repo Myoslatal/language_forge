@@ -178,6 +178,10 @@ json structureToJson(const Structure& structure) {
                                {"blocks", blocks},
                                {"answers", question.answers},
                                {"pairs", pairs},
+                               {"acceptedAnswers", question.acceptedAnswers},
+                               {"ignoreCase", question.ignoreCase},
+                               {"ignoreSpace", question.ignoreSpace},
+                               {"near", question.near},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}});
         }
@@ -245,6 +249,16 @@ Structure structureFromJson(const json& value) {
                     if (!qb.text.empty()) question.blocks.push_back(qb);
                   }
                 }
+                if (questionValue.contains("acceptedAnswers") && questionValue["acceptedAnswers"].is_array()) {
+                  for (const auto& answer : questionValue["acceptedAnswers"]) {
+                    if (answer.is_string() && !answer.get<std::string>().empty()) {
+                      question.acceptedAnswers.push_back(answer.get<std::string>());
+                    }
+                  }
+                }
+                question.ignoreCase = questionValue.value("ignoreCase", true);
+                question.ignoreSpace = questionValue.value("ignoreSpace", true);
+                question.near = questionValue.value("near", true);
                 if (questionValue.contains("pairs") && questionValue["pairs"].is_array()) {
                   for (const auto& item : questionValue["pairs"]) {
                     MatchPair pair;
