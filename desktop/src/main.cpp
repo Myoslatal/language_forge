@@ -2508,12 +2508,20 @@ void renderStructure(App& app) {
   }
 }
 
+std::string questionTypeLabel(const std::string& type) {
+  if (type == "arrange") return "词块组句";
+  if (type == "match") return "配对";
+  if (type == "type") return "输入翻译";
+  return "选择正确翻译";
+}
+
 void renderQuestionEditor(App& app) {
   Course* course = app.selectedCourse();
   if (!course) { ImGui::TextDisabled("课程不存在"); return; }
   if (ImGui::Button("← 课程", ImVec2(100, 30))) app.screen = App::Screen::Course;
   ImGui::SameLine();
-  ImGui::TextDisabled("%s / 选择正确翻译", course->name.c_str());
+  ImGui::TextDisabled("%s / %s", course->name.c_str(),
+                      questionTypeLabel(app.editQuestion.type).c_str());
   ImGui::Spacing();
   pageTitle("QUESTION", app.questionIsNew ? "新建题目" : "编辑题目",
             app.questionIsNew ? "尚未写入 structure.json" : "修改后点击保存");
@@ -2892,9 +2900,11 @@ void renderLearning(App& app) {
     for (auto& question : course->questions) {
       ImGui::PushID(question.id.c_str());
       const std::string title = question.sentence.empty() ? question.name : question.sentence;
-      if (ImGui::Button((title + "  ·  选择正确翻译" +
-                         (question.hintsEnabled ? "  ·  学习提示" : "  ·  无提示")).c_str(),
-                        ImVec2(-1, 44))) {
+      std::string row = title + "  ·  " + questionTypeLabel(question.type);
+      if (question.type == "translation_choice") {
+        row += question.hintsEnabled ? "  ·  学习提示" : "  ·  无提示";
+      }
+      if (ImGui::Button(row.c_str(), ImVec2(-1, 44))) {
         app.learningQuestionId = question.id;
         app.learningSelected = -1;
         app.learningAnswered = false;
