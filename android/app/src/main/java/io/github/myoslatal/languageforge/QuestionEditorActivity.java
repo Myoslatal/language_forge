@@ -237,6 +237,14 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeAnswers.setMinLines(3);
         typeAnswers.setText(String.join("\n", question.acceptedAnswers));
         typeSection.addView(typeAnswers);
+        ForgeButton clearAnswers = new ForgeButton(this);
+        clearAnswers.setAllCaps(false);
+        clearAnswers.setText("清空答案");
+        clearAnswers.setOnClickListener(v -> {
+            typeAnswers.setText("");
+            dirty = true;
+        });
+        typeSection.addView(clearAnswers);
         typeIgnoreCase = new CheckBox(this);
         typeIgnoreCase.setText("忽略大小写");
         typeIgnoreCase.setChecked(question.ignoreCase);

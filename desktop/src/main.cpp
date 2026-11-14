@@ -2568,6 +2568,10 @@ void renderQuestionEditor(App& app) {
                                   sizeof(app.typeAnswersInput), ImVec2(-1, 100))) {
       app.questionDirty = true;
     }
+    if (ImGui::Button("清空答案##type_clear_answers", ImVec2(110, 28))) {
+      app.typeAnswersInput[0] = '\0';
+      app.questionDirty = true;
+    }
     bool ignoreCase = app.editQuestion.ignoreCase;
     bool ignoreSpace = app.editQuestion.ignoreSpace;
     bool near = app.editQuestion.near;
