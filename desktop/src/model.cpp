@@ -158,6 +158,10 @@ json structureToJson(const Structure& structure) {
             blocks.push_back({{"id", block.id}, {"text", block.text}, {"ok", block.ok},
                               {"vocabId", block.vocabId}});
           }
+          json warns = json::array();
+          for (const auto& rule : question.warn) {
+            warns.push_back({{"m", rule.match}, {"k", rule.kind}, {"t", rule.text}});
+          }
           json pairs = json::array();
           for (const auto& pair : question.pairs) {
             pairs.push_back({{"l", pair.left}, {"r", pair.right}});
@@ -179,6 +183,7 @@ json structureToJson(const Structure& structure) {
                                {"answers", question.answers},
                                {"pairs", pairs},
                                {"acceptedAnswers", question.acceptedAnswers},
+                               {"warn", warns},
                                {"ignoreCase", question.ignoreCase},
                                {"ignoreSpace", question.ignoreSpace},
                                {"near", question.near},
@@ -254,6 +259,15 @@ Structure structureFromJson(const json& value) {
                     if (answer.is_string() && !answer.get<std::string>().empty()) {
                       question.acceptedAnswers.push_back(answer.get<std::string>());
                     }
+                  }
+                }
+                if (questionValue.contains("warn") && questionValue["warn"].is_array()) {
+                  for (const auto& item : questionValue["warn"]) {
+                    WarnRule rule;
+                    rule.match = item.value("m", "");
+                    rule.kind = item.value("k", "eq");
+                    rule.text = item.value("t", "");
+                    if (!rule.match.empty()) question.warn.push_back(rule);
                   }
                 }
                 question.ignoreCase = questionValue.value("ignoreCase", true);

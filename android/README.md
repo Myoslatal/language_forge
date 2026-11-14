@@ -509,3 +509,5 @@ Arrange blocks are added via the shared vocabulary picker; new blocks store voca
 Match questions use type="match" with prompt and pairs[{l,r}]; editor hides unrelated choice/arrange/audio sections. Learning shows two shuffled columns; wrong pairs toast, correct pairs lock green, all pairs show 下一题/完成.
 
 Type questions use type="type" with prompt/acceptedAnswers/ignoreCase/ignoreSpace/near; learning normalizes input and shows a near-miss hint.
+
+Type prompt supports vocabulary picker composition and punctuation; warn rules (m/k/t) are checked before near-miss.

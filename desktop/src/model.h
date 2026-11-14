@@ -22,6 +22,12 @@ struct QuestionSegment {
   std::string text;
 };
 
+struct WarnRule {
+  std::string match;
+  std::string kind = "eq";
+  std::string text;
+};
+
 struct MatchPair {
   std::string left;
   std::string right;
@@ -52,6 +58,7 @@ struct Question {
   std::vector<std::vector<std::string>> answers;
   std::vector<MatchPair> pairs;
   std::vector<std::string> acceptedAnswers;
+  std::vector<WarnRule> warn;
   bool ignoreCase = true;
   bool ignoreSpace = true;
   bool near = true;

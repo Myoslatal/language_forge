@@ -417,6 +417,7 @@ struct App {
   bool pickerOpen = false;
   bool pickerForQuestion = false;
   bool pickerForBlocks = false;
+  bool pickerForTypePrompt = false;
   std::string pickerForId;
   Question editQuestion;
   bool questionIsNew = false;
@@ -1213,6 +1214,21 @@ struct App {
         if (!line.empty()) accepted.push_back(line);
       }
       if (accepted.empty()) { showToast("请至少填写一条可接受答案"); return; }
+      for (auto& rule : editQuestion.warn) {
+        rule.match = trim(rule.match);
+        rule.text = trim(rule.text);
+        if (rule.match.empty()) { showToast("差一点提示的触发写法不能为空"); return; }
+        if (std::find(accepted.begin(), accepted.end(), rule.match) != accepted.end()) {
+          showToast("触发写法不能与可接受答案重复"); return;
+        }
+      }
+      for (std::size_t i = 0; i < editQuestion.warn.size(); ++i) {
+        for (std::size_t j = i + 1; j < editQuestion.warn.size(); ++j) {
+          if (editQuestion.warn[i].match == editQuestion.warn[j].match) {
+            showToast("触发写法不能重复"); return;
+          }
+        }
+      }
       editQuestion.prompt = prompt;
       editQuestion.acceptedAnswers = accepted;
       editQuestion.name = prompt + " → " + accepted.front();
@@ -1427,6 +1443,14 @@ struct App {
       if (ImGui::Button("取消", ImVec2(90, 32))) answerDialogOpen = false;
     }
     ImGui::End();
+  }
+
+  void openTypePromptPicker() {
+    pickerForQuestion = false;
+    pickerForBlocks = false;
+    pickerForTypePrompt = true;
+    pickerSelected.clear();
+    pickerOpen = true;
   }
 
   void openArrangeBlockPicker() {
@@ -2522,6 +2546,23 @@ void renderQuestionEditor(App& app) {
                                  app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
       app.questionDirty = true;
     }
+    if (ImGui::Button("从词库选词##type_pick", ImVec2(120, 28))) app.openTypePromptPicker();
+    ImGui::SameLine();
+    if (ImGui::Button("插入标点##type_punct", ImVec2(100, 28))) ImGui::OpenPopup("type_punct_popup");
+    if (ImGui::BeginPopup("type_punct_popup")) {
+      const char* marks[] = {"。", "，", "、", "！", "？", "；", "：", "（）"};
+      for (const char* mark : marks) {
+        if (ImGui::Button(mark)) {
+          std::string text = app.arrangePromptInput;
+          text += mark;
+          std::snprintf(app.arrangePromptInput, sizeof(app.arrangePromptInput), "%s", text.c_str());
+          app.editQuestion.prompt = text;
+          app.questionDirty = true;
+        }
+        ImGui::SameLine();
+      }
+      ImGui::EndPopup();
+    }
     ImGui::TextUnformatted("可接受答案（一行一个）");
     if (ImGui::InputTextMultiline("##type_answers", app.typeAnswersInput,
                                   sizeof(app.typeAnswersInput), ImVec2(-1, 100))) {
@@ -2533,6 +2574,42 @@ void renderQuestionEditor(App& app) {
     if (ImGui::Checkbox("忽略大小写", &ignoreCase)) { app.editQuestion.ignoreCase = ignoreCase; app.questionDirty = true; }
     if (ImGui::Checkbox("忽略空格与标点", &ignoreSpace)) { app.editQuestion.ignoreSpace = ignoreSpace; app.questionDirty = true; }
     if (ImGui::Checkbox("自动识别拼写相近（差 1 字母）", &near)) { app.editQuestion.near = near; app.questionDirty = true; }
+    ImGui::TextUnformatted("差一点提示");
+    for (std::size_t i = 0; i < app.editQuestion.warn.size(); ++i) {
+      auto& rule = app.editQuestion.warn[i];
+      ImGui::PushID(static_cast<int>(i) + 7000);
+      char match[256];
+      char hint[512];
+      std::snprintf(match, sizeof(match), "%s", rule.match.c_str());
+      std::snprintf(hint, sizeof(hint), "%s", rule.text.c_str());
+      ImGui::SetNextItemWidth(180);
+      if (ImGui::InputTextWithHint("##warn_match", "触发写法", match, sizeof(match))) {
+        rule.match = match; app.questionDirty = true;
+      }
+      ImGui::SameLine();
+      int kind = rule.kind == "has" ? 1 : 0;
+      ImGui::SetNextItemWidth(120);
+      if (ImGui::Combo("##warn_kind", &kind, "eq\0has\0")) {
+        rule.kind = kind == 1 ? "has" : "eq"; app.questionDirty = true;
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(260);
+      if (ImGui::InputTextWithHint("##warn_text", "提示语（可空）", hint, sizeof(hint))) {
+        rule.text = hint; app.questionDirty = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("×##warn_del", ImVec2(28, 24))) {
+        app.editQuestion.warn.erase(app.editQuestion.warn.begin() + i);
+        app.questionDirty = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::Button("＋ 添加差一点提示", ImVec2(160, 28))) {
+      app.editQuestion.warn.push_back({"", "eq", ""});
+      app.questionDirty = true;
+    }
     if (ImGui::Button("保存题目##type_save", ImVec2(120, 34))) app.saveQuestion();
     return;
   }
@@ -2905,15 +2982,26 @@ void renderLearning(App& app) {
           app.typeLearnCorrect = true;
           app.showToast("回答正确");
         } else {
-          app.showToast("回答错误，请再试一次");
-          if (question->near) {
+          bool warned = false;
+          for (const auto& rule : question->warn) {
+            std::string match = normalize(rule.match, question->ignoreCase, question->ignoreSpace);
+            bool hit = rule.kind == "has" ? typed.find(match) != std::string::npos : typed == match;
+            if (hit) {
+              app.showToast(rule.text.empty() ? "差一点就对了，应该是 " + rule.match : rule.text);
+              warned = true;
+              break;
+            }
+          }
+          if (!warned && question->near) {
             for (const auto& answer : question->acceptedAnswers) {
               if (distance(typed, normalize(answer, question->ignoreCase, question->ignoreSpace)) <= 1) {
                 app.showToast("差一点就对了，应该是 " + answer);
+                warned = true;
                 break;
               }
             }
           }
+          if (!warned) app.showToast("回答错误，请再试一次");
         }
       }
     }
@@ -5654,10 +5742,14 @@ void renderFonts(App& app) {
 
 void renderPicker(App& app) {
   if (!app.pickerOpen) return;
-  ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - 760) * 0.5f,
-                                 (ImGui::GetIO().DisplaySize.y - 620) * 0.5f),
+  const ImVec2 display = ImGui::GetIO().DisplaySize;
+  const float windowW = std::min(760.0f, std::max(420.0f, display.x - 40.0f));
+  const float windowH = std::min(700.0f, std::max(420.0f, display.y - 40.0f));
+  const float listH = std::max(150.0f, windowH - 250.0f);
+  ImGui::SetNextWindowPos(ImVec2((display.x - windowW) * 0.5f,
+                                 (display.y - windowH) * 0.5f),
                           ImGuiCond_Always);
-  ImGui::SetNextWindowSize(ImVec2(760, 620), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(windowW, windowH), ImGuiCond_Always);
   bool open = app.pickerOpen;
   if (!ImGui::Begin("选择词汇##picker", &open,
                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
@@ -5729,7 +5821,7 @@ void renderPicker(App& app) {
     ImGui::SetNextItemWidth(-1);
     ImGui::SliderInt("##picker_page_slider", &app.pickerPage, 1, pageCount);
   }
-  ImGui::BeginChild("##picker_list", ImVec2(0, 390), ImGuiChildFlags_Borders);
+  ImGui::BeginChild("##picker_list", ImVec2(0, listH), ImGuiChildFlags_Borders);
   const std::size_t start = static_cast<std::size_t>(app.pickerPage - 1) * kPickerPageSize;
   const std::size_t end = std::min<std::size_t>(start + kPickerPageSize, matches.size());
   for (std::size_t index = start; index < end; ++index) {
@@ -5774,11 +5866,31 @@ void renderPicker(App& app) {
   if (ImGui::Button("取消", ImVec2(110, 34))) {
     app.pickerOpen = false;
     app.pickerForBlocks = false;
+    app.pickerForTypePrompt = false;
     open = false;
   }
   ImGui::SameLine();
   if (ImGui::Button("确定", ImVec2(120, 34))) {
-    if (app.pickerForBlocks) {
+    if (app.pickerForTypePrompt) {
+      std::string prompt = app.arrangePromptInput;
+      for (const auto& id : app.pickerSelected) {
+        if (!app.vocabulary) continue;
+        for (const auto& entry : app.vocabulary->entries) {
+          if (entry.id != id) continue;
+          std::string word = displayName(entry, app.vocabulary->entries);
+          if (!prompt.empty() && !std::isspace(static_cast<unsigned char>(prompt.back())) &&
+              std::string("。，、！？；：,.!?;:").find(prompt.back()) == std::string::npos) {
+            prompt += ' ';
+          }
+          prompt += word;
+          break;
+        }
+      }
+      std::snprintf(app.arrangePromptInput, sizeof(app.arrangePromptInput), "%s", prompt.c_str());
+      app.editQuestion.prompt = prompt;
+      app.questionDirty = true;
+      app.pickerForTypePrompt = false;
+    } else if (app.pickerForBlocks) {
       int skipped = 0;
       for (const auto& id : app.pickerSelected) {
         bool exists = false;
@@ -5817,6 +5929,7 @@ void renderPicker(App& app) {
     }
     app.pickerOpen = false;
     app.pickerForBlocks = false;
+    app.pickerForTypePrompt = false;
     open = false;
   }
   ImGui::End();

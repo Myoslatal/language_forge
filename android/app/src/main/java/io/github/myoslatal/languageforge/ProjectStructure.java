@@ -138,6 +138,17 @@ final class ProjectStructure {
                                                 if (!answer.isEmpty()) question.acceptedAnswers.add(answer);
                                             }
                                         }
+                                        JSONArray warn = questionObject.optJSONArray("warn");
+                                        if (warn != null) {
+                                            for (int w = 0; w < warn.length(); w++) {
+                                                JSONObject rule = warn.optJSONObject(w);
+                                                if (rule == null) continue;
+                                                String match = rule.optString("m", "").trim();
+                                                String kind = rule.optString("k", "eq");
+                                                String text = rule.optString("t", "");
+                                                if (!match.isEmpty()) question.warn.add(new Question.WarnRule(match, kind, text));
+                                            }
+                                        }
                                         question.ignoreCase = questionObject.optBoolean("ignoreCase", true);
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
@@ -291,6 +302,15 @@ final class ProjectStructure {
                             JSONArray accepted = new JSONArray();
                             for (String answer : question.acceptedAnswers) accepted.put(answer);
                             questionObject.put("acceptedAnswers", accepted);
+                            JSONArray warn = new JSONArray();
+                            for (Question.WarnRule rule : question.warn) {
+                                JSONObject object = new JSONObject();
+                                object.put("m", rule.match);
+                                object.put("k", rule.kind);
+                                object.put("t", rule.text);
+                                warn.put(object);
+                            }
+                            questionObject.put("warn", warn);
                             questionObject.put("ignoreCase", question.ignoreCase);
                             questionObject.put("ignoreSpace", question.ignoreSpace);
                             questionObject.put("near", question.near);
@@ -482,6 +502,15 @@ final class ProjectStructure {
         static final String TYPE_MATCH = "match";
         static final String TYPE_TYPE = "type";
 
+        static final class WarnRule {
+            String match = "";
+            String kind = "eq";
+            String text = "";
+            WarnRule(String match, String kind, String text) {
+                this.match = match; this.kind = kind; this.text = text;
+            }
+        }
+
         static final class MatchPair {
             String left = "";
             String right = "";
@@ -541,6 +570,7 @@ final class ProjectStructure {
         final List<List<String>> answers = new ArrayList<>();
         final List<MatchPair> pairs = new ArrayList<>();
         final List<String> acceptedAnswers = new ArrayList<>();
+        final List<WarnRule> warn = new ArrayList<>();
         boolean ignoreCase = true;
         boolean ignoreSpace = true;
         boolean near = true;

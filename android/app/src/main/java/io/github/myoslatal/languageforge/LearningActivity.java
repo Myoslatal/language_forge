@@ -622,17 +622,31 @@ public class LearningActivity extends ForgeActivity {
                 confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                 confirmButton.setVisibility(View.VISIBLE);
             } else {
-                toast("回答错误，请再试一次");
-                if (question.near) {
+                boolean warned = false;
+                for (ProjectStructure.Question.WarnRule rule : question.warn) {
+                    String match = normalizeType(rule.match, question.ignoreCase, question.ignoreSpace);
+                    boolean hit = "has".equals(rule.kind) ? normalized.contains(match)
+                            : normalized.equals(match);
+                    if (hit) {
+                        typeNearView.setText(rule.text.isEmpty()
+                                ? "差一点就对了，应该是 " + rule.match : rule.text);
+                        typeNearView.setVisibility(View.VISIBLE);
+                        warned = true;
+                        break;
+                    }
+                }
+                if (!warned && question.near) {
                     for (String answer : question.acceptedAnswers) {
                         if (editDistance(normalized, normalizeType(answer, question.ignoreCase,
                                 question.ignoreSpace)) <= 1) {
                             typeNearView.setText("差一点就对了，应该是 " + answer);
                             typeNearView.setVisibility(View.VISIBLE);
+                            warned = true;
                             break;
                         }
                     }
                 }
+                if (!warned) toast("回答错误，请再试一次");
             }
             return;
         }

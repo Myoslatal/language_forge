@@ -281,3 +281,5 @@ Arrange blocks are added from the shared vocabulary picker, storing vocabId + di
 Match questions use type="match" with prompt and pairs[{l,r}]; desktop learning shows shuffled two columns with immediate pairing and 下一题/完成 after all pairs.
 
 Type questions use type="type" with prompt/acceptedAnswers and ignoreCase/ignoreSpace/near matching options.
+
+Type prompt supports vocabulary composition; warn rules (m/k/t) are checked before near-miss.

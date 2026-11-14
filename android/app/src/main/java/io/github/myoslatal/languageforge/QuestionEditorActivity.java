@@ -98,6 +98,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private CheckBox typeIgnoreCase;
     private CheckBox typeIgnoreSpace;
     private CheckBox typeNear;
+    private LinearLayout typeWarnRows;
+    private final List<ProjectStructure.Question.WarnRule> editWarn = new ArrayList<>();
     private LinearLayout matchRows;
     private EditText matchPrompt;
     private final List<ProjectStructure.Question.MatchPair> editPairs = new ArrayList<>();
@@ -247,6 +249,32 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeNear.setText("自动识别拼写相近（差 1 字母）");
         typeNear.setChecked(question.near);
         typeSection.addView(typeNear);
+        LinearLayout promptTools = new LinearLayout(this);
+        ForgeButton pickPrompt = new ForgeButton(this);
+        pickPrompt.setAllCaps(false);
+        pickPrompt.setText("从词库选词");
+        pickPrompt.setOnClickListener(v -> openTypePromptPicker());
+        promptTools.addView(pickPrompt);
+        ForgeButton punctuation = new ForgeButton(this);
+        punctuation.setAllCaps(false);
+        punctuation.setText("插入标点");
+        punctuation.setOnClickListener(v -> openPunctuationDialog());
+        promptTools.addView(punctuation);
+        typeSection.addView(promptTools);
+        typeSection.addView(new TextView(this) {{ setText("差一点提示"); }});
+        typeWarnRows = new LinearLayout(this);
+        typeWarnRows.setOrientation(LinearLayout.VERTICAL);
+        typeSection.addView(typeWarnRows);
+        ForgeButton addWarn = new ForgeButton(this);
+        addWarn.setAllCaps(false);
+        addWarn.setText("＋ 添加差一点提示");
+        addWarn.setOnClickListener(v -> {
+            editWarn.add(new ProjectStructure.Question.WarnRule("", "eq", ""));
+            renderWarnRows();
+        });
+        typeSection.addView(addWarn);
+        editWarn.addAll(question.warn);
+        renderWarnRows();
         typeSection.setVisibility(View.GONE);
         scrollContent.addView(typeSection, 3);
         editPairs.addAll(question.pairs);
@@ -726,6 +754,121 @@ public class QuestionEditorActivity extends ForgeActivity {
         updateAudioUi();
     }
 
+    private void openTypePromptPicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "选择题干词汇");
+        typePickerLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> typePickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> selected = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (selected == null) return;
+                String text = typePrompt.getText().toString();
+                int cursor = Math.max(0, typePrompt.getSelectionStart());
+                StringBuilder builder = new StringBuilder(text);
+                for (String id : selected) {
+                    VocabularyEntry entry = null;
+                    for (VocabularyEntry candidate : vocabulary.entries) {
+                        if (id != null && id.equals(candidate.id)) { entry = candidate; break; }
+                    }
+                    if (entry == null) continue;
+                    String word = vocabulary.displayName(entry);
+                    if (cursor > 0 && cursor <= builder.length()
+                            && !Character.isWhitespace(builder.charAt(cursor - 1))
+                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor - 1)) < 0) {
+                        builder.insert(cursor, ' ');
+                        cursor++;
+                    }
+                    builder.insert(cursor, word);
+                    cursor += word.length();
+                    if (cursor < builder.length()
+                            && !Character.isWhitespace(builder.charAt(cursor))
+                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor)) < 0) {
+                        builder.insert(cursor, ' ');
+                        cursor++;
+                    }
+                }
+                typePrompt.setText(builder.toString());
+                typePrompt.setSelection(cursor);
+                dirty = true;
+            });
+
+    private void openPunctuationDialog() {
+        String[] marks = {"。", "，", "、", "！", "？", "；", "：", "“”", "（）"};
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("插入标点")
+                .setItems(marks, (dialog, which) -> {
+                    String text = typePrompt.getText().toString();
+                    int cursor = Math.max(0, typePrompt.getSelectionStart());
+                    StringBuilder builder = new StringBuilder(text);
+                    String mark = marks[which];
+                    builder.insert(cursor, mark);
+                    typePrompt.setText(builder.toString());
+                    typePrompt.setSelection(cursor + mark.length());
+                    dirty = true;
+                }).show();
+    }
+
+    private void renderWarnRows() {
+        if (typeWarnRows == null) return;
+        typeWarnRows.removeAllViews();
+        for (int i = 0; i < editWarn.size(); i++) {
+            final int index = i;
+            ProjectStructure.Question.WarnRule rule = editWarn.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            EditText match = new EditText(this);
+            match.setHint("触发写法");
+            match.setText(rule.match);
+            match.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                public void onTextChanged(CharSequence s, int a, int b, int c) { rule.match = s.toString(); dirty = true; }
+                public void afterTextChanged(android.text.Editable s) {}
+            });
+            row.addView(match);
+            LinearLayout modeRow = new LinearLayout(this);
+            android.widget.Spinner kind = new android.widget.Spinner(this);
+            ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                    android.R.layout.simple_spinner_item, new String[]{"eq 完全相同", "has 包含"});
+            kind.setAdapter(adapter);
+            kind.setSelection("has".equals(rule.kind) ? 1 : 0);
+            kind.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
+                    rule.kind = pos == 1 ? "has" : "eq";
+                    dirty = true;
+                }
+                public void onNothingSelected(android.widget.AdapterView<?> p) {}
+            });
+            modeRow.addView(kind);
+            EditText hint = new EditText(this);
+            hint.setHint("提示语（可空）");
+            hint.setText(rule.text);
+            hint.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                public void onTextChanged(CharSequence s, int a, int b, int c) { rule.text = s.toString(); dirty = true; }
+                public void afterTextChanged(android.text.Editable s) {}
+            });
+            modeRow.addView(hint, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton remove = new ForgeButton(this);
+            remove.setAllCaps(false);
+            remove.setText("×");
+            remove.setOnClickListener(v -> {
+                editWarn.remove(index);
+                renderWarnRows();
+                dirty = true;
+            });
+            modeRow.addView(remove);
+            row.addView(modeRow);
+            typeWarnRows.addView(row);
+        }
+    }
+
     private void openArrangePicker() {
         Intent intent = new Intent(this, VocabularyPickerActivity.class);
         intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
@@ -930,10 +1073,23 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (!value.isEmpty()) accepted.add(value);
         }
         if (accepted.isEmpty()) { toast("请至少填写一条可接受答案"); return; }
+        List<ProjectStructure.Question.WarnRule> warn = new ArrayList<>();
+        for (ProjectStructure.Question.WarnRule rule : editWarn) {
+            String match = rule.match == null ? "" : rule.match.trim();
+            if (match.isEmpty()) { toast("差一点提示的触发写法不能为空"); return; }
+            if (accepted.contains(match)) { toast("触发写法不能与可接受答案重复"); return; }
+            for (ProjectStructure.Question.WarnRule existing : warn) {
+                if (existing.match.equals(match)) { toast("触发写法不能重复"); return; }
+            }
+            warn.add(new ProjectStructure.Question.WarnRule(match,
+                    "has".equals(rule.kind) ? "has" : "eq", rule.text == null ? "" : rule.text.trim()));
+        }
         question.type = ProjectStructure.Question.TYPE_TYPE;
         question.prompt = prompt;
         question.acceptedAnswers.clear();
         question.acceptedAnswers.addAll(accepted);
+        question.warn.clear();
+        question.warn.addAll(warn);
         question.ignoreCase = typeIgnoreCase.isChecked();
         question.ignoreSpace = typeIgnoreSpace.isChecked();
         question.near = typeNear.isChecked();
