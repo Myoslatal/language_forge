@@ -419,6 +419,8 @@ struct App {
   bool pickerForBlocks = false;
   bool pickerForTypePrompt = false;
   bool pickerForListenAudio = false;
+  bool pickerForListenOption = false;
+  int listenOptionPickIndex = -1;
   std::string pickerForId;
   Question editQuestion;
   bool questionIsNew = false;
@@ -2626,6 +2628,7 @@ void renderQuestionEditor(App& app) {
     }
     if (ImGui::Button("从词汇示例音频选择##listen_audio", ImVec2(200, 28))) {
       app.pickerForListenAudio = true;
+      app.pickerForListenOption = false;
       app.pickerForQuestion = false;
       app.pickerForBlocks = false;
       app.pickerForTypePrompt = false;
@@ -2635,11 +2638,23 @@ void renderQuestionEditor(App& app) {
     ImGui::TextUnformatted("四个选项（选择正确项）");
     for (int i = 0; i < 4; ++i) {
       ImGui::PushID(i);
-      ImGui::SetNextItemWidth(-1);
+      ImGui::SetNextItemWidth(-150);
       if (ImGui::InputText("##listen_option", app.questionOptions[i],
                            sizeof(app.questionOptions[i]))) {
         app.questionDirty = true;
       }
+      ImGui::SameLine();
+      if (ImGui::Button("选词##listen_option_pick", ImVec2(64, 0))) {
+        app.pickerForListenOption = true;
+        app.pickerForListenAudio = false;
+        app.pickerForTypePrompt = false;
+        app.pickerForBlocks = false;
+        app.pickerForQuestion = false;
+        app.listenOptionPickIndex = i;
+        app.pickerSelected.clear();
+        app.pickerOpen = true;
+      }
+      ImGui::SameLine();
       ImGui::RadioButton("正确", &app.questionCorrectIndex, i);
       ImGui::PopID();
     }
@@ -6055,11 +6070,33 @@ void renderPicker(App& app) {
     app.pickerOpen = false;
     app.pickerForBlocks = false;
     app.pickerForTypePrompt = false;
+    app.pickerForListenAudio = false;
+    app.pickerForListenOption = false;
     open = false;
   }
   ImGui::SameLine();
   if (ImGui::Button("确定", ImVec2(120, 34))) {
-    if (app.pickerForListenAudio) {
+    if (app.pickerForListenOption) {
+      if (app.listenOptionPickIndex >= 0 && app.listenOptionPickIndex < 4 && app.vocabulary) {
+        std::string option = app.questionOptions[app.listenOptionPickIndex];
+        for (const auto& id : app.pickerSelected) {
+          for (const auto& entry : app.vocabulary->entries) {
+            if (entry.id != id) continue;
+            std::string word = displayName(entry, app.vocabulary->entries);
+            if (!option.empty() && !std::isspace(static_cast<unsigned char>(option.back())) &&
+                std::string("。，、！？；：,.!?;:").find(option.back()) == std::string::npos) {
+              option += ' ';
+            }
+            option += word;
+            break;
+          }
+        }
+        std::snprintf(app.questionOptions[app.listenOptionPickIndex],
+                      sizeof(app.questionOptions[app.listenOptionPickIndex]), "%s", option.c_str());
+        app.questionDirty = true;
+      }
+      app.pickerForListenOption = false;
+    } else if (app.pickerForListenAudio) {
       if (!app.pickerSelected.empty() && app.vocabulary) {
         for (const auto& entry : app.vocabulary->entries) {
           if (entry.id != app.pickerSelected.front()) continue;
@@ -6135,6 +6172,8 @@ void renderPicker(App& app) {
     app.pickerOpen = false;
     app.pickerForBlocks = false;
     app.pickerForTypePrompt = false;
+    app.pickerForListenAudio = false;
+    app.pickerForListenOption = false;
     open = false;
   }
   ImGui::End();

@@ -284,4 +284,4 @@ Type questions use type="type" with prompt/acceptedAnswers and ignoreCase/ignore
 
 Type prompt supports vocabulary composition; warn rules (m/k/t) are checked before near-miss.
 
-Listen questions use type="listen" with prompt/audio/audioStart/audioEnd and four text options plus correctIndex. The editor requires an existing audio file and supports recording/trimming or a vocabulary example clip. Learning auto-plays once, labels 播放中…/重新播放, disables playback/options for missing audio, and logs listenPlay/stopAudio before using the standard option/confirm/next flow.
+Listen questions use type="listen" with prompt/audio/audioStart/audioEnd and four text options plus correctIndex. The editor requires an existing audio file and supports recording/trimming or a vocabulary example clip. Learning auto-plays once, labels 播放中…/重新播放, disables playback/options for missing audio, and logs listenPlay/stopAudio before using the standard option/confirm/next flow. Each option has a 选词 button that appends selected vocabulary display text, space-separated, to that option while preserving direct editing.

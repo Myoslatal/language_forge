@@ -8,6 +8,7 @@ import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -100,6 +101,7 @@ public class QuestionEditorActivity extends ForgeActivity {
     private EditText[] listenOptions = new EditText[4];
     private android.widget.RadioGroup listenCorrect;
     private TextView listenAudioLabel;
+    private int listenOptionPickIndex = -1;
     private EditText typePrompt;
     private EditText typeAnswers;
     private CheckBox typeIgnoreCase;
@@ -308,9 +310,23 @@ public class QuestionEditorActivity extends ForgeActivity {
         listenCorrect = new android.widget.RadioGroup(this);
         for (int i = 0; i < 4; i++) {
             final int index = i;
+            LinearLayout optionRow = new LinearLayout(this);
+            optionRow.setOrientation(LinearLayout.HORIZONTAL);
+            optionRow.setGravity(Gravity.CENTER_VERTICAL);
             listenOptions[i] = new EditText(this);
             listenOptions[i].setHint("选项 " + (i + 1));
-            listenSection.addView(listenOptions[i]);
+            optionRow.addView(listenOptions[i], new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton pickWords = new ForgeButton(this);
+            pickWords.setAllCaps(false);
+            pickWords.setText("选词");
+            pickWords.setOnClickListener(v -> {
+                listenOptionPickIndex = index;
+                openListenOptionPicker();
+            });
+            optionRow.addView(pickWords, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            listenSection.addView(optionRow);
             android.widget.RadioButton radio = new android.widget.RadioButton(this);
             radio.setText("正确 " + (i + 1));
             radio.setId(1000 + i);
@@ -1149,6 +1165,53 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (correct != null) correct.setVisibility(match ? View.GONE : View.VISIBLE);
         }
     }
+
+    private void openListenOptionPicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "为选项选择词汇");
+        listenOptionLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> listenOptionLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> ids = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (ids == null || ids.isEmpty()) return;
+                int target = listenOptionPickIndex;
+                if (target < 0 || target >= listenOptions.length) return;
+                EditText field = listenOptions[target];
+                String text = field.getText().toString();
+                int cursor = field.hasFocus() ? Math.max(0, field.getSelectionStart()) : text.length();
+                if (cursor > text.length()) cursor = text.length();
+                StringBuilder builder = new StringBuilder(text);
+                for (String id : ids) {
+                    VocabularyEntry entry = null;
+                    for (VocabularyEntry candidate : vocabulary.entries) {
+                        if (id != null && id.equals(candidate.id)) { entry = candidate; break; }
+                    }
+                    if (entry == null) continue;
+                    String word = vocabulary.displayName(entry);
+                    if (cursor > 0 && !Character.isWhitespace(builder.charAt(cursor - 1))
+                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor - 1)) < 0) {
+                        builder.insert(cursor, ' ');
+                        cursor++;
+                    }
+                    builder.insert(cursor, word);
+                    cursor += word.length();
+                    if (cursor < builder.length() && !Character.isWhitespace(builder.charAt(cursor))
+                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor)) < 0) {
+                        builder.insert(cursor, ' ');
+                        cursor++;
+                    }
+                }
+                field.setText(builder.toString());
+                field.setSelection(Math.min(cursor, field.getText().length()));
+                dirty = true;
+                listenOptionPickIndex = -1;
+            });
 
     private void openListenAudioPicker() {
         Intent intent = new Intent(this, VocabularyPickerActivity.class);
