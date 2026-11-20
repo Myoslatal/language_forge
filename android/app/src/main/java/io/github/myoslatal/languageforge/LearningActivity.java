@@ -333,20 +333,65 @@ public class LearningActivity extends ForgeActivity {
         content.addView(listenPlayButton);
         for (int i = 0; i < item.options.size(); i++) {
             final int index = i;
-            ForgeButton option = new ForgeButton(this);
-            option.setAllCaps(false);
-            option.setText((i + 1) + ". " + item.options.get(i));
-            option.setOnClickListener(v -> {
-                if (answered || missingAudio) return;
-                listenSelected = index;
-                confirmButton.setVisibility(View.VISIBLE);
-                renderListenQuestion(item);
-            });
-            option.setEnabled(!answered && !missingAudio);
-            option.setAlpha(answered || !missingAudio ? 1f : 0.55f);
-            styleMatch(option, answered && index == item.correctIndex, listenSelected == index);
-            content.addView(option, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+            boolean hasVocab = i < item.optionItems.size() && !item.optionItems.get(i).isEmpty();
+            if (hasVocab) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(12), dp(4), dp(12), dp(4));
+                TextView number = new TextView(this);
+                number.setText((i + 1) + ". ");
+                row.addView(number);
+                for (ProjectStructure.Question.OptionItem value : item.optionItems.get(i)) {
+                    if ("vocab".equals(value.kind)) {
+                        VocabularyEntry entry = null;
+                        for (VocabularyEntry candidate : vocabulary.entries) {
+                            if (value.vocabId.equals(candidate.id)) { entry = candidate; break; }
+                        }
+                        if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                            android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+                            if (bitmap != null) {
+                                android.widget.ImageView image = new android.widget.ImageView(this);
+                                image.setImageBitmap(bitmap);
+                                image.setAdjustViewBounds(true);
+                                image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                                int width = Math.max(dp(22), bitmap.getWidth() * dp(22) / Math.max(1, bitmap.getHeight()));
+                                row.addView(image, new LinearLayout.LayoutParams(width, dp(22)));
+                            } else {
+                                row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                            }
+                        } else if (entry != null) {
+                            row.addView(text(vocabulary.displayName(entry), 16, R.color.forge_text));
+                        }
+                    } else {
+                        row.addView(text(value.text, 16, R.color.forge_text));
+                    }
+                }
+                styleMatchRow(row, answered && index == item.correctIndex, listenSelected == index);
+                row.setOnClickListener(v -> {
+                    if (answered || missingAudio) return;
+                    listenSelected = index;
+                    confirmButton.setVisibility(View.VISIBLE);
+                    renderListenQuestion(item);
+                });
+                content.addView(row, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+            } else {
+                ForgeButton option = new ForgeButton(this);
+                option.setAllCaps(false);
+                option.setText((i + 1) + ". " + item.options.get(i));
+                option.setOnClickListener(v -> {
+                    if (answered || missingAudio) return;
+                    listenSelected = index;
+                    confirmButton.setVisibility(View.VISIBLE);
+                    renderListenQuestion(item);
+                });
+                option.setEnabled(!answered && !missingAudio);
+                option.setAlpha(answered || !missingAudio ? 1f : 0.55f);
+                styleMatch(option, answered && index == item.correctIndex, listenSelected == index);
+                content.addView(option, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+            }
         }
         if (missingAudio) confirmButton.setVisibility(View.GONE);
         if (!answered && listenSelected < 0) confirmButton.setVisibility(View.GONE);
@@ -483,6 +528,16 @@ public class LearningActivity extends ForgeActivity {
             toast("配对错误，请重试");
             renderMatchQuestion(item);
         }
+    }
+
+    private void styleMatchRow(LinearLayout row, boolean correct, boolean selected) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(12));
+        if (correct) shape.setColor(getColor(R.color.forge_ok_bg));
+        else if (selected) shape.setColor(getColor(R.color.forge_accent_soft));
+        else shape.setColor(getColor(R.color.forge_panel));
+        shape.setStroke(dp(1), getColor(R.color.forge_panel3));
+        row.setBackground(shape);
     }
 
     private void styleMatch(Button button, boolean correct, boolean selected) {

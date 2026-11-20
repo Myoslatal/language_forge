@@ -11,6 +11,11 @@ HTML: NostongueForge_v1.3.1.html unchanged (git diff exit 0)
 PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 
 ## Build / smoke
+
+- The desktop smoke needs `/tmp/lexicon-sample.jsonl` (5312 unique words + duplicated `e`/`u` + `_meta` type table). If it is missing, regenerate it from any project's stores:
+  `python3 desktop/tests/make-lexicon-fixture.py <vocabulary.json> <pos.json> /tmp/lexicon-sample.jsonl`
+  (the script also accepts the Nortu project copy used above; without the fixture the smoke reports lexicon/question/learning false).
+
 - Android: `./gradlew clean :app:assembleDebug --no-build-cache` => BUILD SUCCESSFUL (APK android/app/build/outputs/apk/debug/app-debug.apk, 9,206,123 bytes).
 - Desktop clean: `cmake -S desktop -B desktop/build -DCMAKE_BUILD_TYPE=Release` + `cmake --build` => success.
 - Desktop smoke run twice from clean data: both `SMOKE PASS`; `question=true`, `lexicon_unicode=true`, `picker_cross_page=true`, all audio/image/font/POS flags true.

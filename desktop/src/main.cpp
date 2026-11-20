@@ -1223,6 +1223,24 @@ struct App {
         }
       }
       if (questionCorrectIndex < 0 || questionCorrectIndex > 3) { showToast("请选择一个正确答案"); return; }
+      while (editQuestion.optionItems.size() < 4) editQuestion.optionItems.push_back({});
+      for (int i = 0; i < 4; ++i) {
+        std::string mirrored = optionMirror(editQuestion.optionItems[i]);
+        if (mirrored != editQuestion.options[i]) {
+          editQuestion.optionItems[i].clear();
+          QuestionOptionItem textItem;
+          textItem.kind = "text";
+          textItem.text = editQuestion.options[i];
+          editQuestion.optionItems[i].push_back(textItem);
+        }
+      }
+      bool hasVocabItem = false;
+      for (const auto& group : editQuestion.optionItems) {
+        for (const auto& item : group) {
+          if (item.kind == "vocab") hasVocabItem = true;
+        }
+      }
+      if (!hasVocabItem) editQuestion.optionItems.clear();
       editQuestion.correctIndex = questionCorrectIndex;
       editQuestion.hintsEnabled = false;
       editQuestion.name = (editQuestion.prompt.empty() ? "听音选择" : editQuestion.prompt) +
@@ -1478,6 +1496,38 @@ struct App {
       if (ImGui::Button("取消", ImVec2(90, 32))) answerDialogOpen = false;
     }
     ImGui::End();
+  }
+
+  std::string optionMirror(const std::vector<QuestionOptionItem>& items) {
+    std::string text;
+    for (const auto& item : items) {
+      std::string value = item.text;
+      if (item.kind == "vocab" && vocabulary) {
+        for (const auto& entry : vocabulary->entries) {
+          if (entry.id != item.vocabId) continue;
+          if (entry.type == "image") {
+            if (!entry.codes.empty()) value = entry.codes.front();
+            else if (!entry.meanings.empty()) value = entry.meanings.front();
+            else value = "〔图片〕";
+          } else {
+            value = displayName(entry, vocabulary->entries);
+          }
+          break;
+        }
+      }
+      if (!text.empty() && !value.empty() && !std::isspace(static_cast<unsigned char>(text.back()))) text += ' ';
+      text += value;
+    }
+    return text;
+  }
+
+  void openListenOptionPicker() {
+    pickerForQuestion = false;
+    pickerForBlocks = false;
+    pickerForTypePrompt = false;
+    pickerForListenAudio = false;
+    pickerSelected.clear();
+    pickerOpen = true;
   }
 
   void openTypePromptPicker() {
@@ -2656,6 +2706,45 @@ void renderQuestionEditor(App& app) {
       }
       ImGui::SameLine();
       ImGui::RadioButton("正确", &app.questionCorrectIndex, i);
+      while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+      auto& items = app.editQuestion.optionItems[i];
+      for (std::size_t j = 0; j < items.size(); ++j) {
+        ImGui::PushID(static_cast<int>(j) + 9000);
+        if (items[j].kind == "vocab") {
+          const VocabEntry* entry = nullptr;
+          if (app.vocabulary) {
+            for (const auto& candidate : app.vocabulary->entries) {
+              if (candidate.id == items[j].vocabId) { entry = &candidate; break; }
+            }
+          }
+          if (entry && entry->type == "image") {
+            SDL_Texture* texture = textureForImage(
+                app.renderer, app.currentProjectDirectory() / pathFromUtf8(entry->image),
+                app.imageTextures);
+            if (texture) {
+              ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
+            } else {
+              ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
+            }
+          } else if (entry) {
+            ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
+          }
+        } else {
+          ImGui::TextUnformatted(items[j].text.c_str());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("×##listen_item_del", ImVec2(26, 22))) {
+          items.erase(items.begin() + j);
+          std::string mirrored = app.optionMirror(items);
+          std::snprintf(app.questionOptions[i], sizeof(app.questionOptions[i]), "%s", mirrored.c_str());
+          app.questionDirty = true;
+          ImGui::PopID();
+          break;
+        }
+        ImGui::PopID();
+        ImGui::SameLine();
+      }
+      ImGui::NewLine();
       ImGui::PopID();
     }
     if (ImGui::Button("保存题目##listen_save", ImVec2(120, 34))) app.saveQuestion();
@@ -3071,13 +3160,55 @@ void renderLearning(App& app) {
     for (int i = 0; i < static_cast<int>(question->options.size()); ++i) {
       bool selected = app.listenSel == i;
       bool correct = app.learningAnswered && i == question->correctIndex;
-      if (correct) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.94f, 0.82f, 1));
-      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
+      bool structured = i < static_cast<int>(question->optionItems.size()) &&
+                        !question->optionItems[i].empty();
       ImGui::PushID(i);
-      if (ImGui::Button(question->options[i].c_str(), ImVec2(-1, 42)) && !app.learningAnswered && listenFileExists) {
-        app.listenSel = i;
+      if (structured) {
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##listen_row", ImVec2(-1, 46));
+        bool clicked = ImGui::IsItemClicked();
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        ImU32 bg = ImGui::GetColorU32(correct ? ImVec4(0.8f, 0.94f, 0.82f, 1)
+                                        : selected ? ImVec4(0.85f, 0.91f, 1, 1)
+                                                   : ImVec4(0.96f, 0.97f, 0.99f, 1));
+        draw->AddRectFilled(pos, ImVec2(pos.x + ImGui::GetContentRegionAvail().x, pos.y + 46), bg, 8);
+        char number[8];
+        std::snprintf(number, sizeof(number), "%d. ", i + 1);
+        draw->AddText(ImVec2(pos.x + 10, pos.y + 14), ImGui::GetColorU32(ImGuiCol_Text), number);
+        float x = pos.x + 42;
+        for (const auto& item : question->optionItems[i]) {
+          if (item.kind == "vocab" && app.vocabulary) {
+            const VocabEntry* entry = nullptr;
+            for (const auto& candidate : app.vocabulary->entries) {
+              if (candidate.id == item.vocabId) { entry = &candidate; break; }
+            }
+            if (entry && entry->type == "image") {
+              SDL_Texture* texture = textureForImage(app.renderer,
+                  app.currentProjectDirectory() / pathFromUtf8(entry->image), app.imageTextures);
+              if (texture) {
+                draw->AddImage(reinterpret_cast<ImTextureID>(texture), ImVec2(x, pos.y + 10),
+                               ImVec2(x + 26, pos.y + 36));
+                x += 32;
+              }
+            } else if (entry) {
+              std::string text = displayName(*entry, app.vocabulary->entries);
+              draw->AddText(ImVec2(x, pos.y + 14), ImGui::GetColorU32(ImGuiCol_Text), text.c_str());
+              x += ImGui::CalcTextSize(text.c_str()).x + 6;
+            }
+          } else if (!item.text.empty()) {
+            draw->AddText(ImVec2(x, pos.y + 14), ImGui::GetColorU32(ImGuiCol_Text), item.text.c_str());
+            x += ImGui::CalcTextSize(item.text.c_str()).x + 6;
+          }
+        }
+        if (clicked && !app.learningAnswered && listenFileExists) app.listenSel = i;
+      } else {
+        if (correct) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.94f, 0.82f, 1));
+        else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
+        if (ImGui::Button(question->options[i].c_str(), ImVec2(-1, 42)) && !app.learningAnswered && listenFileExists) {
+          app.listenSel = i;
+        }
+        if (correct || selected) ImGui::PopStyleColor();
       }
-      if (correct || selected) ImGui::PopStyleColor();
       ImGui::PopID();
     }
     if (!app.learningAnswered && app.listenSel >= 0) {
@@ -6078,19 +6209,18 @@ void renderPicker(App& app) {
   if (ImGui::Button("确定", ImVec2(120, 34))) {
     if (app.pickerForListenOption) {
       if (app.listenOptionPickIndex >= 0 && app.listenOptionPickIndex < 4 && app.vocabulary) {
-        std::string option = app.questionOptions[app.listenOptionPickIndex];
+        while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
         for (const auto& id : app.pickerSelected) {
           for (const auto& entry : app.vocabulary->entries) {
             if (entry.id != id) continue;
-            std::string word = displayName(entry, app.vocabulary->entries);
-            if (!option.empty() && !std::isspace(static_cast<unsigned char>(option.back())) &&
-                std::string("。，、！？；：,.!?;:").find(option.back()) == std::string::npos) {
-              option += ' ';
-            }
-            option += word;
+            QuestionOptionItem item;
+            item.kind = "vocab";
+            item.vocabId = id;
+            app.editQuestion.optionItems[app.listenOptionPickIndex].push_back(item);
             break;
           }
         }
+        std::string option = app.optionMirror(app.editQuestion.optionItems[app.listenOptionPickIndex]);
         std::snprintf(app.questionOptions[app.listenOptionPickIndex],
                       sizeof(app.questionOptions[app.listenOptionPickIndex]), "%s", option.c_str());
         app.questionDirty = true;

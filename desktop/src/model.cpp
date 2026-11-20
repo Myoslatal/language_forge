@@ -166,7 +166,16 @@ json structureToJson(const Structure& structure) {
           for (const auto& pair : question.pairs) {
             pairs.push_back({{"l", pair.left}, {"r", pair.right}});
           }
-          questions.push_back({{"id", question.id},
+          json optionItems = json::array();
+          for (const auto& group : question.optionItems) {
+            json arr = json::array();
+            for (const auto& item : group) {
+              if (item.kind == "vocab") arr.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
+              else arr.push_back({{"kind", "text"}, {"text", item.text}});
+            }
+            optionItems.push_back(arr);
+          }
+          json questionJson = {{"id", question.id},
                                {"name", question.name},
                                {"type", question.type},
                                {"parts", question.parts},
@@ -189,7 +198,9 @@ json structureToJson(const Structure& structure) {
                                {"near", question.near},
                                {"audioSource", question.audioSource},
                                {"alt", question.alt},
-                               {"correctIndex", question.correctIndex}});
+                               {"correctIndex", question.correctIndex}};
+          if (!optionItems.empty()) questionJson["optionItems"] = optionItems;
+          questions.push_back(std::move(questionJson));
         }
         courses.push_back(
             {{"id", course.id}, {"name", course.name}, {"questions", questions}});
@@ -275,6 +286,21 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                if (questionValue.contains("optionItems") && questionValue["optionItems"].is_array()) {
+                  for (const auto& groupValue : questionValue["optionItems"]) {
+                    std::vector<QuestionOptionItem> group;
+                    if (groupValue.is_array()) {
+                      for (const auto& itemValue : groupValue) {
+                        QuestionOptionItem item;
+                        item.kind = itemValue.value("kind", "text");
+                        item.text = itemValue.value("text", "");
+                        item.vocabId = itemValue.value("vocabId", "");
+                        group.push_back(item);
+                      }
+                    }
+                    question.optionItems.push_back(group);
+                  }
+                }
                 if (questionValue.contains("pairs") && questionValue["pairs"].is_array()) {
                   for (const auto& item : questionValue["pairs"]) {
                     MatchPair pair;

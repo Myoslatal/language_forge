@@ -153,6 +153,25 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        JSONArray optionItems = questionObject.optJSONArray("optionItems");
+                                        if (optionItems != null) {
+                                            for (int oi = 0; oi < optionItems.length(); oi++) {
+                                                JSONArray items = optionItems.optJSONArray(oi);
+                                                List<Question.OptionItem> parsed = new ArrayList<>();
+                                                if (items != null) {
+                                                    for (int ii = 0; ii < items.length(); ii++) {
+                                                        JSONObject item = items.optJSONObject(ii);
+                                                        if (item == null) continue;
+                                                        Question.OptionItem value = new Question.OptionItem();
+                                                        value.kind = item.optString("kind", "text");
+                                                        value.text = item.optString("text", "");
+                                                        value.vocabId = item.optString("vocabId", "");
+                                                        parsed.add(value);
+                                                    }
+                                                }
+                                                question.optionItems.add(parsed);
+                                            }
+                                        }
                                         JSONArray pairs = questionObject.optJSONArray("pairs");
                                         if (pairs != null) {
                                             for (int pIndex = 0; pIndex < pairs.length(); pIndex++) {
@@ -318,6 +337,19 @@ final class ProjectStructure {
                             if (!question.audioSource.isEmpty()) {
                                 questionObject.put("audioSource", question.audioSource);
                             }
+                            JSONArray optionItems = new JSONArray();
+                            for (List<Question.OptionItem> items : question.optionItems) {
+                                JSONArray group = new JSONArray();
+                                for (Question.OptionItem item : items) {
+                                    JSONObject object = new JSONObject();
+                                    object.put("kind", item.kind);
+                                    if ("vocab".equals(item.kind)) object.put("vocabId", item.vocabId);
+                                    else object.put("text", item.text);
+                                    group.put(object);
+                                }
+                                optionItems.put(group);
+                            }
+                            if (!question.optionItems.isEmpty()) questionObject.put("optionItems", optionItems);
                             JSONArray pairs = new JSONArray();
                             for (Question.MatchPair pair : question.pairs) {
                                 JSONObject object = new JSONObject();
@@ -507,6 +539,12 @@ final class ProjectStructure {
         static final String TYPE_TYPE = "type";
         static final String TYPE_LISTEN = "listen";
 
+        static final class OptionItem {
+            String kind = "text";
+            String text = "";
+            String vocabId = "";
+        }
+
         static final class WarnRule {
             String match = "";
             String kind = "eq";
@@ -571,6 +609,7 @@ final class ProjectStructure {
         long audioStart;
         long audioEnd;
         final List<String> options = new ArrayList<>();
+        final List<List<Question.OptionItem>> optionItems = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();
         final List<MatchPair> pairs = new ArrayList<>();

@@ -101,6 +101,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private EditText[] listenOptions = new EditText[4];
     private android.widget.RadioGroup listenCorrect;
     private TextView listenAudioLabel;
+    private final List<List<ProjectStructure.Question.OptionItem>> listenOptionItems = new ArrayList<>();
+    private int listenOptionIndex = -1;
     private int listenOptionPickIndex = -1;
     private EditText typePrompt;
     private EditText typeAnswers;
@@ -327,6 +329,10 @@ public class QuestionEditorActivity extends ForgeActivity {
             optionRow.addView(pickWords, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             listenSection.addView(optionRow);
+            LinearLayout optionPreview = new LinearLayout(this);
+            optionPreview.setId(3000 + i);
+            optionPreview.setOrientation(LinearLayout.HORIZONTAL);
+            listenSection.addView(optionPreview);
             android.widget.RadioButton radio = new android.widget.RadioButton(this);
             radio.setText("正确 " + (i + 1));
             radio.setId(1000 + i);
@@ -337,11 +343,26 @@ public class QuestionEditorActivity extends ForgeActivity {
         scrollContent.addView(listenSection, 4);
         listenPrompt.setText(question.prompt == null ? "" : question.prompt);
         for (int i = 0; i < 4; i++) {
-            listenOptions[i].setText(i < question.options.size() ? question.options.get(i) : "");
+            List<ProjectStructure.Question.OptionItem> items = new ArrayList<>();
+            if (i < question.optionItems.size()) items.addAll(question.optionItems.get(i));
+            if (items.isEmpty()) {
+                String text = i < question.options.size() ? question.options.get(i) : "";
+                if (!text.isEmpty()) {
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.text = text;
+                    items.add(item);
+                }
+            }
+            listenOptionItems.add(items);
+            listenOptions[i].setText(items.isEmpty()
+                    ? (i < question.options.size() ? question.options.get(i) : "")
+                    : mirrorListenOption(items));
         }
+        renderListenOptionPreviews();
         if (question.correctIndex >= 0 && question.correctIndex < 4) {
             listenCorrect.check(1000 + question.correctIndex);
         }
+        audioSource = question.audioSource == null ? "" : question.audioSource;
         audioRelative = question.audio == null ? "" : question.audio;
         audioStart = question.audioStart;
         audioEnd = question.audioEnd;
@@ -1166,6 +1187,87 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
     }
 
+    private String mirrorListenOption(List<ProjectStructure.Question.OptionItem> items) {
+        StringBuilder builder = new StringBuilder();
+        for (ProjectStructure.Question.OptionItem item : items) {
+            String value;
+            if ("vocab".equals(item.kind)) {
+                VocabularyEntry entry = null;
+                for (VocabularyEntry candidate : vocabulary.entries) {
+                    if (item.vocabId.equals(candidate.id)) { entry = candidate; break; }
+                }
+                if (entry == null) continue;
+                if (VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    if (!entry.codes.isEmpty()) value = entry.codes.get(0);
+                    else if (!entry.meanings.isEmpty()) value = entry.meanings.get(0);
+                    else value = "〔图片〕";
+                } else {
+                    value = vocabulary.displayName(entry);
+                }
+            } else {
+                value = item.text;
+            }
+            if (builder.length() > 0 && !Character.isWhitespace(builder.charAt(builder.length() - 1))
+                    && !value.isEmpty() && !Character.isWhitespace(value.charAt(0))) {
+                builder.append(' ');
+            }
+            builder.append(value);
+        }
+        return builder.toString();
+    }
+
+    private void renderListenOptionPreviews() {
+        for (int i = 0; i < 4; i++) {
+            LinearLayout preview = findViewById(3000 + i);
+            if (preview == null) continue;
+            preview.removeAllViews();
+            for (int j = 0; j < listenOptionItems.get(i).size(); j++) {
+                ProjectStructure.Question.OptionItem item = listenOptionItems.get(i).get(j);
+                final int option = i;
+                final int itemIndex = j;
+                if ("vocab".equals(item.kind)) {
+                    VocabularyEntry entry = null;
+                    for (VocabularyEntry candidate : vocabulary.entries) {
+                        if (item.vocabId.equals(candidate.id)) { entry = candidate; break; }
+                    }
+                    if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                        android.widget.ImageView image = new android.widget.ImageView(this);
+                        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+                        if (bitmap != null) {
+                            image.setImageBitmap(bitmap);
+                            image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                            preview.addView(image, new LinearLayout.LayoutParams(dp(28), dp(28)));
+                        } else {
+                            preview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                        }
+                    } else if (entry != null) {
+                        preview.addView(text(vocabulary.displayName(entry), 14, R.color.forge_text));
+                    }
+                } else {
+                    preview.addView(text(item.text, 14, R.color.forge_text));
+                }
+                ForgeButton remove = new ForgeButton(this);
+                remove.setAllCaps(false);
+                remove.setText("×");
+                remove.setOnClickListener(v -> {
+                    listenOptionItems.get(option).remove(itemIndex);
+                    listenOptions[option].setText(mirrorListenOption(listenOptionItems.get(option)));
+                    renderListenOptionPreviews();
+                    dirty = true;
+                });
+                preview.addView(remove);
+            }
+        }
+    }
+
+    private TextView text(String value, int size, int color) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(getColor(color));
+        return view;
+    }
+
     private void openListenOptionPicker() {
         Intent intent = new Intent(this, VocabularyPickerActivity.class);
         intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
@@ -1182,33 +1284,20 @@ public class QuestionEditorActivity extends ForgeActivity {
                 if (ids == null || ids.isEmpty()) return;
                 int target = listenOptionPickIndex;
                 if (target < 0 || target >= listenOptions.length) return;
-                EditText field = listenOptions[target];
-                String text = field.getText().toString();
-                int cursor = field.hasFocus() ? Math.max(0, field.getSelectionStart()) : text.length();
-                if (cursor > text.length()) cursor = text.length();
-                StringBuilder builder = new StringBuilder(text);
+                List<ProjectStructure.Question.OptionItem> items = listenOptionItems.get(target);
                 for (String id : ids) {
                     VocabularyEntry entry = null;
                     for (VocabularyEntry candidate : vocabulary.entries) {
                         if (id != null && id.equals(candidate.id)) { entry = candidate; break; }
                     }
                     if (entry == null) continue;
-                    String word = vocabulary.displayName(entry);
-                    if (cursor > 0 && !Character.isWhitespace(builder.charAt(cursor - 1))
-                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor - 1)) < 0) {
-                        builder.insert(cursor, ' ');
-                        cursor++;
-                    }
-                    builder.insert(cursor, word);
-                    cursor += word.length();
-                    if (cursor < builder.length() && !Character.isWhitespace(builder.charAt(cursor))
-                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor)) < 0) {
-                        builder.insert(cursor, ' ');
-                        cursor++;
-                    }
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.kind = "vocab";
+                    item.vocabId = id;
+                    items.add(item);
                 }
-                field.setText(builder.toString());
-                field.setSelection(Math.min(cursor, field.getText().length()));
+                listenOptions[target].setText(mirrorListenOption(items));
+                renderListenOptionPreviews();
                 dirty = true;
                 listenOptionPickIndex = -1;
             });
@@ -1287,6 +1376,26 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.audioSource = audioSource;
         question.options.clear();
         question.options.addAll(options);
+        question.optionItems.clear();
+        for (int i = 0; i < 4; i++) {
+            List<ProjectStructure.Question.OptionItem> items = listenOptionItems.get(i);
+            String mirror = mirrorListenOption(items);
+            if (!mirror.equals(options.get(i))) {
+                ProjectStructure.Question.OptionItem textItem = new ProjectStructure.Question.OptionItem();
+                textItem.text = options.get(i);
+                items = new ArrayList<>();
+                items.add(textItem);
+            }
+            question.optionItems.add(items);
+        }
+        boolean hasVocabItem = false;
+        for (List<ProjectStructure.Question.OptionItem> group : question.optionItems) {
+            for (ProjectStructure.Question.OptionItem item : group) {
+                if ("vocab".equals(item.kind)) { hasVocabItem = true; break; }
+            }
+            if (hasVocabItem) break;
+        }
+        if (!hasVocabItem) question.optionItems.clear();
         question.correctIndex = correct;
         question.hintsEnabled = false;
         question.name = (prompt.isEmpty() ? "听音选择" : prompt) + " · " + options.get(correct);

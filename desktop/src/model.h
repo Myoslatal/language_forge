@@ -22,6 +22,12 @@ struct QuestionSegment {
   std::string text;
 };
 
+struct QuestionOptionItem {
+  std::string kind = "text";
+  std::string text;
+  std::string vocabId;
+};
+
 struct WarnRule {
   std::string match;
   std::string kind = "eq";
@@ -53,6 +59,7 @@ struct Question {
   long long audioEnd = 0;
   bool hintsEnabled = true;
   std::vector<std::string> options;
+  std::vector<std::vector<QuestionOptionItem>> optionItems;
   std::string prompt;
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;
