@@ -191,6 +191,14 @@ json structureToJson(const Structure& structure) {
             if (!pair.rightItems.empty()) pairJson["rItems"] = itemsToJson(pair.rightItems);
             pairs.push_back(std::move(pairJson));
           }
+          json cardJson = nullptr;
+          if (question.type == "card") {
+            json exs = json::array();
+            for (const auto& ex : question.card.examples) exs.push_back({{"l", ex.l}, {"z", ex.z}});
+            cardJson = {{"word", question.card.word}, {"pron", question.card.pron},
+                        {"def", question.card.def}, {"detail", question.card.detail},
+                        {"wordVocabId", question.card.wordVocabId}, {"examples", exs}};
+          }
           json promptItems = json::array();
           for (const auto& item : question.promptItems) {
             if (item.kind == "vocab") promptItems.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
@@ -229,6 +237,7 @@ json structureToJson(const Structure& structure) {
                                {"audioSource", question.audioSource},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
+          if (!cardJson.is_null()) questionJson["card"] = cardJson;
           if (!promptItems.empty()) questionJson["promptItems"] = promptItems;
           if (!optionItems.empty()) questionJson["optionItems"] = optionItems;
           questions.push_back(std::move(questionJson));
@@ -317,6 +326,19 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                if (questionValue.contains("card") && questionValue["card"].is_object()) {
+                  const auto& card = questionValue["card"];
+                  question.card.word = card.value("word", "");
+                  question.card.pron = card.value("pron", "");
+                  question.card.def = card.value("def", "");
+                  question.card.detail = card.value("detail", "");
+                  question.card.wordVocabId = card.value("wordVocabId", "");
+                  if (card.contains("examples") && card["examples"].is_array()) {
+                    for (const auto& ex : card["examples"]) {
+                      question.card.examples.push_back({ex.value("l", ""), ex.value("z", "")});
+                    }
+                  }
+                }
                 if (questionValue.contains("promptItems") && questionValue["promptItems"].is_array()) {
                   for (const auto& itemValue : questionValue["promptItems"]) {
                     QuestionOptionItem item;

@@ -154,7 +154,8 @@ public class CourseEditorActivity extends ForgeActivity {
                 ? question.name : question.sentence;
         name.setText(title);
         type.setText(ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(question.type)
-                ? "选择正确翻译" : "题目");
+                ? "选择正确翻译"
+                : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? "新知卡片" : "题目");
         row.setOnClickListener(v -> openQuestionEditor(question.id));
         more.setOnClickListener(v -> showQuestionMenu(more, question));
         questionList.addView(row);

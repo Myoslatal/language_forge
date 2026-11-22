@@ -433,6 +433,11 @@ struct App {
   char questionOptions[4][256] = {};
   char arrangePromptInput[512] = {};
   char typeAnswersInput[2048] = {};
+  char cardWordInput[256] = {};
+  char cardPronInput[256] = {};
+  char cardDefInput[1024] = {};
+  char cardDetailInput[2048] = {};
+  bool pickerForCardWord = false;
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
@@ -1198,6 +1203,10 @@ struct App {
       acceptedText += value;
     }
     std::snprintf(typeAnswersInput, sizeof(typeAnswersInput), "%s", acceptedText.c_str());
+    std::snprintf(cardWordInput, sizeof(cardWordInput), "%s", editQuestion.card.word.c_str());
+    std::snprintf(cardPronInput, sizeof(cardPronInput), "%s", editQuestion.card.pron.c_str());
+    std::snprintf(cardDefInput, sizeof(cardDefInput), "%s", editQuestion.card.def.c_str());
+    std::snprintf(cardDetailInput, sizeof(cardDetailInput), "%s", editQuestion.card.detail.c_str());
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
                   editQuestion.prompt.c_str());
     for (int i = 0; i < 4; ++i) {
@@ -1270,6 +1279,34 @@ struct App {
       }
       if (!persist()) return;
       showToast("听音题已保存");
+      screen = Screen::Course;
+      return;
+    }
+    if (editQuestion.type == "card") {
+      editQuestion.card.word = trim(cardWordInput);
+      editQuestion.card.pron = trim(cardPronInput);
+      editQuestion.card.def = trim(cardDefInput);
+      editQuestion.card.detail = cardDetailInput;
+      if (!editQuestion.card.wordVocabId.empty() && vocabulary) {
+        const VocabEntry* wordEntry = vocabulary->find(editQuestion.card.wordVocabId);
+        const std::string mirror = wordEntry ? vocabWordMirror(*wordEntry) : std::string();
+        if (!wordEntry || wordEntry->type != "image" || mirror != editQuestion.card.word) {
+          editQuestion.card.wordVocabId.clear();
+        }
+      }
+      if (editQuestion.card.word.empty() && editQuestion.card.def.empty()) {
+        showToast("词形或释义至少填写一个"); return;
+      }
+      editQuestion.name = editQuestion.card.word + " · " + editQuestion.card.def;
+      editQuestion.hintsEnabled = false;
+      if (questionIsNew) { course->questions.push_back(editQuestion); questionIsNew = false; }
+      else {
+        for (auto& question : course->questions) {
+          if (question.id == editQuestion.id) question = editQuestion;
+        }
+      }
+      if (!persist()) return;
+      showToast("新知卡片已保存");
       screen = Screen::Course;
       return;
     }
@@ -1581,6 +1618,15 @@ struct App {
       text += value;
     }
     return text;
+  }
+
+  std::string vocabWordMirror(const VocabEntry& entry) {
+    if (entry.type == "image") {
+      if (!entry.codes.empty()) return entry.codes.front();
+      if (!entry.meanings.empty()) return entry.meanings.front();
+      return "〔图片〕";
+    }
+    return vocabulary ? displayName(entry, vocabulary->entries) : entry.id;
   }
 
   bool drawStructuredOptionRow(const std::vector<QuestionOptionItem>& items, int index,
@@ -2834,6 +2880,7 @@ std::string questionTypeLabel(const std::string& type) {
   if (type == "match") return "配对";
   if (type == "type") return "输入翻译";
   if (type == "listen") return "听音选择";
+  if (type == "card") return "新知卡片";
   return "选择正确翻译";
 }
 
@@ -2855,11 +2902,13 @@ void renderQuestionEditor(App& app) {
   int typeIndex = app.editQuestion.type == "arrange" ? 1
                   : app.editQuestion.type == "match" ? 2
                   : app.editQuestion.type == "type" ? 3
-                  : app.editQuestion.type == "listen" ? 4 : 0;
+                  : app.editQuestion.type == "listen" ? 4
+                  : app.editQuestion.type == "card" ? 5 : 0;
   ImGui::SetNextItemWidth(220);
-  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0")) {
+  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0新知卡片\0")) {
     app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match"
-                             : typeIndex == 3 ? "type" : typeIndex == 4 ? "listen" : "translation_choice";
+                             : typeIndex == 3 ? "type" : typeIndex == 4 ? "listen"
+                             : typeIndex == 5 ? "card" : "translation_choice";
     app.questionDirty = true;
     if (typeIndex == 2 && app.editQuestion.pairs.empty()) {
       app.editQuestion.pairs.push_back({"", ""});
@@ -2869,6 +2918,73 @@ void renderQuestionEditor(App& app) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
+  }
+  if (app.editQuestion.type == "card") {
+    ImGui::TextUnformatted("词形");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##card_word", app.cardWordInput, sizeof(app.cardWordInput))) {
+      app.questionDirty = true;
+      if (!app.editQuestion.card.wordVocabId.empty() && app.vocabulary) {
+        const VocabEntry* wordEntry = app.vocabulary->find(app.editQuestion.card.wordVocabId);
+        if (!wordEntry || wordEntry->type != "image" ||
+            app.vocabWordMirror(*wordEntry) != app.cardWordInput) {
+          app.editQuestion.card.wordVocabId.clear();
+        }
+      }
+    }
+    if (!app.editQuestion.card.wordVocabId.empty() && app.vocabulary) {
+      for (const auto& entry : app.vocabulary->entries) {
+        if (entry.id != app.editQuestion.card.wordVocabId || entry.type != "image") continue;
+        SDL_Texture* texture = textureForImage(app.renderer,
+            app.currentProjectDirectory() / pathFromUtf8(entry.image), app.imageTextures);
+        if (texture) {
+          float h = 32.0f;
+          float w = h * static_cast<float>(std::max(1, entry.imageWidth)) /
+                    static_cast<float>(std::max(1, entry.imageHeight));
+          ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(w, h));
+        }
+        break;
+      }
+    }
+    ImGui::TextUnformatted("发音");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##card_pron", app.cardPronInput, sizeof(app.cardPronInput))) app.questionDirty = true;
+    ImGui::TextUnformatted("释义");
+    if (ImGui::InputTextMultiline("##card_def", app.cardDefInput, sizeof(app.cardDefInput), ImVec2(-1, 70))) app.questionDirty = true;
+    ImGui::TextUnformatted("补充说明");
+    if (ImGui::InputTextMultiline("##card_detail", app.cardDetailInput, sizeof(app.cardDetailInput), ImVec2(-1, 80))) app.questionDirty = true;
+    if (ImGui::Button("从词库生成卡片##card_pick", ImVec2(160, 28))) {
+      app.pickerForCardWord = true;
+      app.pickerForListenOption = false;
+      app.pickerForTypePrompt = false;
+      app.pickerForListenAudio = false;
+      app.pickerSelected.clear();
+      app.pickerOpen = true;
+    }
+    for (std::size_t i = 0; i < app.editQuestion.card.examples.size(); ++i) {
+      auto& ex = app.editQuestion.card.examples[i];
+      ImGui::PushID(static_cast<int>(i) + 16000);
+      char l[512]; char z[512];
+      std::snprintf(l, sizeof(l), "%s", ex.l.c_str());
+      std::snprintf(z, sizeof(z), "%s", ex.z.c_str());
+      ImGui::SetNextItemWidth(360);
+      if (ImGui::InputText("##card_ex_l", l, sizeof(l))) { ex.l = l; app.questionDirty = true; }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(360);
+      if (ImGui::InputText("##card_ex_z", z, sizeof(z))) { ex.z = z; app.questionDirty = true; }
+      ImGui::SameLine();
+      if (ImGui::Button("×##card_ex_del", ImVec2(26, 22))) {
+        app.editQuestion.card.examples.erase(app.editQuestion.card.examples.begin() + i);
+        app.questionDirty = true; ImGui::PopID(); break;
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::Button("＋ 例句##card_ex_add", ImVec2(100, 26))) {
+      app.editQuestion.card.examples.push_back({});
+      app.questionDirty = true;
+    }
+    if (ImGui::Button("保存题目##card_save", ImVec2(120, 34))) app.saveQuestion();
+    return;
   }
   if (app.editQuestion.type == "listen") {
     ImGui::TextUnformatted("题干/说明（可选）");
@@ -3510,6 +3626,56 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (question->type == "card") {
+    app.ensureVocabularyLoaded();
+    pageTitle("LEARN", "新知卡片", "新知卡片 · " + course->name);
+    bool hasImage = false;
+    if (!question->card.wordVocabId.empty() && app.vocabulary) {
+      for (const auto& entry : app.vocabulary->entries) {
+        if (entry.id != question->card.wordVocabId || entry.type != "image") continue;
+        SDL_Texture* texture = textureForImage(app.renderer,
+            app.currentProjectDirectory() / pathFromUtf8(entry.image), app.imageTextures);
+        if (texture) {
+          float h = 48.0f;
+          float w = h * static_cast<float>(std::max(1, entry.imageWidth)) /
+                    static_cast<float>(std::max(1, entry.imageHeight));
+          ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(w, h));
+          hasImage = true;
+        }
+      }
+    }
+    if (!hasImage) {
+      ImGui::PushFont(nullptr, 28.0f);
+      ImGui::TextUnformatted(question->card.word.c_str());
+      ImGui::PopFont();
+    }
+    if (!question->card.pron.empty()) ImGui::TextDisabled("/%s/", question->card.pron.c_str());
+    ImGui::TextWrapped("%s", question->card.def.c_str());
+    if (!question->card.detail.empty()) ImGui::TextWrapped("%s", question->card.detail.c_str());
+    for (const auto& ex : question->card.examples) {
+      ImGui::TextUnformatted(ex.l.c_str());
+      if (!ex.z.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.48f, 0.55f, 1));
+        ImGui::TextUnformatted(ex.z.c_str());
+        ImGui::PopStyleColor();
+      }
+    }
+    ImGui::TextDisabled("这是介绍卡，不计分；点「继续」进入下一题。");
+    bool lastCard = !course->questions.empty() && course->questions.back().id == question->id;
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 58);
+    if (ImGui::Button(lastCard ? "完成##card_done" : "继续##card_next", ImVec2(-1, 42))) {
+      if (lastCard) { app.learningQuestionId.clear(); app.showToast("本课完成"); }
+      else {
+        for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+          if (course->questions[i].id == question->id) {
+            app.learningQuestionId = course->questions[i + 1].id;
+            break;
+          }
+        }
+      }
+    }
+    return;
+  }
   if (question->type == "listen") {
     if (app.listenAutoId != question->id) {
       app.listenAutoId = question->id;
@@ -6678,6 +6844,32 @@ void renderPicker(App& app) {
         app.questionDirty = true;
       }
       app.pickerForChoiceOption = false;
+    } else if (app.pickerForCardWord) {
+      if (!app.pickerSelected.empty() && app.vocabulary) {
+        for (const auto& entry : app.vocabulary->entries) {
+          if (entry.id != app.pickerSelected.front()) continue;
+          std::string word = app.vocabWordMirror(entry);
+          if (entry.type == "image") {
+            app.editQuestion.card.wordVocabId = entry.id;
+          } else {
+            app.editQuestion.card.wordVocabId.clear();
+          }
+          std::string pron;
+          if (!entry.phonetics.empty()) {
+            for (std::size_t i = 0; i < entry.phonetics.size(); ++i) {
+              if (i) pron += " / ";
+              pron += entry.phonetics[i];
+            }
+          } else pron = entry.phonetic;
+          std::string def = posMeaningSummary(app, entry);
+          std::snprintf(app.cardWordInput, sizeof(app.cardWordInput), "%s", word.c_str());
+          std::snprintf(app.cardPronInput, sizeof(app.cardPronInput), "%s", pron.c_str());
+          std::snprintf(app.cardDefInput, sizeof(app.cardDefInput), "%s", def.c_str());
+          app.questionDirty = true;
+          break;
+        }
+      }
+      app.pickerForCardWord = false;
     } else if (app.pickerForListenOption) {
       if (app.listenOptionPickIndex >= 0 && app.listenOptionPickIndex < 4 && app.vocabulary) {
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});

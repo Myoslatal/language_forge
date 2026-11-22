@@ -191,6 +191,8 @@ public class LearningActivity extends ForgeActivity {
         dismissHint();
         course = selected;
         question = null;
+        confirmButton.setVisibility(View.GONE);
+        confirmButton.setText("确认答案");
         titleView.setText(selected.name);
         subtitleView.setText("选择题目");
         content.removeAllViews();
@@ -203,7 +205,8 @@ public class LearningActivity extends ForgeActivity {
             boolean typing = ProjectStructure.Question.TYPE_TYPE.equals(item.type);
             boolean listening = ProjectStructure.Question.TYPE_LISTEN.equals(item.type);
             String typeLabel = arrange ? "词块组句" : match ? "配对"
-                    : typing ? "输入翻译" : listening ? "听音选择" : "选择正确翻译";
+                    : typing ? "输入翻译" : listening ? "听音选择"
+                    : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片" : "选择正确翻译";
             boolean choice = ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(item.type);
             row.setText(sentence + "\n" + typeLabel +
                     (choice ? (item.hintsEnabled ? " · 学习提示" : " · 无提示") : ""));
@@ -242,9 +245,14 @@ public class LearningActivity extends ForgeActivity {
         String mode = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type) ? "词块组句"
                 : ProjectStructure.Question.TYPE_MATCH.equals(item.type) ? "配对"
                 : ProjectStructure.Question.TYPE_TYPE.equals(item.type) ? "输入翻译"
-                : ProjectStructure.Question.TYPE_LISTEN.equals(item.type) ? "听音选择" : "选择正确翻译";
+                : ProjectStructure.Question.TYPE_LISTEN.equals(item.type) ? "听音选择"
+                : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片" : "选择正确翻译";
         subtitleView.setText(selected.name + " · " + mode);
         content.removeAllViews();
+        if (ProjectStructure.Question.TYPE_CARD.equals(item.type)) {
+            renderCardQuestion(item);
+            return;
+        }
         if (ProjectStructure.Question.TYPE_LISTEN.equals(item.type)) {
             renderListenQuestion(item);
             return;
@@ -355,6 +363,38 @@ public class LearningActivity extends ForgeActivity {
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
             }
         }
+    }
+
+    private void renderCardQuestion(ProjectStructure.Question item) {
+        content.removeAllViews();
+        content.addView(text("新知卡片", 14, R.color.forge_muted));
+        VocabularyEntry entry = item.card.wordVocabId.isEmpty() ? null : findEntry(item.card.wordVocabId);
+        if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+            android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+            if (bitmap != null) {
+                android.widget.ImageView image = new android.widget.ImageView(this);
+                image.setImageBitmap(bitmap);
+                image.setAdjustViewBounds(true);
+                int h = dp(48);
+                int w = Math.max(dp(48), bitmap.getWidth() * h / Math.max(1, bitmap.getHeight()));
+                content.addView(image, new LinearLayout.LayoutParams(w, h));
+            }
+        } else {
+            content.addView(text(item.card.word, 28, R.color.forge_text));
+        }
+        if (!item.card.pron.isEmpty()) content.addView(text("/" + item.card.pron + "/", 15, R.color.forge_muted));
+        content.addView(text(item.card.def, 18, R.color.forge_text));
+        if (!item.card.detail.isEmpty()) content.addView(text(item.card.detail, 14, R.color.forge_text));
+        for (ProjectStructure.Question.CardExample ex : item.card.examples) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.addView(text(ex.l, 15, R.color.forge_text));
+            if (!ex.z.isEmpty()) row.addView(text(ex.z, 13, R.color.forge_muted));
+            content.addView(row);
+        }
+        content.addView(text("这是介绍卡，不计分；点「继续」进入下一题。", 12, R.color.forge_muted));
+        confirmButton.setText(isLastQuestion() ? "完成" : "继续");
+        confirmButton.setVisibility(View.VISIBLE);
     }
 
     private void renderListenQuestion(ProjectStructure.Question item) {
@@ -921,7 +961,12 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void confirmAnswer() {
-        if (question == null || answered) return;
+        if (question == null) return;
+        if (ProjectStructure.Question.TYPE_CARD.equals(question.type)) {
+            nextQuestion();
+            return;
+        }
+        if (answered) return;
         if (ProjectStructure.Question.TYPE_LISTEN.equals(question.type)) {
             stopAudio();
             File questionAudio = question.audio == null || question.audio.isEmpty()

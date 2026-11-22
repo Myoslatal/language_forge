@@ -49,6 +49,7 @@ public class QuestionEditorActivity extends ForgeActivity {
     public static final String EXTRA_QUESTION_ID = "questionId";
 
     private File projectDirectory;
+    private PosStore posStore;
     private ProjectStructure structure;
     private ProjectStructure.Course course;
     private ProjectStructure.Question question;
@@ -95,6 +96,11 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout matchSection;
     private LinearLayout typeSection;
     private LinearLayout listenSection;
+    private LinearLayout cardSection;
+    private EditText cardWord, cardPron, cardDef, cardDetail;
+    private LinearLayout cardWordPreview;
+    private LinearLayout cardExamples;
+    private final List<ProjectStructure.Question.CardExample> editExamples = new ArrayList<>();
     private String audioRelative = "";
     private String audioSource = "";
     private EditText listenPrompt;
@@ -141,6 +147,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             return;
         }
         projectDirectory = new File(new File(base, "projects"), folder);
+        posStore = new PosStore(projectDirectory);
         structure = ProjectStructure.load(projectDirectory);
         course = findCourse(chapterId, unitId, courseId);
         if (course == null) {
@@ -195,13 +202,14 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择"});
+                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
         typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
                 : ProjectStructure.Question.TYPE_MATCH.equals(question.type) ? 2
                 : ProjectStructure.Question.TYPE_TYPE.equals(question.type) ? 3
-                : ProjectStructure.Question.TYPE_LISTEN.equals(question.type) ? 4 : 0);
+                : ProjectStructure.Question.TYPE_LISTEN.equals(question.type) ? 4
+                : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? 5 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -360,6 +368,39 @@ public class QuestionEditorActivity extends ForgeActivity {
         listenSection.addView(listenCorrect);
         listenSection.setVisibility(View.GONE);
         scrollContent.addView(listenSection, 4);
+        cardSection = new LinearLayout(this);
+        cardSection.setOrientation(LinearLayout.VERTICAL);
+        cardWord = new EditText(this); cardWord.setHint("词形"); cardSection.addView(cardWord);
+        cardWordPreview = new LinearLayout(this); cardWordPreview.setOrientation(LinearLayout.HORIZONTAL);
+        cardSection.addView(cardWordPreview);
+        cardPron = new EditText(this); cardPron.setHint("发音"); cardSection.addView(cardPron);
+        cardDef = new EditText(this); cardDef.setHint("释义（多行）"); cardSection.addView(cardDef);
+        cardDetail = new EditText(this); cardDetail.setHint("补充说明（多行）"); cardSection.addView(cardDetail);
+        ForgeButton cardPick = new ForgeButton(this); cardPick.setAllCaps(false); cardPick.setText("从词库生成卡片");
+        cardPick.setOnClickListener(v -> openCardPicker()); cardSection.addView(cardPick);
+        cardExamples = new LinearLayout(this); cardExamples.setOrientation(LinearLayout.VERTICAL); cardSection.addView(cardExamples);
+        ForgeButton addExample = new ForgeButton(this); addExample.setAllCaps(false); addExample.setText("＋ 例句");
+        addExample.setOnClickListener(v -> { editExamples.add(new ProjectStructure.Question.CardExample()); renderCardExamples(); });
+        cardSection.addView(addExample);
+        cardSection.setVisibility(View.GONE);
+        scrollContent.addView(cardSection, 5);
+        cardWord.setText(question.card.word);
+        cardWord.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+            public void onTextChanged(CharSequence s,int a,int b,int c){
+                dirty = true;
+                if (question.card.wordVocabId.isEmpty()) return;
+                VocabularyEntry entry = findEntry(question.card.wordVocabId);
+                if (entry == null || !segmentMirror(entry).equals(s.toString())) {
+                    question.card.wordVocabId = "";
+                    renderCardWordPreview();
+                }
+            }
+            public void afterTextChanged(android.text.Editable s){}
+        });
+        cardPron.setText(question.card.pron);
+        cardDef.setText(question.card.def); cardDetail.setText(question.card.detail);
+        editExamples.addAll(question.card.examples); renderCardExamples(); renderCardWordPreview();
         listenPrompt.setText(question.prompt == null ? "" : question.prompt);
         for (int i = 0; i < 4; i++) {
             List<ProjectStructure.Question.OptionItem> items = new ArrayList<>();
@@ -405,7 +446,14 @@ public class QuestionEditorActivity extends ForgeActivity {
                 if (matchSection != null) matchSection.setVisibility(View.GONE);
                 if (typeSection != null) typeSection.setVisibility(View.GONE);
                 if (listenSection != null) listenSection.setVisibility(View.GONE);
-                if (position == 4) {
+                if (cardSection != null) cardSection.setVisibility(View.GONE);
+                if (position == 5) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (cardSection != null) cardSection.setVisibility(View.VISIBLE);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "新知卡片 · " + course.name);
+                    hideForMatch(true);
+                } else if (position == 4) {
                     if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
                     if (listenSection != null) listenSection.setVisibility(View.VISIBLE);
                     ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
@@ -431,6 +479,10 @@ public class QuestionEditorActivity extends ForgeActivity {
         });
         if (ProjectStructure.Question.TYPE_MATCH.equals(question.type)) {
             if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            hideForMatch(true);
+        } else if (ProjectStructure.Question.TYPE_CARD.equals(question.type)) {
+            if (cardSection != null) cardSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
             hideForMatch(true);
         } else if (ProjectStructure.Question.TYPE_LISTEN.equals(question.type)) {
@@ -1747,6 +1799,117 @@ public class QuestionEditorActivity extends ForgeActivity {
         finish();
     }
 
+    private void renderCardWordPreview() {
+        if (cardWordPreview == null) return;
+        cardWordPreview.removeAllViews();
+        VocabularyEntry entry = question.card.wordVocabId.isEmpty() ? null : findEntry(question.card.wordVocabId);
+        if (entry == null || !VocabularyEntry.TYPE_IMAGE.equals(entry.type)) return;
+        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+        if (bitmap == null) { cardWordPreview.addView(text("〔图片缺失〕", 12, R.color.forge_warn)); return; }
+        android.widget.ImageView image = new android.widget.ImageView(this);
+        image.setImageBitmap(bitmap); image.setAdjustViewBounds(true);
+        int h = dp(32);
+        int w = Math.max(dp(32), bitmap.getWidth() * h / Math.max(1, bitmap.getHeight()));
+        cardWordPreview.addView(image, new LinearLayout.LayoutParams(w, h));
+    }
+
+    private void renderCardExamples() {
+        if (cardExamples == null) return;
+        cardExamples.removeAllViews();
+        for (int i = 0; i < editExamples.size(); i++) {
+            final int index = i;
+            ProjectStructure.Question.CardExample example = editExamples.get(i);
+            LinearLayout row = new LinearLayout(this);
+            EditText l = new EditText(this); l.setHint("例句原文"); l.setText(example.l);
+            l.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+                public void onTextChanged(CharSequence s,int a,int b,int c){ example.l=s.toString(); }
+                public void afterTextChanged(android.text.Editable s){}
+            });
+            row.addView(l, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            EditText z = new EditText(this); z.setHint("例句翻译"); z.setText(example.z);
+            z.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+                public void onTextChanged(CharSequence s,int a,int b,int c){ example.z=s.toString(); }
+                public void afterTextChanged(android.text.Editable s){}
+            });
+            row.addView(z, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton remove = new ForgeButton(this); remove.setAllCaps(false); remove.setText("×");
+            remove.setOnClickListener(v -> { editExamples.remove(index); renderCardExamples(); });
+            row.addView(remove);
+            cardExamples.addView(row);
+        }
+    }
+
+    private void openCardPicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "选择卡片词汇");
+        cardPickerLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> cardPickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> ids = result.getData().getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (ids == null || ids.isEmpty()) return;
+                for (VocabularyEntry entry : vocabulary.entries) {
+                    if (!ids.get(0).equals(entry.id)) continue;
+                    String word;
+                    if (VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                        word = !entry.codes.isEmpty() ? entry.codes.get(0)
+                                : !entry.meanings.isEmpty() ? entry.meanings.get(0) : "〔图片〕";
+                        question.card.wordVocabId = entry.id;
+                    } else {
+                        word = vocabulary.displayName(entry);
+                        question.card.wordVocabId = "";
+                    }
+                    cardWord.setText(word);
+                    cardPron.setText(String.join(" / ", entry.phonetics.isEmpty()
+                            ? java.util.Collections.singletonList(entry.phonetic) : entry.phonetics));
+                    StringBuilder def = new StringBuilder();
+                    if (entry.posMeanings.isEmpty()) {
+                        def.append(String.join("；", entry.meanings));
+                    } else {
+                        for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+                            if (def.length() > 0) def.append("；");
+                            PosEntry pos = posStore.findById(group.posId);
+                            if (pos != null && !pos.name.isEmpty()) {
+                                def.append(pos.name).append("：");
+                            }
+                            def.append(String.join("、", group.meanings));
+                        }
+                    }
+                    cardDef.setText(def.toString());
+                    renderCardWordPreview();
+                    return;
+                }
+            });
+
+    private void saveCard() {
+        String word = cardWord.getText().toString().trim();
+        String def = cardDef.getText().toString().trim();
+        if (word.isEmpty() && def.isEmpty()) { toast("词形或释义至少填写一个"); return; }
+        question.type = ProjectStructure.Question.TYPE_CARD;
+        VocabularyEntry wordEntry = question.card.wordVocabId.isEmpty()
+                ? null : findEntry(question.card.wordVocabId);
+        if (wordEntry == null || !VocabularyEntry.TYPE_IMAGE.equals(wordEntry.type)
+                || !segmentMirror(wordEntry).equals(word)) {
+            question.card.wordVocabId = "";
+            renderCardWordPreview();
+        }
+        question.card.word = word; question.card.pron = cardPron.getText().toString().trim();
+        question.card.def = def; question.card.detail = cardDetail.getText().toString();
+        question.card.examples.clear();
+        for (ProjectStructure.Question.CardExample ex : editExamples) question.card.examples.add(ex);
+        question.name = word + " · " + def;
+        question.hintsEnabled = false;
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true; toast("已保存新知卡片"); finish();
+    }
+
     private void saveTypeQuestion() {
         String prompt = typePrompt.getText() == null ? "" : typePrompt.getText().toString().trim();
         if (prompt.isEmpty()) { toast("请填写题干"); return; }
@@ -2053,6 +2216,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 5) {
+            saveCard();
+            return;
+        }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 4) {
             saveListen();
             return;

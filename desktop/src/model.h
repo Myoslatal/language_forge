@@ -22,6 +22,20 @@ struct QuestionSegment {
   std::string text;
 };
 
+struct CardExample {
+  std::string l;
+  std::string z;
+};
+
+struct QuestionCard {
+  std::string word;
+  std::string pron;
+  std::string def;
+  std::string detail;
+  std::string wordVocabId;
+  std::vector<CardExample> examples;
+};
+
 struct QuestionOptionItem {
   std::string kind = "text";
   std::string text;
@@ -63,6 +77,7 @@ struct Question {
   std::vector<std::string> options;
   std::vector<std::vector<QuestionOptionItem>> optionItems;
   std::vector<QuestionOptionItem> promptItems;
+  QuestionCard card;
   std::string prompt;
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;

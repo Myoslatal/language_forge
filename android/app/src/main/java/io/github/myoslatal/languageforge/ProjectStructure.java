@@ -153,6 +153,25 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        JSONObject card = questionObject.optJSONObject("card");
+                                        if (card != null) {
+                                            question.card.word = card.optString("word", "");
+                                            question.card.pron = card.optString("pron", "");
+                                            question.card.def = card.optString("def", "");
+                                            question.card.detail = card.optString("detail", "");
+                                            question.card.wordVocabId = card.optString("wordVocabId", "");
+                                            JSONArray examples = card.optJSONArray("examples");
+                                            if (examples != null) {
+                                                for (int ci = 0; ci < examples.length(); ci++) {
+                                                    JSONObject ex = examples.optJSONObject(ci);
+                                                    if (ex == null) continue;
+                                                    Question.CardExample value = new Question.CardExample();
+                                                    value.l = ex.optString("l", "");
+                                                    value.z = ex.optString("z", "");
+                                                    question.card.examples.add(value);
+                                                }
+                                            }
+                                        }
                                         JSONArray promptItems = questionObject.optJSONArray("promptItems");
                                         if (promptItems != null) {
                                             for (int pi = 0; pi < promptItems.length(); pi++) {
@@ -374,6 +393,23 @@ final class ProjectStructure {
                             questionObject.put("near", question.near);
                             if (!question.audioSource.isEmpty()) {
                                 questionObject.put("audioSource", question.audioSource);
+                            }
+                            if (Question.TYPE_CARD.equals(question.type)) {
+                                JSONObject card = new JSONObject();
+                                card.put("word", question.card.word);
+                                card.put("pron", question.card.pron);
+                                card.put("def", question.card.def);
+                                card.put("detail", question.card.detail);
+                                card.put("wordVocabId", question.card.wordVocabId);
+                                JSONArray examples = new JSONArray();
+                                for (Question.CardExample example : question.card.examples) {
+                                    JSONObject ex = new JSONObject();
+                                    ex.put("l", example.l);
+                                    ex.put("z", example.z);
+                                    examples.put(ex);
+                                }
+                                card.put("examples", examples);
+                                questionObject.put("card", card);
                             }
                             if (!question.promptItems.isEmpty()) {
                                 JSONArray promptItems = new JSONArray();
@@ -606,6 +642,21 @@ final class ProjectStructure {
         static final String TYPE_MATCH = "match";
         static final String TYPE_TYPE = "type";
         static final String TYPE_LISTEN = "listen";
+        static final String TYPE_CARD = "card";
+
+        static final class CardExample {
+            String l = "";
+            String z = "";
+        }
+
+        static final class Card {
+            String word = "";
+            String pron = "";
+            String def = "";
+            String detail = "";
+            String wordVocabId = "";
+            final List<CardExample> examples = new ArrayList<>();
+        }
 
         static final class OptionItem {
             String kind = "text";
@@ -681,6 +732,7 @@ final class ProjectStructure {
         final List<String> options = new ArrayList<>();
         final List<List<Question.OptionItem>> optionItems = new ArrayList<>();
         final List<Question.OptionItem> promptItems = new ArrayList<>();
+        final Card card = new Card();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();
         final List<MatchPair> pairs = new ArrayList<>();
