@@ -152,13 +152,24 @@ public class CourseEditorActivity extends ForgeActivity {
         number.setText(String.format(Locale.ROOT, "%02d", index + 1));
         String title = question.sentence == null || question.sentence.isEmpty()
                 ? question.name : question.sentence;
+        if (ProjectStructure.Question.TYPE_CUSTOM.equals(question.type)) {
+            if (question.prompt != null && !question.prompt.isEmpty()) {
+                title = question.prompt;
+            } else if (question.customBody != null && !question.customBody.isEmpty()) {
+                int cut = question.customBody.indexOf('\n');
+                title = cut < 0 ? question.customBody : question.customBody.substring(0, cut);
+            }
+        }
         name.setText(title);
         type.setText(ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(question.type)
                 ? "选择正确翻译"
                 : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? "新知卡片"
                 : ProjectStructure.Question.TYPE_DIALOG.equals(question.type) ? "选择对话"
                 : ProjectStructure.Question.TYPE_READING.equals(question.type) ? "阅读短文"
-                : ProjectStructure.Question.TYPE_CLOZE.equals(question.type) ? "选词填空" : "题目");
+                : ProjectStructure.Question.TYPE_CLOZE.equals(question.type) ? "选词填空"
+                : ProjectStructure.Question.TYPE_CUSTOM.equals(question.type)
+                        ? (question.customLabel == null || question.customLabel.isEmpty()
+                                ? "自定义题型" : question.customLabel) : "题目");
         row.setOnClickListener(v -> openQuestionEditor(question.id));
         more.setOnClickListener(v -> showQuestionMenu(more, question));
         questionList.addView(row);

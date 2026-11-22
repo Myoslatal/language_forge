@@ -153,6 +153,9 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        question.customLabel = questionObject.optString("customLabel", "");
+                                        question.customBody = questionObject.optString("customBody", "");
+                                        question.customMode = questionObject.optString("customMode", "choice");
                                         question.clozeText = questionObject.optString("clozeText", "");
                                         JSONArray clozeOrder = questionObject.optJSONArray("clozeOrder");
                                         if (clozeOrder != null) for (int zi = 0; zi < clozeOrder.length(); zi++)
@@ -440,6 +443,11 @@ final class ProjectStructure {
                                 }
                                 questionObject.put("lines", lines);
                             }
+                            if (Question.TYPE_CUSTOM.equals(question.type)) {
+                                questionObject.put("customLabel", question.customLabel);
+                                questionObject.put("customBody", question.customBody);
+                                questionObject.put("customMode", question.customMode);
+                            }
                             if (Question.TYPE_CLOZE.equals(question.type)) {
                                 questionObject.put("clozeText", question.clozeText);
                                 JSONArray clozeOrder = new JSONArray();
@@ -708,6 +716,7 @@ final class ProjectStructure {
         static final String TYPE_CARD = "card";
         static final String TYPE_READING = "reading";
         static final String TYPE_CLOZE = "cloze";
+        static final String TYPE_CUSTOM = "custom";
         static final String TYPE_DIALOG = "dialog";
 
         static final class CardExample {
@@ -809,6 +818,9 @@ final class ProjectStructure {
         String passage = "";
         String answerMode = "choice";
         String clozeText = "";
+        String customLabel = "";
+        String customBody = "";
+        String customMode = "choice";
         final List<Integer> clozeOrder = new ArrayList<>();
         final List<List<OptionItem>> clozeItems = new ArrayList<>();
         final List<DialogLine> lines = new ArrayList<>();

@@ -445,6 +445,9 @@ struct App {
   int readingMode = 0;
   char clozeTextInput[4096] = {};
   char clozePromptInput[1024] = {};
+  char customLabelInput[256] = {};
+  char customBodyInput[4096] = {};
+  char customPromptInput[1024] = {};
   char clozeOptionsInput[4][256] = {};
   bool clozeChecks[4] = {};
   std::vector<QuestionOptionItem> clozePromptItems;
@@ -1261,6 +1264,12 @@ struct App {
         clozeChecks[index] = true;
       }
     }
+    std::snprintf(customLabelInput, sizeof(customLabelInput), "%s",
+                  editQuestion.customLabel.c_str());
+    std::snprintf(customBodyInput, sizeof(customBodyInput), "%s",
+                  editQuestion.customBody.c_str());
+    std::snprintf(customPromptInput, sizeof(customPromptInput), "%s",
+                  editQuestion.prompt.c_str());
     std::snprintf(readingPassageInput, sizeof(readingPassageInput), "%s", editQuestion.passage.c_str());
     std::snprintf(readingPromptInput, sizeof(readingPromptInput), "%s", editQuestion.prompt.c_str());
     readingMode = editQuestion.answerMode == "type" ? 1 : 0;
@@ -1395,6 +1404,82 @@ struct App {
       }
       if (!persist()) return;
       showToast("听音题已保存");
+      screen = Screen::Course;
+      return;
+    }
+    if (editQuestion.type == "custom") {
+      const std::string label = trim(customLabelInput);
+      if (label.empty()) { showToast("请填写自定义题型名称"); return; }
+      editQuestion.customLabel = label;
+      editQuestion.customBody = customBodyInput;
+      const std::string prompt = trim(customPromptInput);
+      editQuestion.prompt = prompt;
+      editQuestion.name = label;
+      const std::string mode = editQuestion.customMode;
+      editQuestion.acceptedAnswers.clear();
+      editQuestion.options.clear();
+      editQuestion.optionItems.clear();
+      editQuestion.answers.clear();
+      editQuestion.correctIndex = -1;
+      if (mode == "choice") {
+        editQuestion.blocks.clear();
+        for (int i = 0; i < 4; ++i) {
+          if (trim(questionOptions[i]).empty()) { showToast("四个选项都必须填写"); return; }
+          editQuestion.options.push_back(trim(questionOptions[i]));
+        }
+        if (questionCorrectIndex < 0 || questionCorrectIndex > 3) {
+          showToast("请选择一个正确答案");
+          return;
+        }
+        editQuestion.correctIndex = questionCorrectIndex;
+        while (editQuestion.optionItems.size() < 4) editQuestion.optionItems.push_back({});
+        for (int i = 0; i < 4; ++i) {
+          std::string mirrored = optionMirror(editQuestion.optionItems[i]);
+          if (mirrored != editQuestion.options[i]) {
+            editQuestion.optionItems[i].clear();
+            QuestionOptionItem textItem;
+            textItem.kind = "text";
+            textItem.text = editQuestion.options[i];
+            editQuestion.optionItems[i].push_back(textItem);
+          }
+        }
+        bool hasVocabItem = false;
+        for (const auto& group : editQuestion.optionItems) {
+          for (const auto& item : group) if (item.kind == "vocab") hasVocabItem = true;
+        }
+        if (!hasVocabItem) editQuestion.optionItems.clear();
+      } else if (mode == "type") {
+        std::istringstream input(typeAnswersInput);
+        std::string line;
+        while (std::getline(input, line)) {
+          const std::string value = trim(line);
+          if (!value.empty()) editQuestion.acceptedAnswers.push_back(value);
+        }
+        if (editQuestion.acceptedAnswers.empty()) {
+          showToast("至少填写一条可接受答案");
+          return;
+        }
+        editQuestion.blocks.clear();
+      } else if (mode == "blocks") {
+        for (const auto& block : editQuestion.blocks) {
+          if (trim(block.text).empty()) { showToast("词块文本不能为空"); return; }
+        }
+        int okCount = 0;
+        for (const auto& block : editQuestion.blocks) if (block.ok) ++okCount;
+        if (okCount < 2) { showToast("至少需要两个正确词块"); return; }
+      } else {
+        editQuestion.blocks.clear();
+      }
+      if (questionIsNew) {
+        course->questions.push_back(editQuestion);
+        questionIsNew = false;
+      } else {
+        for (auto& question : course->questions) {
+          if (question.id == editQuestion.id) question = editQuestion;
+        }
+      }
+      if (!persist()) return;
+      showToast("自定义题型已保存");
       screen = Screen::Course;
       return;
     }
@@ -3422,7 +3507,15 @@ std::string questionTypeLabel(const std::string& type) {
   if (type == "reading") return "阅读短文";
   if (type == "cloze") return "选词填空";
   if (type == "dialog") return "选择对话";
+  if (type == "custom") return "自定义题型";
   return "选择正确翻译";
+}
+
+static std::string questionLabel(const Question& question) {
+  if (question.type == "custom" && !question.customLabel.empty()) {
+    return question.customLabel;
+  }
+  return questionTypeLabel(question.type);
 }
 
 static int clozeBlankCount(const std::string& text) {
@@ -3468,7 +3561,7 @@ void renderQuestionEditor(App& app) {
   if (ImGui::Button("← 课程", ImVec2(100, 30))) app.screen = App::Screen::Course;
   ImGui::SameLine();
   ImGui::TextDisabled("%s / %s", course->name.c_str(),
-                      questionTypeLabel(app.editQuestion.type).c_str());
+                      questionLabel(app.editQuestion).c_str());
   ImGui::Spacing();
   pageTitle("QUESTION", app.questionIsNew ? "新建题目" : "编辑题目",
             app.questionIsNew ? "尚未写入 structure.json" : "修改后点击保存");
@@ -3484,14 +3577,16 @@ void renderQuestionEditor(App& app) {
                   : app.editQuestion.type == "card" ? 5
                   : app.editQuestion.type == "dialog" ? 6
                   : app.editQuestion.type == "reading" ? 7
-                  : app.editQuestion.type == "cloze" ? 8 : 0;
+                  : app.editQuestion.type == "cloze" ? 8
+                  : app.editQuestion.type == "custom" ? 9 : 0;
   ImGui::SetNextItemWidth(220);
-  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0新知卡片\0选择对话\0阅读短文\0选词填空\0")) {
+  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0新知卡片\0选择对话\0阅读短文\0选词填空\0自定义题型\0")) {
     app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match"
                              : typeIndex == 3 ? "type" : typeIndex == 4 ? "listen"
                              : typeIndex == 5 ? "card" : typeIndex == 6 ? "dialog"
                              : typeIndex == 7 ? "reading"
                              : typeIndex == 8 ? "cloze"
+                             : typeIndex == 9 ? "custom"
                              : "translation_choice";
     app.questionDirty = true;
     if (typeIndex == 2 && app.editQuestion.pairs.empty()) {
@@ -4037,6 +4132,113 @@ void renderQuestionEditor(App& app) {
     if (ImGui::Button("保存题目##match_save", ImVec2(120, 34))) app.saveQuestion();
     return;
   }
+  if (app.editQuestion.type == "custom") {
+    ImGui::TextUnformatted("自定义题型名称（必填）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputTextWithHint("##custom_label", "例如：语法判断", app.customLabelInput,
+                                 sizeof(app.customLabelInput))) {
+      app.questionDirty = true;
+    }
+    ImGui::TextUnformatted("正文 / 讲解（可留空）");
+    if (ImGui::InputTextMultiline("##custom_body", app.customBodyInput,
+                                  sizeof(app.customBodyInput), ImVec2(-1, 110))) {
+      app.questionDirty = true;
+    }
+    ImGui::TextUnformatted("问题/题干（可选）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##custom_prompt", app.customPromptInput,
+                         sizeof(app.customPromptInput))) {
+      app.questionDirty = true;
+    }
+    int customModeIndex = app.editQuestion.customMode == "type" ? 1
+                          : app.editQuestion.customMode == "blocks" ? 2
+                          : app.editQuestion.customMode == "none" ? 3 : 0;
+    ImGui::TextUnformatted("作答方式");
+    ImGui::SetNextItemWidth(220);
+    if (ImGui::Combo("##custom_mode", &customModeIndex,
+                     "选项\0输入答案\0词块组句\0不作答（讲解页）\0")) {
+      app.editQuestion.customMode = customModeIndex == 1 ? "type"
+          : customModeIndex == 2 ? "blocks" : customModeIndex == 3 ? "none" : "choice";
+      app.questionDirty = true;
+    }
+    if (app.editQuestion.customMode == "choice") {
+      ImGui::TextUnformatted("四个选项（唯一正确答案）");
+      for (int i = 0; i < 4; ++i) {
+        ImGui::PushID(9200 + i);
+        ImGui::SetNextItemWidth(-260);
+        if (ImGui::InputText("##custom_option", app.questionOptions[i],
+                             sizeof(app.questionOptions[i]))) {
+          app.questionDirty = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("选词##custom_option_pick", ImVec2(64, 0))) {
+          app.pickerForChoiceOption = true;
+          app.pickerForClozeWord = false;
+          app.pickerForMatchSide = false;
+          app.pickerForListenOption = false;
+          app.pickerForListenAudio = false;
+          app.pickerForTypePrompt = false;
+          app.pickerForBlocks = false;
+          app.pickerForQuestion = false;
+          app.choiceOptionPickIndex = i;
+          app.pickerSelected.clear();
+          app.pickerOpen = true;
+        }
+        ImGui::SameLine();
+        const bool correct = app.questionCorrectIndex == i;
+        if (ImGui::RadioButton("正确答案", correct)) {
+          app.questionCorrectIndex = i;
+          app.questionDirty = true;
+        }
+        while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+        app.drawOptionItemsEditor(app.editQuestion.optionItems[i], app.questionOptions[i],
+                                  sizeof(app.questionOptions[i]));
+        ImGui::PopID();
+      }
+    } else if (app.editQuestion.customMode == "type") {
+      ImGui::TextUnformatted("可接受答案（一行一个）");
+      if (ImGui::InputTextMultiline("##custom_answers", app.typeAnswersInput,
+                                    sizeof(app.typeAnswersInput), ImVec2(-1, 100))) {
+        app.questionDirty = true;
+      }
+      ImGui::Checkbox("忽略大小写", &app.editQuestion.ignoreCase);
+      ImGui::SameLine();
+      ImGui::Checkbox("忽略空格与标点", &app.editQuestion.ignoreSpace);
+      ImGui::SameLine();
+      ImGui::Checkbox("自动识别拼写相近（差 1 字母）", &app.editQuestion.near);
+    } else if (app.editQuestion.customMode == "blocks") {
+      ImGui::TextUnformatted("词块池（勾选=正确词块，按词块顺序判题）");
+      for (std::size_t i = 0; i < app.editQuestion.blocks.size(); ++i) {
+        auto& block = app.editQuestion.blocks[i];
+        ImGui::PushID(static_cast<int>(i) + 30000);
+        char buffer[256];
+        std::snprintf(buffer, sizeof(buffer), "%s", block.text.c_str());
+        ImGui::SetNextItemWidth(360);
+        if (ImGui::InputText("##custom_block", buffer, sizeof(buffer))) {
+          block.text = buffer;
+          app.questionDirty = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Checkbox("正确", &block.ok)) app.questionDirty = true;
+        ImGui::SameLine();
+        if (ImGui::Button("×##custom_block_del", ImVec2(28, 24))) {
+          app.editQuestion.blocks.erase(app.editQuestion.blocks.begin() + i);
+          app.questionDirty = true;
+          ImGui::PopID();
+          break;
+        }
+        ImGui::PopID();
+      }
+      if (ImGui::Button("＋ 从词汇选择##custom_block_add", ImVec2(150, 28))) {
+        app.openArrangeBlockPicker();
+      }
+    } else {
+      ImGui::TextDisabled("这一页没有需要作答的内容；学习模式下显示「继续」。");
+    }
+    ImGui::Spacing();
+    if (ImGui::Button("保存题目##custom_save", ImVec2(120, 34))) app.saveQuestion();
+    return;
+  }
   if (app.editQuestion.type == "arrange") {
     ImGui::TextUnformatted("题干/释义（必填）");
     ImGui::SetNextItemWidth(-1);
@@ -4312,8 +4514,17 @@ void renderLearning(App& app) {
     pageTitle("LEARN", course->name, "选择题目");
     for (auto& question : course->questions) {
       ImGui::PushID(question.id.c_str());
-      const std::string title = question.sentence.empty() ? question.name : question.sentence;
-      std::string row = title + "  ·  " + questionTypeLabel(question.type);
+      std::string title = question.sentence.empty() ? question.name : question.sentence;
+      if (question.type == "custom") {
+        if (!question.prompt.empty()) {
+          title = question.prompt;
+        } else if (!question.customBody.empty()) {
+          const std::size_t cut = question.customBody.find('\n');
+          title = cut == std::string::npos ? question.customBody
+                                           : question.customBody.substr(0, cut);
+        }
+      }
+      std::string row = title + "  ·  " + questionLabel(question);
       if (question.type == "translation_choice") {
         row += question.hintsEnabled ? "  ·  学习提示" : "  ·  无提示";
       }
@@ -4334,6 +4545,243 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (question->type == "custom") {
+    app.ensureVocabularyLoaded();
+    const std::string mode = question->customMode.empty() ? "choice" : question->customMode;
+    if (app.arrangeQuestionId != question->id) {
+      app.arrangeQuestionId = question->id;
+      app.arrangePool = question->blocks;
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::shuffle(app.arrangePool.begin(), app.arrangePool.end(), gen);
+      app.arrangeSelected.clear();
+      app.learningAnswered = false;
+    }
+    const std::string kind = question->customLabel.empty() ? "自定义题型" : question->customLabel;
+    pageTitle("LEARN", kind, "自定义题型 · " + course->name);
+    if (!question->customBody.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.96f, 0.97f, 0.99f, 1));
+      ImGui::BeginChild("##custom_body", ImVec2(-1, 120), true);
+      std::istringstream bodyLines(question->customBody);
+      std::string bodyLine;
+      int tokenCounter = 0;
+      while (std::getline(bodyLines, bodyLine)) {
+        std::size_t pos = 0;
+        while (pos <= bodyLine.size()) {
+          const std::size_t space = bodyLine.find(' ', pos);
+          const std::string raw = space == std::string::npos
+              ? bodyLine.substr(pos) : bodyLine.substr(pos, space - pos);
+          const VocabEntry* match =
+              question->hintsEnabled ? app.matchPassageToken(raw) : nullptr;
+          if (match) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.43f, 0.92f, 0.10f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.43f, 0.92f, 0.18f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.18f, 0.43f, 0.92f, 1.0f));
+            const std::string id = raw + "##ctoken" + std::to_string(tokenCounter++);
+            if (ImGui::Button(id.c_str(), ImVec2(0, 0))) {
+              app.learningHintId = match->id;
+              app.learningHintPos = ImGui::GetItemRectMax();
+              app.learningHintJustOpened = true;
+            }
+            ImGui::PopStyleColor(4);
+          } else {
+            ImGui::TextUnformatted(raw.c_str());
+          }
+          if (space == std::string::npos) break;
+          ImGui::SameLine(0, 4);
+          pos = space + 1;
+        }
+        ImGui::NewLine();
+      }
+      ImGui::EndChild();
+      ImGui::PopStyleColor();
+    }
+    bool promptStructured = false;
+    for (const auto& item : question->promptItems) if (item.kind == "vocab") promptStructured = true;
+    if (promptStructured) {
+      for (const auto& item : question->promptItems) {
+        if (item.kind == "vocab" && app.vocabulary) {
+          const VocabEntry* entry = nullptr;
+          for (const auto& candidate : app.vocabulary->entries) {
+            if (candidate.id == item.vocabId) { entry = &candidate; break; }
+          }
+          if (entry && entry->type == "image") {
+            SDL_Texture* texture = textureForImage(app.renderer,
+                app.currentProjectDirectory() / pathFromUtf8(entry->image), app.imageTextures);
+            if (texture) ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
+          } else if (entry) {
+            ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
+          }
+        } else if (!item.text.empty()) {
+          ImGui::TextUnformatted(item.text.c_str());
+        }
+        ImGui::SameLine();
+      }
+      ImGui::NewLine();
+    } else if (!question->prompt.empty()) {
+      ImGui::TextWrapped("%s", question->prompt.c_str());
+    }
+    if (mode == "choice") {
+      app.drawChoiceOptions(*question);
+      app.drawChoiceConfirm(course, question);
+      if (question->hintsEnabled) app.drawVocabHint();
+      return;
+    }
+    if (mode == "type") {
+      ImGui::SetNextItemWidth(-1);
+      ImGui::InputTextWithHint("##custom_input", "输入答案后确认", app.typeLearnInput,
+                               sizeof(app.typeLearnInput));
+      const bool lastCustom = course->questions.empty() ||
+                              course->questions.back().id == question->id;
+      if (app.learningAnswered) {
+        ImGui::TextColored(ImVec4(0.08f, 0.58f, 0.28f, 1), "回答正确");
+        if (ImGui::Button((std::string(lastCustom ? "完成" : "下一题") + "##custom_next").c_str(),
+                          ImVec2(-1, 40))) {
+          if (lastCustom) {
+            app.learningQuestionId.clear();
+            app.learningAnswered = false;
+            app.showToast("本课完成");
+          } else {
+            for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+              if (course->questions[i].id == question->id) {
+                app.learningQuestionId = course->questions[i + 1].id;
+                break;
+              }
+            }
+            app.learningAnswered = false;
+            app.typeLearnInput[0] = 0;
+          }
+        }
+      } else if (app.typeLearnInput[0]) {
+        if (ImGui::Button("确认答案##custom_confirm", ImVec2(-1, 40))) {
+          auto normalizeCustom = [&](std::string value) {
+            std::string out;
+            for (char c : value) {
+              if (question->ignoreSpace &&
+                  (std::isspace(static_cast<unsigned char>(c)) ||
+                   std::ispunct(static_cast<unsigned char>(c)))) {
+                continue;
+              }
+              out += static_cast<char>(question->ignoreCase
+                  ? std::tolower(static_cast<unsigned char>(c)) : c);
+            }
+            return out;
+          };
+          const std::string typed = normalizeCustom(app.typeLearnInput);
+          bool ok = false;
+          for (const auto& answer : question->acceptedAnswers) {
+            if (typed == normalizeCustom(answer)) {
+              ok = true;
+              break;
+            }
+          }
+          if (ok) {
+            app.learningAnswered = true;
+            app.showToast("回答正确");
+          } else {
+            app.showToast("回答错误，请再试一次");
+          }
+        }
+      }
+      if (question->hintsEnabled) app.drawVocabHint();
+      return;
+    }
+    if (mode == "blocks") {
+      ImGui::TextUnformatted("已选");
+      for (std::size_t i = 0; i < app.arrangeSelected.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i) + 24000);
+        if (app.drawBlockChip(app.arrangeSelected[i], "##custom_chip_selected",
+                              app.learningAnswered, false)) {
+          if (!app.learningAnswered) {
+            app.arrangePool.push_back(app.arrangeSelected[i]);
+            app.arrangeSelected.erase(app.arrangeSelected.begin() + i);
+            ImGui::PopID();
+            break;
+          }
+        }
+        ImGui::SameLine();
+        ImGui::PopID();
+      }
+      ImGui::NewLine();
+      ImGui::TextUnformatted("词块池");
+      for (std::size_t i = 0; i < app.arrangePool.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i) + 25000);
+        if (app.drawBlockChip(app.arrangePool[i], "##custom_chip_pool", false, true)) {
+          if (!app.learningAnswered) {
+            app.arrangeSelected.push_back(app.arrangePool[i]);
+            app.arrangePool.erase(app.arrangePool.begin() + i);
+            ImGui::PopID();
+            break;
+          }
+        }
+        ImGui::PopID();
+      }
+      const bool lastCustom = course->questions.empty() ||
+                              course->questions.back().id == question->id;
+      if (app.learningAnswered) {
+        ImGui::TextColored(ImVec4(0.08f, 0.58f, 0.28f, 1), "回答正确");
+        if (ImGui::Button((std::string(lastCustom ? "完成" : "下一题") + "##custom_blocks_next").c_str(),
+                          ImVec2(-1, 40))) {
+          if (lastCustom) {
+            app.learningQuestionId.clear();
+            app.learningAnswered = false;
+            app.showToast("本课完成");
+          } else {
+            for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+              if (course->questions[i].id == question->id) {
+                app.learningQuestionId = course->questions[i + 1].id;
+                break;
+              }
+            }
+            app.learningAnswered = false;
+            app.arrangeSelected.clear();
+          }
+        }
+      } else if (!app.arrangeSelected.empty()) {
+        if (ImGui::Button("确认答案##custom_blocks_confirm", ImVec2(-1, 40))) {
+          std::vector<std::string> got;
+          for (const auto& block : app.arrangeSelected) got.push_back(block.id);
+          bool ok = false;
+          if (!question->answers.empty()) {
+            for (const auto& ids : question->answers) if (ids == got) ok = true;
+          } else {
+            std::vector<std::string> right;
+            for (const auto& block : question->blocks) if (block.ok) right.push_back(block.id);
+            ok = right == got;
+          }
+          if (ok) {
+            app.learningAnswered = true;
+            app.showToast("回答正确");
+          } else {
+            app.showToast("回答错误，请重新选择");
+          }
+        }
+      }
+      return;
+    }
+    if (mode == "none") {
+      ImGui::TextDisabled("这一页没有需要作答的内容。");
+      const bool lastCustom = course->questions.empty() ||
+                              course->questions.back().id == question->id;
+      if (ImGui::Button((std::string(lastCustom ? "完成" : "继续") + "##custom_none_next").c_str(),
+                        ImVec2(-1, 40))) {
+        if (lastCustom) {
+          app.learningQuestionId.clear();
+          app.showToast("本课完成");
+        } else {
+          for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+            if (course->questions[i].id == question->id) {
+              app.learningQuestionId = course->questions[i + 1].id;
+              break;
+            }
+          }
+        }
+      }
+      return;
+    }
+    return;
+  }
   if (question->type == "cloze") {
     if (app.clozeQuestionId != question->id) {
       app.clozeQuestionId = question->id;

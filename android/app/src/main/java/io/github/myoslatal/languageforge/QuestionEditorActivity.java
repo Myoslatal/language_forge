@@ -105,6 +105,9 @@ public class QuestionEditorActivity extends ForgeActivity {
     private TextView clozeCount;
     private final EditText[] clozeOptions = new EditText[4];
     private final CheckBox[] clozeChecks = new CheckBox[4];
+    private LinearLayout customSection;
+    private EditText customLabel, customBody, customPrompt;
+    private android.widget.Spinner customMode;
     private final List<ProjectStructure.Question.OptionItem> clozePromptItems = new ArrayList<>();
     private final List<List<ProjectStructure.Question.OptionItem>> clozeCandidateItems = new ArrayList<>();
     private final LinearLayout[] clozePreviews = new LinearLayout[4];
@@ -220,7 +223,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片", "选择对话", "阅读短文", "选词填空"});
+                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片", "选择对话", "阅读短文", "选词填空", "自定义题型"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
         typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
@@ -230,7 +233,8 @@ public class QuestionEditorActivity extends ForgeActivity {
                 : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? 5
                 : ProjectStructure.Question.TYPE_DIALOG.equals(question.type) ? 6
                 : ProjectStructure.Question.TYPE_READING.equals(question.type) ? 7
-                : ProjectStructure.Question.TYPE_CLOZE.equals(question.type) ? 8 : 0);
+                : ProjectStructure.Question.TYPE_CLOZE.equals(question.type) ? 8
+                : ProjectStructure.Question.TYPE_CUSTOM.equals(question.type) ? 9 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -507,6 +511,25 @@ public class QuestionEditorActivity extends ForgeActivity {
             public void afterTextChanged(android.text.Editable s){}
         });
         clozeSection.setVisibility(View.GONE); scrollContent.addView(clozeSection, 8);
+        customSection = new LinearLayout(this); customSection.setOrientation(LinearLayout.VERTICAL);
+        customLabel = new EditText(this); customLabel.setHint("自定义题型名称（必填）"); customSection.addView(customLabel);
+        customBody = new EditText(this); customBody.setHint("正文/讲解（可留空）"); customBody.setMinLines(3); customSection.addView(customBody);
+        customPrompt = new EditText(this); customPrompt.setHint("问题/题干（可选）"); customSection.addView(customPrompt);
+        customMode = new android.widget.Spinner(this);
+        customMode.setAdapter(new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"选项", "输入答案", "词块组句", "不作答"}));
+        customSection.addView(customMode);
+        customSection.setVisibility(View.GONE); scrollContent.addView(customSection, 9);
+        customLabel.setText(question.customLabel); customBody.setText(question.customBody);
+        customPrompt.setText(question.prompt);
+        customMode.setSelection("type".equals(question.customMode) ? 1 : "blocks".equals(question.customMode) ? 2
+                : "none".equals(question.customMode) ? 3 : 0);
+        customMode.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                                   int position, long id) {
+                updateCustomModeUi();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
         clozeText.setText(question.clozeText);
         clozePromptItems.addAll(question.promptItems);
         if (clozePromptItems.isEmpty() && question.prompt != null && !question.prompt.isEmpty()) {
@@ -604,7 +627,16 @@ public class QuestionEditorActivity extends ForgeActivity {
                 if (dialogSection != null) dialogSection.setVisibility(View.GONE);
                 if (readingSection != null) readingSection.setVisibility(View.GONE);
                 if (clozeSection != null) clozeSection.setVisibility(View.GONE);
-                if (position == 8) {
+                if (customSection != null) customSection.setVisibility(View.GONE);
+                if (position != 9) restoreSharedPromptVisibility();
+                if (position == 9) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (customSection != null) customSection.setVisibility(View.VISIBLE);
+                    hideForMatch(true);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "自定义题型 · " + course.name);
+                    updateCustomModeUi();
+                } else if (position == 8) {
                     if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
                     if (clozeSection != null) clozeSection.setVisibility(View.VISIBLE);
                     hideForMatch(true);
@@ -653,7 +685,12 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
         });
-        if (ProjectStructure.Question.TYPE_MATCH.equals(question.type)) {
+        if (ProjectStructure.Question.TYPE_CUSTOM.equals(question.type)) {
+            if (customSection != null) customSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            hideForMatch(true);
+            updateCustomModeUi();
+        } else if (ProjectStructure.Question.TYPE_MATCH.equals(question.type)) {
             if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
             hideForMatch(true);
@@ -2226,6 +2263,34 @@ public class QuestionEditorActivity extends ForgeActivity {
         clozeCount.setText("当前空格数：" + count);
     }
 
+    private void restoreSharedPromptVisibility() {
+        if (typePrompt != null) typePrompt.setVisibility(View.VISIBLE);
+        if (typePromptPreview != null) typePromptPreview.setVisibility(View.VISIBLE);
+        if (arrangePrompt != null) arrangePrompt.setVisibility(View.VISIBLE);
+        if (customSection != null) customSection.setVisibility(View.GONE);
+    }
+
+    private void updateCustomModeUi() {
+        if (customMode == null || customSection == null
+                || customSection.getVisibility() != View.VISIBLE) return;
+        int mode = customMode.getSelectedItemPosition();
+        boolean choice = mode == 0, type = mode == 1, blocks = mode == 2;
+        if (typeSection != null) typeSection.setVisibility(type ? View.VISIBLE : View.GONE);
+        if (arrangeSection != null) arrangeSection.setVisibility(blocks ? View.VISIBLE : View.GONE);
+        if (typePrompt != null) typePrompt.setVisibility(View.GONE);
+        if (typePromptPreview != null) typePromptPreview.setVisibility(View.GONE);
+        if (arrangePrompt != null) arrangePrompt.setVisibility(blocks ? View.GONE : View.VISIBLE);
+        hideForMatch(!choice);
+        if (choice) {
+            int[] ids = {R.id.question_sentence, R.id.question_parts,
+                R.id.btn_choose_question_parts, R.id.btn_insert_punct};
+            for (int id : ids) {
+                View view = findViewById(id);
+                if (view != null) view.setVisibility(View.GONE);
+            }
+        }
+    }
+
     private void renderClozeVocabulary() {
         if (clozePromptPreview != null) {
             renderOptionPreviewItems(clozePromptItems, clozePrompt, clozePromptPreview,
@@ -2277,6 +2342,65 @@ public class QuestionEditorActivity extends ForgeActivity {
                 dirty = true;
                 clozePickIndex = -2;
             });
+
+    private void saveCustom() {
+        String label = customLabel.getText().toString().trim();
+        if (label.isEmpty()) { toast("请填写自定义题型名称"); return; }
+        String prompt = customPrompt.getText().toString().trim();
+        int mode = customMode.getSelectedItemPosition();
+        question.type = ProjectStructure.Question.TYPE_CUSTOM;
+        question.customLabel = label;
+        question.customBody = customBody.getText().toString();
+        question.customMode = mode == 1 ? "type" : mode == 2 ? "blocks" : mode == 3 ? "none" : "choice";
+        question.prompt = prompt;
+        question.name = label;
+        question.acceptedAnswers.clear(); question.options.clear(); question.optionItems.clear();
+        question.blocks.clear(); question.answers.clear(); question.correctIndex = -1;
+        if ("choice".equals(question.customMode)) {
+            List<String> options = new ArrayList<>();
+            for (ForgeTextField field : optionFields) {
+                String value = field.getText().toString().trim();
+                if (value.isEmpty()) { toast("四个选项都必须填写"); return; }
+                options.add(value);
+            }
+            int correct = -1;
+            for (int i = 0; i < correctButtons.length; i++) if (correctButtons[i].isChecked()) { correct = i; break; }
+            if (correct < 0) { toast("请选择一个正确答案"); return; }
+            question.options.addAll(options); question.correctIndex = correct;
+            for (int i = 0; i < 4; i++) {
+                List<ProjectStructure.Question.OptionItem> items = new ArrayList<>(choiceOptionItems.get(i));
+                if (!mirrorListenOption(items).equals(options.get(i))) {
+                    ProjectStructure.Question.OptionItem text = new ProjectStructure.Question.OptionItem();
+                    text.text = options.get(i); items.clear(); items.add(text);
+                }
+                question.optionItems.add(items);
+            }
+        } else if ("type".equals(question.customMode)) {
+            List<String> accepted = new ArrayList<>();
+            for (String line : typeAnswers.getText().toString().split("\n")) {
+                String value = line.trim(); if (!value.isEmpty()) accepted.add(value);
+            }
+            if (accepted.isEmpty()) { toast("至少填写一条可接受答案"); return; }
+            question.acceptedAnswers.addAll(accepted);
+            question.ignoreCase = typeIgnoreCase.isChecked();
+            question.ignoreSpace = typeIgnoreSpace.isChecked();
+            question.near = typeNear.isChecked();
+        } else if ("blocks".equals(question.customMode)) {
+            int okCount = 0;
+            for (ProjectStructure.Question.Block block : editBlocks) {
+                if (block.text == null || block.text.trim().isEmpty()) continue;
+                question.blocks.add(block); if (block.ok) okCount++;
+            }
+            if (okCount < 2) { toast("至少需要两个正确词块"); return; }
+            for (List<String> answer : editAnswers) {
+                if (answer.size() >= 2) question.answers.add(new ArrayList<>(answer));
+            }
+            if (question.answers.isEmpty()) { toast("至少填写一条答案顺序"); return; }
+        }
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true; toast("已保存自定义题型"); finish();
+    }
 
     private void saveCloze() {
         String text = clozeText.getText() == null ? "" : clozeText.getText().toString().trim();
@@ -2798,6 +2922,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     private void save() {
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 6) {
             saveDialog();
+            return;
+        }
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 9) {
+            saveCustom();
             return;
         }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 8) {

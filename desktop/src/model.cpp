@@ -241,6 +241,11 @@ json structureToJson(const Structure& structure) {
                                {"audioSource", question.audioSource},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
+          if (question.type == "custom") {
+            questionJson["customLabel"] = question.customLabel;
+            questionJson["customBody"] = question.customBody;
+            questionJson["customMode"] = question.customMode;
+          }
           if (question.type == "cloze") {
             questionJson["clozeText"] = question.clozeText;
             questionJson["clozeOrder"] = question.clozeOrder;
@@ -344,6 +349,9 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                question.customLabel = questionValue.value("customLabel", "");
+                question.customBody = questionValue.value("customBody", "");
+                question.customMode = questionValue.value("customMode", "choice");
                 question.clozeText = questionValue.value("clozeText", "");
                 if (questionValue.contains("clozeOrder") && questionValue["clozeOrder"].is_array()) {
                   for (const auto& index : questionValue["clozeOrder"])
