@@ -84,6 +84,8 @@ struct Question {
   std::vector<QuestionOptionItem> promptItems;
   std::vector<DialogLine> lines;
   QuestionCard card;
+  std::string passage;
+  std::string answerMode = "choice";
   std::string prompt;
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;

@@ -97,6 +97,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout typeSection;
     private LinearLayout listenSection;
     private LinearLayout cardSection;
+    private LinearLayout readingSection;
+    private EditText readingPassage, readingPrompt, readingAnswers;
+    private android.widget.Spinner readingMode;
+    private CheckBox readingIgnoreCase, readingIgnoreSpace, readingNear;
     private LinearLayout dialogSection;
     private EditText dialogPrompt;
     private LinearLayout dialogLines;
@@ -206,7 +210,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片", "选择对话"});
+                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片", "选择对话", "阅读短文"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
         typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
@@ -214,7 +218,8 @@ public class QuestionEditorActivity extends ForgeActivity {
                 : ProjectStructure.Question.TYPE_TYPE.equals(question.type) ? 3
                 : ProjectStructure.Question.TYPE_LISTEN.equals(question.type) ? 4
                 : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? 5
-                : ProjectStructure.Question.TYPE_DIALOG.equals(question.type) ? 6 : 0);
+                : ProjectStructure.Question.TYPE_DIALOG.equals(question.type) ? 6
+                : ProjectStructure.Question.TYPE_READING.equals(question.type) ? 7 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -417,6 +422,40 @@ public class QuestionEditorActivity extends ForgeActivity {
         renderDialogLines();
         dialogSection.setVisibility(View.GONE);
         scrollContent.addView(dialogSection, 6);
+        readingSection = new LinearLayout(this); readingSection.setOrientation(LinearLayout.VERTICAL);
+        readingPassage = new EditText(this); readingPassage.setHint("短文正文（可换行）"); readingPassage.setMinLines(4); readingSection.addView(readingPassage);
+        readingMode = new android.widget.Spinner(this);
+        readingMode.setAdapter(new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"选项", "输入答案"}));
+        readingSection.addView(readingMode);
+        readingPrompt = new EditText(this); readingPrompt.setHint("问题/题干（可选）"); readingSection.addView(readingPrompt);
+        readingAnswers = new EditText(this);
+        readingAnswers.setHint("可接受答案，一行一个");
+        readingAnswers.setMinLines(3);
+        readingAnswers.setText(String.join("\n", question.acceptedAnswers));
+        readingSection.addView(readingAnswers);
+        readingIgnoreCase = new CheckBox(this);
+        readingIgnoreCase.setText("忽略大小写");
+        readingIgnoreCase.setChecked(question.ignoreCase);
+        readingSection.addView(readingIgnoreCase);
+        readingIgnoreSpace = new CheckBox(this);
+        readingIgnoreSpace.setText("忽略空格与标点");
+        readingIgnoreSpace.setChecked(question.ignoreSpace);
+        readingSection.addView(readingIgnoreSpace);
+        readingNear = new CheckBox(this);
+        readingNear.setText("自动识别拼写相近（差 1 字母）");
+        readingNear.setChecked(question.near);
+        readingSection.addView(readingNear);
+        readingSection.setVisibility(View.GONE); scrollContent.addView(readingSection, 7);
+        readingPassage.setText(question.passage); readingPrompt.setText(question.prompt);
+        readingMode.setSelection("type".equals(question.answerMode) ? 1 : 0);
+        readingMode.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                                   int position, long id) {
+                updateReadingModeUi();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        updateReadingModeUi();
         cardWord.setText(question.card.word);
         cardWord.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int a,int b,int c){}
@@ -481,7 +520,15 @@ public class QuestionEditorActivity extends ForgeActivity {
                 if (listenSection != null) listenSection.setVisibility(View.GONE);
                 if (cardSection != null) cardSection.setVisibility(View.GONE);
                 if (dialogSection != null) dialogSection.setVisibility(View.GONE);
-                if (position == 6) {
+                if (readingSection != null) readingSection.setVisibility(View.GONE);
+                if (position == 7) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (readingSection != null) readingSection.setVisibility(View.VISIBLE);
+                    hideForMatch(true);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "阅读短文 · " + course.name);
+                    updateReadingModeUi();
+                } else if (position == 6) {
                     if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
                     if (dialogSection != null) dialogSection.setVisibility(View.VISIBLE);
                     ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
@@ -521,6 +568,11 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
             hideForMatch(true);
+        } else if (ProjectStructure.Question.TYPE_READING.equals(question.type)) {
+            if (readingSection != null) readingSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            hideForMatch(true);
+            updateReadingModeUi();
         } else if (ProjectStructure.Question.TYPE_DIALOG.equals(question.type)) {
             if (dialogSection != null) dialogSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
@@ -2037,6 +2089,98 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
     }
 
+    private void updateReadingModeUi() {
+        if (readingMode == null) return;
+        boolean typeMode = readingMode.getSelectedItemPosition() == 1;
+        int visible = typeMode ? View.VISIBLE : View.GONE;
+        if (readingAnswers != null) readingAnswers.setVisibility(visible);
+        if (readingIgnoreCase != null) readingIgnoreCase.setVisibility(visible);
+        if (readingIgnoreSpace != null) readingIgnoreSpace.setVisibility(visible);
+        if (readingNear != null) readingNear.setVisibility(visible);
+        if (readingSection == null || readingSection.getVisibility() != View.VISIBLE) return;
+        if (typeMode) {
+            hideChoiceSections(editorScrollContent, true);
+            for (int i = 0; i < 4; i++) {
+                View option = findViewById(getResources().getIdentifier(
+                        "question_option_" + i, "id", getPackageName()));
+                View correct = findViewById(getResources().getIdentifier(
+                        "question_correct_" + i, "id", getPackageName()));
+                if (option != null) option.setVisibility(View.GONE);
+                if (correct != null) correct.setVisibility(View.GONE);
+                if (choiceOptionExtras[i] != null) choiceOptionExtras[i].setVisibility(View.GONE);
+            }
+        } else {
+            hideChoiceSections(editorScrollContent, true);
+            for (int i = 0; i < 4; i++) {
+                View option = findViewById(getResources().getIdentifier(
+                        "question_option_" + i, "id", getPackageName()));
+                View correct = findViewById(getResources().getIdentifier(
+                        "question_correct_" + i, "id", getPackageName()));
+                if (option != null) option.setVisibility(View.VISIBLE);
+                if (correct != null) correct.setVisibility(View.VISIBLE);
+                if (choiceOptionExtras[i] != null) choiceOptionExtras[i].setVisibility(View.VISIBLE);
+            }
+            showTextView(editorScrollContent, "四个选项");
+        }
+    }
+
+    private void saveReading() {
+        String passage = readingPassage.getText() == null ? "" : readingPassage.getText().toString().trim();
+        if (passage.isEmpty()) { toast("请填写短文正文"); return; }
+        String prompt = readingPrompt.getText() == null ? "" : readingPrompt.getText().toString().trim();
+        question.type = ProjectStructure.Question.TYPE_READING;
+        question.passage = passage;
+        question.answerMode = readingMode.getSelectedItemPosition() == 1 ? "type" : "choice";
+        question.prompt = prompt;
+        question.name = prompt.isEmpty()
+                ? (passage.length() > 40 ? passage.substring(0, 40) : passage) : prompt;
+        question.hintsEnabled = true;
+        question.optionItems.clear();
+        if ("type".equals(question.answerMode)) {
+            List<String> accepted = new ArrayList<>();
+            for (String line : readingAnswers.getText().toString().split("\n")) {
+                String value = line.trim();
+                if (!value.isEmpty()) accepted.add(value);
+            }
+            if (accepted.isEmpty()) { toast("请至少填写一条可接受答案"); return; }
+            question.acceptedAnswers.clear(); question.acceptedAnswers.addAll(accepted);
+            question.options.clear();
+            question.correctIndex = -1;
+            question.ignoreCase = readingIgnoreCase.isChecked();
+            question.ignoreSpace = readingIgnoreSpace.isChecked();
+            question.near = readingNear.isChecked();
+        } else {
+            List<String> options = new ArrayList<>();
+            for (ForgeTextField field : optionFields) {
+                String value = field.getText() == null ? "" : field.getText().toString().trim();
+                if (value.isEmpty()) { toast("四个选项都必须填写"); return; }
+                options.add(value);
+            }
+            int correct = -1;
+            for (int i = 0; i < correctButtons.length; i++) if (correctButtons[i].isChecked()) { correct = i; break; }
+            if (correct < 0) { toast("请选择一个正确答案"); return; }
+            question.options.clear(); question.options.addAll(options);
+            question.acceptedAnswers.clear();
+            question.correctIndex = correct;
+            for (int i = 0; i < 4; i++) {
+                List<ProjectStructure.Question.OptionItem> items = new ArrayList<>(choiceOptionItems.get(i));
+                if (!mirrorListenOption(items).equals(options.get(i))) {
+                    ProjectStructure.Question.OptionItem text = new ProjectStructure.Question.OptionItem();
+                    text.text = options.get(i); items.clear(); items.add(text);
+                }
+                question.optionItems.add(items);
+            }
+            boolean hasVocab = false;
+            for (List<ProjectStructure.Question.OptionItem> group : question.optionItems)
+                for (ProjectStructure.Question.OptionItem item : group)
+                    if ("vocab".equals(item.kind)) hasVocab = true;
+            if (!hasVocab) question.optionItems.clear();
+        }
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true; toast("已保存阅读短文"); finish();
+    }
+
     private void saveDialog() {
         String prompt = dialogPrompt.getText() == null ? "" : dialogPrompt.getText().toString().trim();
         List<ProjectStructure.Question.DialogLine> lines = new ArrayList<>();
@@ -2430,6 +2574,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     private void save() {
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 6) {
             saveDialog();
+            return;
+        }
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 7) {
+            saveReading();
             return;
         }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 5) {

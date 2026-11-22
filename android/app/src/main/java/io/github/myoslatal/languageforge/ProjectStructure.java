@@ -153,6 +153,8 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        question.passage = questionObject.optString("passage", "");
+                                        question.answerMode = questionObject.optString("answerMode", "choice");
                                         JSONObject card = questionObject.optJSONObject("card");
                                         if (card != null) {
                                             question.card.word = card.optString("word", "");
@@ -415,6 +417,10 @@ final class ProjectStructure {
                                 }
                                 questionObject.put("lines", lines);
                             }
+                            if (Question.TYPE_READING.equals(question.type)) {
+                                questionObject.put("passage", question.passage);
+                                questionObject.put("answerMode", question.answerMode);
+                            }
                             if (Question.TYPE_CARD.equals(question.type)) {
                                 JSONObject card = new JSONObject();
                                 card.put("word", question.card.word);
@@ -664,6 +670,7 @@ final class ProjectStructure {
         static final String TYPE_TYPE = "type";
         static final String TYPE_LISTEN = "listen";
         static final String TYPE_CARD = "card";
+        static final String TYPE_READING = "reading";
         static final String TYPE_DIALOG = "dialog";
 
         static final class CardExample {
@@ -762,6 +769,8 @@ final class ProjectStructure {
         final List<List<Question.OptionItem>> optionItems = new ArrayList<>();
         final List<Question.OptionItem> promptItems = new ArrayList<>();
         final Card card = new Card();
+        String passage = "";
+        String answerMode = "choice";
         final List<DialogLine> lines = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();

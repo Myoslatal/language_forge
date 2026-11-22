@@ -278,6 +278,8 @@ Arrange learning matches tapped block text to vocabulary entries and plays their
 
 Arrange blocks are added from the shared vocabulary picker, storing vocabId + display-name text; duplicates are skipped by vocabId and learning audio prefers vocabId.
 
+Reading questions use type="reading" with passage (multiline), answerMode ("choice"|"type"), prompt and either four options/correctIndex or acceptedAnswers/ignore flags. The editor has a 阅读短文 type with passage/mode combo and mode-dependent editors (shared option editor for choice, accepted answers plus ignore-case/space/near for type); saving validates the active mode and clears stale fields. Learning renders the passage with tappable vocabulary words (existing floating hint), then prompt and either the shared choice flow or a text input checked against accepted answers.
+
 Dialog questions use type="dialog": prompt plus lines[{who,text}] and four options with correctIndex; optionItems works like choice. The editor adds a 选择对话 type with prompt, line rows (who/text, ＋台词, ×) and the shared option editor (选词/preview/correct radio); saving requires at least one line with text and four options. Learning renders alternating speaker bubbles, then prompt and the standard option/confirm/next flow.
 
 Card questions use type="card" (new-knowledge intro card, not graded): card={word,pron,def,detail,wordVocabId,examples:[{l,z}]}. The editor has a 新知卡片 type with word/pron/def/detail/example fields, a 从词库生成卡片 button (prefills from a vocabulary entry, keeps wordVocabId for image entries and previews the handwriting) and per-example add/remove. Learning shows the image or text word, /pron/, def, multi-line detail, examples and a note; 继续/完成 advances without grading.

@@ -241,6 +241,10 @@ json structureToJson(const Structure& structure) {
                                {"audioSource", question.audioSource},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
+          if (question.type == "reading") {
+            questionJson["passage"] = question.passage;
+            questionJson["answerMode"] = question.answerMode;
+          }
           if (!cardJson.is_null()) questionJson["card"] = cardJson;
           if (question.type == "dialog") questionJson["lines"] = lines;
           if (!promptItems.empty()) questionJson["promptItems"] = promptItems;
@@ -331,6 +335,8 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                question.passage = questionValue.value("passage", "");
+                question.answerMode = questionValue.value("answerMode", "choice");
                 if (questionValue.contains("card") && questionValue["card"].is_object()) {
                   const auto& card = questionValue["card"];
                   question.card.word = card.value("word", "");
