@@ -60,6 +60,7 @@ struct Question {
   bool hintsEnabled = true;
   std::vector<std::string> options;
   std::vector<std::vector<QuestionOptionItem>> optionItems;
+  std::vector<QuestionOptionItem> promptItems;
   std::string prompt;
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;

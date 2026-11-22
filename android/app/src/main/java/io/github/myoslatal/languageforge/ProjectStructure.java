@@ -153,6 +153,18 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        JSONArray promptItems = questionObject.optJSONArray("promptItems");
+                                        if (promptItems != null) {
+                                            for (int pi = 0; pi < promptItems.length(); pi++) {
+                                                JSONObject item = promptItems.optJSONObject(pi);
+                                                if (item == null) continue;
+                                                Question.OptionItem value = new Question.OptionItem();
+                                                value.kind = item.optString("kind", "text");
+                                                value.text = item.optString("text", "");
+                                                value.vocabId = item.optString("vocabId", "");
+                                                question.promptItems.add(value);
+                                            }
+                                        }
                                         JSONArray optionItems = questionObject.optJSONArray("optionItems");
                                         if (optionItems != null) {
                                             for (int oi = 0; oi < optionItems.length(); oi++) {
@@ -336,6 +348,17 @@ final class ProjectStructure {
                             questionObject.put("near", question.near);
                             if (!question.audioSource.isEmpty()) {
                                 questionObject.put("audioSource", question.audioSource);
+                            }
+                            if (!question.promptItems.isEmpty()) {
+                                JSONArray promptItems = new JSONArray();
+                                for (Question.OptionItem item : question.promptItems) {
+                                    JSONObject object = new JSONObject();
+                                    object.put("kind", item.kind);
+                                    if ("vocab".equals(item.kind)) object.put("vocabId", item.vocabId);
+                                    else object.put("text", item.text);
+                                    promptItems.put(object);
+                                }
+                                questionObject.put("promptItems", promptItems);
                             }
                             JSONArray optionItems = new JSONArray();
                             for (List<Question.OptionItem> items : question.optionItems) {
@@ -610,6 +633,7 @@ final class ProjectStructure {
         long audioEnd;
         final List<String> options = new ArrayList<>();
         final List<List<Question.OptionItem>> optionItems = new ArrayList<>();
+        final List<Question.OptionItem> promptItems = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();
         final List<MatchPair> pairs = new ArrayList<>();

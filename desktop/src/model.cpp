@@ -166,6 +166,11 @@ json structureToJson(const Structure& structure) {
           for (const auto& pair : question.pairs) {
             pairs.push_back({{"l", pair.left}, {"r", pair.right}});
           }
+          json promptItems = json::array();
+          for (const auto& item : question.promptItems) {
+            if (item.kind == "vocab") promptItems.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
+            else promptItems.push_back({{"kind", "text"}, {"text", item.text}});
+          }
           json optionItems = json::array();
           for (const auto& group : question.optionItems) {
             json arr = json::array();
@@ -199,6 +204,7 @@ json structureToJson(const Structure& structure) {
                                {"audioSource", question.audioSource},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
+          if (!promptItems.empty()) questionJson["promptItems"] = promptItems;
           if (!optionItems.empty()) questionJson["optionItems"] = optionItems;
           questions.push_back(std::move(questionJson));
         }
@@ -286,6 +292,15 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                if (questionValue.contains("promptItems") && questionValue["promptItems"].is_array()) {
+                  for (const auto& itemValue : questionValue["promptItems"]) {
+                    QuestionOptionItem item;
+                    item.kind = itemValue.value("kind", "text");
+                    item.text = itemValue.value("text", "");
+                    item.vocabId = itemValue.value("vocabId", "");
+                    question.promptItems.push_back(item);
+                  }
+                }
                 if (questionValue.contains("optionItems") && questionValue["optionItems"].is_array()) {
                   for (const auto& groupValue : questionValue["optionItems"]) {
                     std::vector<QuestionOptionItem> group;

@@ -104,6 +104,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     private final List<List<ProjectStructure.Question.OptionItem>> listenOptionItems = new ArrayList<>();
     private int listenOptionIndex = -1;
     private int listenOptionPickIndex = -1;
+    private final List<List<ProjectStructure.Question.OptionItem>> choiceOptionItems = new ArrayList<>();
+    private final LinearLayout[] choiceOptionPreviews = new LinearLayout[4];
+    private final View[] choiceOptionExtras = new View[4];
+    private int choiceOptionPickIndex = -1;
     private EditText typePrompt;
     private EditText typeAnswers;
     private CheckBox typeIgnoreCase;
@@ -111,6 +115,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private CheckBox typeNear;
     private LinearLayout typeWarnRows;
     private final List<ProjectStructure.Question.WarnRule> editWarn = new ArrayList<>();
+    private final List<ProjectStructure.Question.OptionItem> editPromptItems = new ArrayList<>();
+    private LinearLayout typePromptPreview;
     private LinearLayout matchRows;
     private EditText matchPrompt;
     private final List<ProjectStructure.Question.MatchPair> editPairs = new ArrayList<>();
@@ -244,6 +250,16 @@ public class QuestionEditorActivity extends ForgeActivity {
         typePrompt.setHint("题干/要翻译的内容（必填）");
         typePrompt.setText(question.prompt == null ? "" : question.prompt);
         typeSection.addView(typePrompt);
+        typePromptPreview = new LinearLayout(this);
+        typePromptPreview.setOrientation(LinearLayout.HORIZONTAL);
+        typeSection.addView(typePromptPreview);
+        editPromptItems.addAll(question.promptItems);
+        if (editPromptItems.isEmpty() && question.prompt != null && !question.prompt.isEmpty()) {
+            ProjectStructure.Question.OptionItem text = new ProjectStructure.Question.OptionItem();
+            text.text = question.prompt;
+            editPromptItems.add(text);
+        }
+        renderTypePromptPreview();
         typeAnswers = new EditText(this);
         typeAnswers.setHint("可接受答案，一行一个");
         typeAnswers.setMinLines(3);
@@ -465,10 +481,46 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
         String[] options = new String[4];
         for (int i = 0; i < 4; i++) {
-            options[i] = i < question.options.size() ? question.options.get(i) : "";
+            List<ProjectStructure.Question.OptionItem> items = new ArrayList<>();
+            if (i < question.optionItems.size()) items.addAll(question.optionItems.get(i));
+            if (items.isEmpty()) {
+                String text = i < question.options.size() ? question.options.get(i) : "";
+                if (!text.isEmpty()) {
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.text = text;
+                    items.add(item);
+                }
+            }
+            choiceOptionItems.add(items);
+            options[i] = containsVocabItem(items) || items.isEmpty()
+                    ? (i < question.options.size() ? question.options.get(i) : "")
+                    : mirrorListenOption(items);
             optionFields[i].setText(options[i]);
             optionFields[i].getEditText().addTextChangedListener(new SimpleWatcher());
+            ViewGroup parent = (ViewGroup) optionFields[i].getParent();
+            int fieldIndex = parent.indexOfChild(optionFields[i]);
+            LinearLayout extra = new LinearLayout(this);
+            extra.setOrientation(LinearLayout.HORIZONTAL);
+            extra.setGravity(Gravity.CENTER_VERTICAL);
+            final int optionIndex = i;
+            ForgeButton pick = new ForgeButton(this);
+            pick.setAllCaps(false);
+            pick.setText("选词");
+            pick.setOnClickListener(v -> {
+                choiceOptionPickIndex = optionIndex;
+                openChoiceOptionPicker();
+            });
+            extra.addView(pick);
+            LinearLayout preview = new LinearLayout(this);
+            preview.setOrientation(LinearLayout.HORIZONTAL);
+            preview.setGravity(Gravity.CENTER_VERTICAL);
+            choiceOptionPreviews[i] = preview;
+            extra.addView(preview, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            parent.addView(extra, fieldIndex + 1);
+            choiceOptionExtras[i] = extra;
         }
+        renderChoiceOptionPreviews();
         if (question.correctIndex >= 0 && question.correctIndex < 4) {
             correctButtons[question.correctIndex].setChecked(true);
         }
@@ -558,22 +610,33 @@ public class QuestionEditorActivity extends ForgeActivity {
         @Override public void afterTextChanged(android.text.Editable s) {}
     }
 
-    private String displayName(String vocabId) {
-        VocabularyEntry entry = null;
+    private VocabularyEntry findEntry(String vocabId) {
         for (VocabularyEntry candidate : vocabulary.entries) {
-            if (candidate.id.equals(vocabId)) {
-                entry = candidate;
-                break;
-            }
+            if (candidate.id.equals(vocabId)) return candidate;
         }
+        return null;
+    }
+
+    private String displayName(String vocabId) {
+        VocabularyEntry entry = findEntry(vocabId);
         return entry == null ? "" : vocabulary.displayName(entry);
+    }
+
+    private String segmentMirror(VocabularyEntry entry) {
+        if (entry == null) return "";
+        if (VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+            if (!entry.codes.isEmpty()) return entry.codes.get(0);
+            if (!entry.meanings.isEmpty()) return entry.meanings.get(0);
+            return "〔图片〕";
+        }
+        return vocabulary.displayName(entry);
     }
 
     private String sentenceText() {
         StringBuilder builder = new StringBuilder();
         for (ProjectStructure.Question.Segment segment : segments) {
             if (segment.word) {
-                String name = displayName(segment.vocabId);
+                String name = segmentMirror(findEntry(segment.vocabId));
                 if (name.isEmpty()) continue;
                 if (builder.length() > 0) builder.append(' ');
                 builder.append(name);
@@ -598,13 +661,34 @@ public class QuestionEditorActivity extends ForgeActivity {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            TextView name = new TextView(this);
-            name.setText(segment.word
-                    ? (i + 1) + ". " + displayName(segment.vocabId)
-                    : (i + 1) + ". 标点 " + segment.text);
-            name.setTextSize(14f);
-            name.setTextColor(getColor(segment.word ? R.color.forge_text : R.color.forge_accent));
-            row.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1f));
+            VocabularyEntry segmentEntry = segment.word ? findEntry(segment.vocabId) : null;
+            if (segmentEntry != null && VocabularyEntry.TYPE_IMAGE.equals(segmentEntry.type)) {
+                TextView number = new TextView(this);
+                number.setText((i + 1) + ".");
+                number.setTextSize(14f);
+                number.setTextColor(getColor(R.color.forge_text));
+                row.addView(number, new LinearLayout.LayoutParams(dp(28), dp(40)));
+                android.widget.ImageView thumb = new android.widget.ImageView(this);
+                android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory,
+                        segmentEntry.image);
+                if (bitmap != null) {
+                    thumb.setImageBitmap(bitmap);
+                    thumb.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                    row.addView(thumb, new LinearLayout.LayoutParams(dp(28), dp(28)));
+                } else {
+                    row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                }
+                android.widget.Space spacer = new android.widget.Space(this);
+                row.addView(spacer, new LinearLayout.LayoutParams(0, dp(40), 1f));
+            } else {
+                TextView name = new TextView(this);
+                name.setText(segment.word
+                        ? (i + 1) + ". " + displayName(segment.vocabId)
+                        : (i + 1) + ". 标点 " + segment.text);
+                name.setTextSize(14f);
+                name.setTextColor(getColor(segment.word ? R.color.forge_text : R.color.forge_accent));
+                row.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1f));
+            }
             ForgeButton up = small("↑");
             up.setOnClickListener(v -> movePart(index, -1));
             row.addView(up, new LinearLayout.LayoutParams(dp(32), dp(32)));
@@ -869,35 +953,60 @@ public class QuestionEditorActivity extends ForgeActivity {
                 ArrayList<String> selected = result.getData()
                         .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
                 if (selected == null) return;
-                String text = typePrompt.getText().toString();
-                int cursor = Math.max(0, typePrompt.getSelectionStart());
-                StringBuilder builder = new StringBuilder(text);
                 for (String id : selected) {
-                    VocabularyEntry entry = null;
-                    for (VocabularyEntry candidate : vocabulary.entries) {
-                        if (id != null && id.equals(candidate.id)) { entry = candidate; break; }
-                    }
-                    if (entry == null) continue;
-                    String word = vocabulary.displayName(entry);
-                    if (cursor > 0 && cursor <= builder.length()
-                            && !Character.isWhitespace(builder.charAt(cursor - 1))
-                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor - 1)) < 0) {
-                        builder.insert(cursor, ' ');
-                        cursor++;
-                    }
-                    builder.insert(cursor, word);
-                    cursor += word.length();
-                    if (cursor < builder.length()
-                            && !Character.isWhitespace(builder.charAt(cursor))
-                            && "。，、！？；：,.!?;:".indexOf(builder.charAt(cursor)) < 0) {
-                        builder.insert(cursor, ' ');
-                        cursor++;
-                    }
+                    if (id == null) continue;
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.kind = "vocab";
+                    item.vocabId = id;
+                    editPromptItems.add(item);
                 }
-                typePrompt.setText(builder.toString());
-                typePrompt.setSelection(cursor);
+                String mirrored = mirrorListenOption(editPromptItems);
+                typePrompt.setText(mirrored);
+                typePrompt.setSelection(mirrored.length());
+                renderTypePromptPreview();
                 dirty = true;
             });
+
+    private void renderTypePromptPreview() {
+        if (typePromptPreview == null) return;
+        typePromptPreview.removeAllViews();
+        for (int i = 0; i < editPromptItems.size(); i++) {
+            ProjectStructure.Question.OptionItem item = editPromptItems.get(i);
+            final int index = i;
+            if ("vocab".equals(item.kind)) {
+                VocabularyEntry entry = null;
+                for (VocabularyEntry candidate : vocabulary.entries) {
+                    if (item.vocabId.equals(candidate.id)) { entry = candidate; break; }
+                }
+                if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+                    if (bitmap != null) {
+                        android.widget.ImageView image = new android.widget.ImageView(this);
+                        image.setImageBitmap(bitmap);
+                        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                        typePromptPreview.addView(image, new LinearLayout.LayoutParams(dp(28), dp(28)));
+                    } else {
+                        typePromptPreview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                    }
+                } else if (entry != null) {
+                    typePromptPreview.addView(text(vocabulary.displayName(entry), 14, R.color.forge_text));
+                }
+            } else {
+                typePromptPreview.addView(text(item.text, 14, R.color.forge_text));
+            }
+            ForgeButton remove = new ForgeButton(this);
+            remove.setAllCaps(false);
+            remove.setText("×");
+            remove.setOnClickListener(v -> {
+                editPromptItems.remove(index);
+                String mirrored = mirrorListenOption(editPromptItems);
+                typePrompt.setText(mirrored);
+                renderTypePromptPreview();
+                dirty = true;
+            });
+            typePromptPreview.addView(remove);
+        }
+    }
 
     private void openPunctuationDialog() {
         String[] marks = {"。", "，", "、", "！", "？", "；", "：", "“”", "（）"};
@@ -1003,7 +1112,7 @@ public class QuestionEditorActivity extends ForgeActivity {
                     }
                     if (entry == null) continue;
                             ProjectStructure.Question.Block block = new ProjectStructure.Question.Block(
-                            vocabulary.displayName(entry), false, id);
+                            segmentMirror(entry), false, id);
                     block.id = java.util.UUID.randomUUID().toString();
                     editBlocks.add(block);
                 }
@@ -1021,6 +1130,19 @@ public class QuestionEditorActivity extends ForgeActivity {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            VocabularyEntry blockEntry = block.vocabId == null ? null : findEntry(block.vocabId);
+            if (blockEntry != null && VocabularyEntry.TYPE_IMAGE.equals(blockEntry.type)) {
+                android.widget.ImageView thumb = new android.widget.ImageView(this);
+                android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory,
+                        blockEntry.image);
+                if (bitmap != null) {
+                    thumb.setImageBitmap(bitmap);
+                    thumb.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                    row.addView(thumb, new LinearLayout.LayoutParams(dp(30), dp(30)));
+                } else {
+                    row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                }
+            }
             EditText text = new EditText(this);
             text.setHint("词块文本");
             text.setText(block.text);
@@ -1080,6 +1202,9 @@ public class QuestionEditorActivity extends ForgeActivity {
             View correct = findViewById(correctId);
             if (option != null) option.setVisibility(arrange ? View.GONE : View.VISIBLE);
             if (correct != null) correct.setVisibility(arrange ? View.GONE : View.VISIBLE);
+            if (choiceOptionExtras[i] != null) {
+                choiceOptionExtras[i].setVisibility(arrange ? View.GONE : View.VISIBLE);
+            }
         }
     }
 
@@ -1184,6 +1309,9 @@ public class QuestionEditorActivity extends ForgeActivity {
             View correct = findViewById(correctId);
             if (option != null) option.setVisibility(match ? View.GONE : View.VISIBLE);
             if (correct != null) correct.setVisibility(match ? View.GONE : View.VISIBLE);
+            if (choiceOptionExtras[i] != null) {
+                choiceOptionExtras[i].setVisibility(match ? View.GONE : View.VISIBLE);
+            }
         }
     }
 
@@ -1300,6 +1428,87 @@ public class QuestionEditorActivity extends ForgeActivity {
                 renderListenOptionPreviews();
                 dirty = true;
                 listenOptionPickIndex = -1;
+            });
+
+    private boolean containsVocabItem(List<ProjectStructure.Question.OptionItem> items) {
+        for (ProjectStructure.Question.OptionItem item : items) {
+            if ("vocab".equals(item.kind)) return true;
+        }
+        return false;
+    }
+
+    private void renderChoiceOptionPreviews() {
+        for (int i = 0; i < 4; i++) {
+            LinearLayout preview = choiceOptionPreviews[i];
+            if (preview == null) continue;
+            preview.removeAllViews();
+            for (int j = 0; j < choiceOptionItems.get(i).size(); j++) {
+                ProjectStructure.Question.OptionItem item = choiceOptionItems.get(i).get(j);
+                final int option = i;
+                final int itemIndex = j;
+                if ("vocab".equals(item.kind)) {
+                    VocabularyEntry entry = findEntry(item.vocabId);
+                    if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                        android.widget.ImageView image = new android.widget.ImageView(this);
+                        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+                        if (bitmap != null) {
+                            image.setImageBitmap(bitmap);
+                            image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                            preview.addView(image, new LinearLayout.LayoutParams(dp(28), dp(28)));
+                        } else {
+                            preview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                        }
+                    } else if (entry != null) {
+                        preview.addView(text(vocabulary.displayName(entry), 14, R.color.forge_text));
+                    } else {
+                        preview.addView(text("〔词汇已删除〕", 12, R.color.forge_warn));
+                    }
+                } else {
+                    preview.addView(text(item.text, 14, R.color.forge_text));
+                }
+                ForgeButton remove = new ForgeButton(this);
+                remove.setAllCaps(false);
+                remove.setText("×");
+                remove.setOnClickListener(v -> {
+                    choiceOptionItems.get(option).remove(itemIndex);
+                    optionFields[option].setText(mirrorListenOption(choiceOptionItems.get(option)));
+                    renderChoiceOptionPreviews();
+                    dirty = true;
+                });
+                preview.addView(remove);
+            }
+        }
+    }
+
+    private void openChoiceOptionPicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "为选项选择词汇");
+        choiceOptionLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> choiceOptionLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> ids = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (ids == null || ids.isEmpty()) return;
+                int target = choiceOptionPickIndex;
+                if (target < 0 || target >= 4) return;
+                List<ProjectStructure.Question.OptionItem> items = choiceOptionItems.get(target);
+                for (String id : ids) {
+                    VocabularyEntry entry = findEntry(id);
+                    if (entry == null) continue;
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.kind = "vocab";
+                    item.vocabId = entry.id;
+                    items.add(item);
+                }
+                optionFields[target].setText(mirrorListenOption(items));
+                renderChoiceOptionPreviews();
+                dirty = true;
+                choiceOptionPickIndex = -1;
             });
 
     private void openListenAudioPicker() {
@@ -1428,6 +1637,17 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
         question.type = ProjectStructure.Question.TYPE_TYPE;
         question.prompt = prompt;
+        question.promptItems.clear();
+        String mirrored = mirrorListenOption(editPromptItems);
+        List<ProjectStructure.Question.OptionItem> items = new ArrayList<>();
+        boolean hasVocab = false;
+        for (ProjectStructure.Question.OptionItem item : editPromptItems) {
+            if ("vocab".equals(item.kind)) hasVocab = true;
+        }
+        if (hasVocab && mirrored.equals(prompt)) {
+            items.addAll(editPromptItems);
+        }
+        question.promptItems.addAll(items);
         question.acceptedAnswers.clear();
         question.acceptedAnswers.addAll(accepted);
         question.warn.clear();
@@ -1777,6 +1997,27 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.hintsEnabled = hintsEnabledView.isChecked();
         question.options.clear();
         question.options.addAll(options);
+        question.optionItems.clear();
+        for (int i = 0; i < 4; i++) {
+            List<ProjectStructure.Question.OptionItem> items =
+                    new ArrayList<>(choiceOptionItems.get(i));
+            if (!mirrorListenOption(items).equals(options.get(i))) {
+                ProjectStructure.Question.OptionItem textItem =
+                        new ProjectStructure.Question.OptionItem();
+                textItem.text = options.get(i);
+                items.clear();
+                items.add(textItem);
+            }
+            question.optionItems.add(items);
+        }
+        boolean hasVocabOption = false;
+        for (List<ProjectStructure.Question.OptionItem> group : question.optionItems) {
+            for (ProjectStructure.Question.OptionItem item : group) {
+                if ("vocab".equals(item.kind)) { hasVocabOption = true; break; }
+            }
+            if (hasVocabOption) break;
+        }
+        if (!hasVocabOption) question.optionItems.clear();
         question.correctIndex = correct;
         question.audio = audioRelative;
         question.audioDuration = Math.max(0, duration);
