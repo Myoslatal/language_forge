@@ -4828,6 +4828,18 @@ void renderLearning(App& app) {
         ImGui::PushID(static_cast<int>(i) + 19000);
         const bool filled = static_cast<int>(i) < static_cast<int>(app.clozeFilled.size()) && app.clozeFilled[i] >= 0;
         std::string label = filled ? question->options[app.clozeFilled[i]] : "＿＿";
+        if (filled && app.vocabulary) {
+          for (const auto& entry : app.vocabulary->entries) {
+            if (entry.type != "image" || entry.codes.empty() || entry.codes.front() != label) continue;
+            SDL_Texture* texture = textureForImage(app.renderer,
+                app.currentProjectDirectory() / pathFromUtf8(entry.image), app.imageTextures);
+            if (texture) {
+              ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(24, 24));
+              ImGui::SameLine();
+            }
+            break;
+          }
+        }
         if (ImGui::Button((label + "##blank").c_str(), ImVec2(90, 34)) && !app.learningAnswered) {
           app.clozeFilled[i] = -1;
         }

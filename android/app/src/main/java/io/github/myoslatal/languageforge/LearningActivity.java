@@ -77,7 +77,7 @@ public class LearningActivity extends ForgeActivity {
     private ForgeButton listenPlayButton;
     private boolean listenPlaying;
     private final List<Integer> clozeFilled = new ArrayList<>();
-    private final List<ForgeButton> clozeBlankButtons = new ArrayList<>();
+    private final List<LinearLayout> clozeBlankRows = new ArrayList<>();
     private final List<View> clozeCandidateViews = new ArrayList<>();
     private TextView typeNearView;
 
@@ -444,7 +444,7 @@ public class LearningActivity extends ForgeActivity {
     private void renderClozeQuestion(ProjectStructure.Question item) {
         content.removeAllViews();
         clozeFilled.clear();
-        clozeBlankButtons.clear();
+        clozeBlankRows.clear();
         for (int i = 0; i < 9; i++) clozeFilled.add(-1);
         boolean promptStructured = false;
         for (ProjectStructure.Question.OptionItem value : item.promptItems) {
@@ -495,16 +495,22 @@ public class LearningActivity extends ForgeActivity {
             }
             if (i < parts.length - 1) {
                 final int index = blank++;
-                ForgeButton button = new ForgeButton(this);
-                button.setAllCaps(false);
-                button.setText("＿＿");
-                button.setOnClickListener(v -> {
+                LinearLayout slot = new LinearLayout(this);
+                slot.setOrientation(LinearLayout.HORIZONTAL);
+                slot.setGravity(Gravity.CENTER_VERTICAL);
+                GradientDrawable slotBg = new GradientDrawable();
+                slotBg.setColor(getColor(R.color.forge_panel));
+                slotBg.setCornerRadius(dp(8));
+                slotBg.setStroke(dp(1), getColor(R.color.forge_panel3));
+                slot.setBackground(slotBg);
+                slot.setPadding(dp(8), dp(2), dp(8), dp(2));
+                slot.setOnClickListener(v -> {
                     if (answered) return;
                     clozeFilled.set(index, -1);
                     refreshCloze(item);
                 });
-                clozeBlankButtons.add(button);
-                flow.addView(button, new LinearLayout.LayoutParams(dp(100), dp(40)));
+                clozeBlankRows.add(slot);
+                flow.addView(slot, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)));
             }
         }
         content.addView(flow);
@@ -580,11 +586,38 @@ public class LearningActivity extends ForgeActivity {
 
     private void refreshCloze(ProjectStructure.Question item) {
         boolean full = true;
-        for (int i = 0; i < clozeBlankButtons.size(); i++) {
+        for (int i = 0; i < clozeBlankRows.size(); i++) {
             int filled = clozeFilled.get(i);
-            clozeBlankButtons.get(i).setText(filled < 0 ? "＿＿" : item.options.get(filled));
-            clozeBlankButtons.get(i).setEnabled(!answered);
-            if (filled < 0) full = false;
+            LinearLayout slot = clozeBlankRows.get(i);
+            slot.removeAllViews();
+            if (filled < 0) {
+                slot.addView(text("＿＿", 16, R.color.forge_muted));
+                full = false;
+            } else {
+                String mirror = item.options.get(filled);
+                VocabularyEntry imageEntry = null;
+                for (VocabularyEntry entry : vocabulary.entries) {
+                    if (!VocabularyEntry.TYPE_IMAGE.equals(entry.type)) continue;
+                    if (mirror.equalsIgnoreCase(vocabulary.displayName(entry))
+                            || entry.codes.contains(mirror)) { imageEntry = entry; break; }
+                }
+                if (imageEntry != null) {
+                    android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, imageEntry.image);
+                    if (bitmap != null) {
+                        android.widget.ImageView image = new android.widget.ImageView(this);
+                        image.setImageBitmap(bitmap);
+                        image.setAdjustViewBounds(true);
+                        int h = dp(24);
+                        int w = Math.max(dp(24), bitmap.getWidth() * h / Math.max(1, bitmap.getHeight()));
+                        slot.addView(image, new LinearLayout.LayoutParams(w, h));
+                    } else {
+                        slot.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                    }
+                }
+                if (imageEntry != null) slot.addView(text(mirror, 14, R.color.forge_text));
+                else slot.addView(text(mirror, 16, R.color.forge_text));
+            }
+            slot.setEnabled(!answered);
         }
         for (View candidate : clozeCandidateViews) {
             if (!(candidate.getTag() instanceof String)) continue;
