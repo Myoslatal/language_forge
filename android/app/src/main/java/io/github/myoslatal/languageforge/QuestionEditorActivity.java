@@ -1563,8 +1563,11 @@ public class QuestionEditorActivity extends ForgeActivity {
             } else {
                 value = item.text;
             }
-            if (builder.length() > 0 && !Character.isWhitespace(builder.charAt(builder.length() - 1))
-                    && !value.isEmpty() && !Character.isWhitespace(value.charAt(0))) {
+            if (builder.length() > 0 && !value.isEmpty()
+                    && !Character.isWhitespace(builder.charAt(builder.length() - 1))
+                    && !Character.isWhitespace(value.charAt(0))
+                    && !isPunctuationChar(builder.charAt(builder.length() - 1))
+                    && !isPunctuationChar(value.charAt(0))) {
                 builder.append(' ');
             }
             builder.append(value);
@@ -1572,48 +1575,107 @@ public class QuestionEditorActivity extends ForgeActivity {
         return builder.toString();
     }
 
+    private boolean isPunctuationChar(char value) {
+        int type = Character.getType(value);
+        return type == Character.OTHER_PUNCTUATION || type == Character.CONNECTOR_PUNCTUATION
+                || type == Character.DASH_PUNCTUATION || type == Character.START_PUNCTUATION
+                || type == Character.END_PUNCTUATION
+                || type == Character.INITIAL_QUOTE_PUNCTUATION
+                || type == Character.FINAL_QUOTE_PUNCTUATION;
+    }
+
     private void renderListenOptionPreviews() {
         for (int i = 0; i < 4; i++) {
             LinearLayout preview = findViewById(3000 + i);
             if (preview == null) continue;
-            preview.removeAllViews();
-            for (int j = 0; j < listenOptionItems.get(i).size(); j++) {
-                ProjectStructure.Question.OptionItem item = listenOptionItems.get(i).get(j);
-                final int option = i;
-                final int itemIndex = j;
-                if ("vocab".equals(item.kind)) {
-                    VocabularyEntry entry = null;
-                    for (VocabularyEntry candidate : vocabulary.entries) {
-                        if (item.vocabId.equals(candidate.id)) { entry = candidate; break; }
-                    }
-                    if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
-                        android.widget.ImageView image = new android.widget.ImageView(this);
-                        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
-                        if (bitmap != null) {
-                            image.setImageBitmap(bitmap);
-                            image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                            preview.addView(image, new LinearLayout.LayoutParams(dp(28), dp(28)));
-                        } else {
-                            preview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
-                        }
-                    } else if (entry != null) {
-                        preview.addView(text(vocabulary.displayName(entry), 14, R.color.forge_text));
-                    }
-                } else {
-                    preview.addView(text(item.text, 14, R.color.forge_text));
-                }
-                ForgeButton remove = new ForgeButton(this);
-                remove.setAllCaps(false);
-                remove.setText("×");
-                remove.setOnClickListener(v -> {
-                    listenOptionItems.get(option).remove(itemIndex);
-                    listenOptions[option].setText(mirrorListenOption(listenOptionItems.get(option)));
-                    renderListenOptionPreviews();
-                    dirty = true;
-                });
-                preview.addView(remove);
-            }
+            renderOptionPreviewItems(listenOptionItems.get(i), listenOptions[i], preview,
+                    this::renderListenOptionPreviews);
         }
+    }
+
+    private void renderOptionPreviewItems(List<ProjectStructure.Question.OptionItem> items,
+                                          EditText mirrorField, LinearLayout preview,
+                                          Runnable rerender) {
+        preview.removeAllViews();
+        for (int j = 0; j < items.size(); j++) {
+            final int index = j;
+            ProjectStructure.Question.OptionItem item = items.get(j);
+            if ("vocab".equals(item.kind)) {
+                VocabularyEntry entry = findEntry(item.vocabId);
+                if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    android.widget.ImageView image = new android.widget.ImageView(this);
+                    android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory,
+                            entry.image);
+                    if (bitmap != null) {
+                        image.setImageBitmap(bitmap);
+                        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                        preview.addView(image, new LinearLayout.LayoutParams(dp(28), dp(28)));
+                    } else {
+                        preview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                    }
+                } else if (entry != null) {
+                    preview.addView(text(vocabulary.displayName(entry), 14, R.color.forge_text));
+                } else {
+                    preview.addView(text("〔词汇已删除〕", 12, R.color.forge_warn));
+                }
+            } else {
+                EditText fragment = new EditText(this);
+                fragment.setText(item.text);
+                fragment.setTextSize(13f);
+                fragment.setMinWidth(dp(48));
+                fragment.setPadding(dp(4), 0, dp(4), 0);
+                fragment.addTextChangedListener(new android.text.TextWatcher() {
+                    public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                    public void onTextChanged(CharSequence s, int a, int b, int c) {
+                        item.text = s.toString();
+                        mirrorField.setText(mirrorListenOption(items));
+                        dirty = true;
+                    }
+                    public void afterTextChanged(android.text.Editable s) {}
+                });
+                preview.addView(fragment);
+            }
+            ForgeButton remove = small("×");
+            remove.setOnClickListener(v -> {
+                items.remove(index);
+                mirrorField.setText(mirrorListenOption(items));
+                rerender.run();
+                dirty = true;
+            });
+            preview.addView(remove);
+        }
+        ForgeButton addText = small("＋文本");
+        addText.setOnClickListener(v -> {
+            ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+            item.text = "";
+            items.add(item);
+            mirrorField.setText(mirrorListenOption(items));
+            rerender.run();
+            dirty = true;
+        });
+        preview.addView(addText);
+        ForgeButton punct = small("标点");
+        punct.setOnClickListener(v -> showOptionPunctuationMenu(v, items, mirrorField, rerender));
+        preview.addView(punct);
+    }
+
+    private void showOptionPunctuationMenu(View anchor,
+                                           List<ProjectStructure.Question.OptionItem> items,
+                                           EditText mirrorField, Runnable rerender) {
+        ForgeMenu menu = new ForgeMenu(this);
+        menu.addHeader("插入标点");
+        String[] marks = {"，", "。", "、", "？", "！", "；", "：", "“", "”", "（", "）", "…", "—", "/"};
+        for (String mark : marks) {
+            menu.addItem(mark, () -> {
+                ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                item.text = mark;
+                items.add(item);
+                mirrorField.setText(mirrorListenOption(items));
+                rerender.run();
+                dirty = true;
+            });
+        }
+        menu.show(anchor);
     }
 
     private TextView text(String value, int size, int color) {
@@ -1669,42 +1731,8 @@ public class QuestionEditorActivity extends ForgeActivity {
         for (int i = 0; i < 4; i++) {
             LinearLayout preview = choiceOptionPreviews[i];
             if (preview == null) continue;
-            preview.removeAllViews();
-            for (int j = 0; j < choiceOptionItems.get(i).size(); j++) {
-                ProjectStructure.Question.OptionItem item = choiceOptionItems.get(i).get(j);
-                final int option = i;
-                final int itemIndex = j;
-                if ("vocab".equals(item.kind)) {
-                    VocabularyEntry entry = findEntry(item.vocabId);
-                    if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
-                        android.widget.ImageView image = new android.widget.ImageView(this);
-                        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
-                        if (bitmap != null) {
-                            image.setImageBitmap(bitmap);
-                            image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                            preview.addView(image, new LinearLayout.LayoutParams(dp(28), dp(28)));
-                        } else {
-                            preview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
-                        }
-                    } else if (entry != null) {
-                        preview.addView(text(vocabulary.displayName(entry), 14, R.color.forge_text));
-                    } else {
-                        preview.addView(text("〔词汇已删除〕", 12, R.color.forge_warn));
-                    }
-                } else {
-                    preview.addView(text(item.text, 14, R.color.forge_text));
-                }
-                ForgeButton remove = new ForgeButton(this);
-                remove.setAllCaps(false);
-                remove.setText("×");
-                remove.setOnClickListener(v -> {
-                    choiceOptionItems.get(option).remove(itemIndex);
-                    optionFields[option].setText(mirrorListenOption(choiceOptionItems.get(option)));
-                    renderChoiceOptionPreviews();
-                    dirty = true;
-                });
-                preview.addView(remove);
-            }
+            renderOptionPreviewItems(choiceOptionItems.get(i), optionFields[i].getEditText(),
+                    preview, this::renderChoiceOptionPreviews);
         }
     }
 

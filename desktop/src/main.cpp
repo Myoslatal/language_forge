@@ -1652,6 +1652,28 @@ struct App {
     ImGui::End();
   }
 
+  static bool utf8PunctAt(const std::string& text, bool front) {
+    if (text.empty()) return false;
+    auto asciiPunct = [](unsigned char c) { return std::ispunct(c) != 0; };
+    static const char* marks[] = {"，", "。", "、", "？", "！", "；", "：", "“", "”",
+                                  "（", "）", "…", "—", "·", "《", "》"};
+    if (front) {
+      if (asciiPunct(static_cast<unsigned char>(text.front()))) return true;
+      for (const char* mark : marks) {
+        if (text.rfind(mark, 0) == 0) return true;
+      }
+      return false;
+    }
+    if (asciiPunct(static_cast<unsigned char>(text.back()))) return true;
+    for (const char* mark : marks) {
+      const std::size_t length = std::strlen(mark);
+      if (text.size() >= length && text.compare(text.size() - length, length, mark) == 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   std::string optionMirror(const std::vector<QuestionOptionItem>& items) {
     std::string text;
     for (const auto& item : items) {
@@ -1671,7 +1693,8 @@ struct App {
       }
       if (!text.empty() && !value.empty() &&
           !std::isspace(static_cast<unsigned char>(text.back())) &&
-          !std::isspace(static_cast<unsigned char>(value.front()))) {
+          !std::isspace(static_cast<unsigned char>(value.front())) &&
+          !utf8PunctAt(text, false) && !utf8PunctAt(value, true)) {
         text += ' ';
       }
       text += value;
@@ -1845,6 +1868,80 @@ struct App {
       }
     }
     return clicked;
+  }
+
+  void drawOptionItemsEditor(std::vector<QuestionOptionItem>& items, char* mirror,
+                             std::size_t mirrorSize) {
+    for (std::size_t j = 0; j < items.size(); ++j) {
+      ImGui::PushID(static_cast<int>(j) + 9800);
+      if (items[j].kind == "vocab") {
+        const VocabEntry* entry = nullptr;
+        if (vocabulary) {
+          for (const auto& candidate : vocabulary->entries) {
+            if (candidate.id == items[j].vocabId) { entry = &candidate; break; }
+          }
+        }
+        if (entry && entry->type == "image") {
+          SDL_Texture* texture = textureForImage(
+              renderer, currentProjectDirectory() / pathFromUtf8(entry->image), imageTextures);
+          if (texture) {
+            ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
+          } else {
+            ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
+          }
+        } else if (entry) {
+          ImGui::TextUnformatted(displayName(*entry, vocabulary->entries).c_str());
+        } else {
+          ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔词汇已删除〕");
+        }
+      } else {
+        char buffer[512];
+        std::snprintf(buffer, sizeof(buffer), "%s", items[j].text.c_str());
+        ImGui::SetNextItemWidth(150);
+        if (ImGui::InputText("##fragment", buffer, sizeof(buffer))) {
+          items[j].text = buffer;
+          const std::string mirrored = optionMirror(items);
+          std::snprintf(mirror, mirrorSize, "%s", mirrored.c_str());
+          questionDirty = true;
+        }
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("×##opt_item_del", ImVec2(24, 22))) {
+        items.erase(items.begin() + j);
+        const std::string mirrored = optionMirror(items);
+        std::snprintf(mirror, mirrorSize, "%s", mirrored.c_str());
+        questionDirty = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::PopID();
+      ImGui::SameLine();
+    }
+    if (ImGui::Button("＋文本##opt_add_text", ImVec2(78, 22))) {
+      QuestionOptionItem item;
+      item.kind = "text";
+      items.push_back(item);
+      questionDirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("标点##opt_punct", ImVec2(58, 22))) ImGui::OpenPopup("##opt_punct_menu");
+    if (ImGui::BeginPopup("##opt_punct_menu")) {
+      static const char* marks[] = {"，", "。", "、", "？", "！", "；", "：",
+                                    "“", "”", "（", "）", "…", "—", "/"};
+      for (const char* mark : marks) {
+        if (ImGui::MenuItem(mark)) {
+          QuestionOptionItem item;
+          item.kind = "text";
+          item.text = mark;
+          items.push_back(item);
+          const std::string mirrored = optionMirror(items);
+          std::snprintf(mirror, mirrorSize, "%s", mirrored.c_str());
+          questionDirty = true;
+        }
+      }
+      ImGui::EndPopup();
+    }
+    ImGui::NewLine();
   }
 
   void drawMatchItemsPreview(std::vector<QuestionOptionItem>& items, std::string& text,
@@ -3188,44 +3285,7 @@ void renderQuestionEditor(App& app) {
       }
       while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
       auto& items = app.editQuestion.optionItems[i];
-      for (std::size_t j = 0; j < items.size(); ++j) {
-        ImGui::PushID(static_cast<int>(j) + 9600);
-        if (items[j].kind == "vocab") {
-          const VocabEntry* entry = nullptr;
-          if (app.vocabulary) {
-            for (const auto& candidate : app.vocabulary->entries) {
-              if (candidate.id == items[j].vocabId) { entry = &candidate; break; }
-            }
-          }
-          if (entry && entry->type == "image") {
-            SDL_Texture* texture = textureForImage(
-                app.renderer, app.currentProjectDirectory() / pathFromUtf8(entry->image),
-                app.imageTextures);
-            if (texture) {
-              ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
-            } else {
-              ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
-            }
-          } else if (entry) {
-            ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
-          }
-        } else {
-          ImGui::TextUnformatted(items[j].text.c_str());
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("×##dialog_item_del", ImVec2(26, 22))) {
-          items.erase(items.begin() + j);
-          std::string mirrored = app.optionMirror(items);
-          std::snprintf(app.questionOptions[i], sizeof(app.questionOptions[i]), "%s",
-                        mirrored.c_str());
-          app.questionDirty = true;
-          ImGui::PopID();
-          break;
-        }
-        ImGui::PopID();
-        ImGui::SameLine();
-      }
-      ImGui::NewLine();
+      app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
       ImGui::PopID();
     }
     if (ImGui::Button("保存题目##dialog_save", ImVec2(120, 34))) app.saveQuestion();
@@ -3305,43 +3365,7 @@ void renderQuestionEditor(App& app) {
       ImGui::RadioButton("正确", &app.questionCorrectIndex, i);
       while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
       auto& items = app.editQuestion.optionItems[i];
-      for (std::size_t j = 0; j < items.size(); ++j) {
-        ImGui::PushID(static_cast<int>(j) + 9000);
-        if (items[j].kind == "vocab") {
-          const VocabEntry* entry = nullptr;
-          if (app.vocabulary) {
-            for (const auto& candidate : app.vocabulary->entries) {
-              if (candidate.id == items[j].vocabId) { entry = &candidate; break; }
-            }
-          }
-          if (entry && entry->type == "image") {
-            SDL_Texture* texture = textureForImage(
-                app.renderer, app.currentProjectDirectory() / pathFromUtf8(entry->image),
-                app.imageTextures);
-            if (texture) {
-              ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
-            } else {
-              ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
-            }
-          } else if (entry) {
-            ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
-          }
-        } else {
-          ImGui::TextUnformatted(items[j].text.c_str());
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("×##listen_item_del", ImVec2(26, 22))) {
-          items.erase(items.begin() + j);
-          std::string mirrored = app.optionMirror(items);
-          std::snprintf(app.questionOptions[i], sizeof(app.questionOptions[i]), "%s", mirrored.c_str());
-          app.questionDirty = true;
-          ImGui::PopID();
-          break;
-        }
-        ImGui::PopID();
-        ImGui::SameLine();
-      }
-      ImGui::NewLine();
+      app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
       ImGui::PopID();
     }
     if (ImGui::Button("保存题目##listen_save", ImVec2(120, 34))) app.saveQuestion();
@@ -3756,44 +3780,7 @@ void renderQuestionEditor(App& app) {
     if (correct) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.6f, 0.3f, 1), "✓"); }
     while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
     auto& items = app.editQuestion.optionItems[i];
-    for (std::size_t j = 0; j < items.size(); ++j) {
-      ImGui::PushID(static_cast<int>(j) + 9200);
-      if (items[j].kind == "vocab") {
-        const VocabEntry* entry = nullptr;
-        if (app.vocabulary) {
-          for (const auto& candidate : app.vocabulary->entries) {
-            if (candidate.id == items[j].vocabId) { entry = &candidate; break; }
-          }
-        }
-        if (entry && entry->type == "image") {
-          SDL_Texture* texture = textureForImage(
-              app.renderer, app.currentProjectDirectory() / pathFromUtf8(entry->image),
-              app.imageTextures);
-          if (texture) {
-            ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
-          } else {
-            ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
-          }
-        } else if (entry) {
-          ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
-        }
-      } else {
-        ImGui::TextUnformatted(items[j].text.c_str());
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("×##choice_item_del", ImVec2(26, 22))) {
-        items.erase(items.begin() + j);
-        std::string mirrored = app.optionMirror(items);
-        std::snprintf(app.questionOptions[i], sizeof(app.questionOptions[i]), "%s",
-                      mirrored.c_str());
-        app.questionDirty = true;
-        ImGui::PopID();
-        break;
-      }
-      ImGui::PopID();
-      ImGui::SameLine();
-    }
-    ImGui::NewLine();
+      app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
     ImGui::PopID();
   }
   ImGui::Spacing();
