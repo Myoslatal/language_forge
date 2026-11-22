@@ -423,6 +423,9 @@ struct App {
   int listenOptionPickIndex = -1;
   bool pickerForChoiceOption = false;
   int choiceOptionPickIndex = -1;
+  bool pickerForMatchSide = false;
+  int matchPickPair = -1;
+  std::string matchPickSide = "l";
   std::string pickerForId;
   Question editQuestion;
   bool questionIsNew = false;
@@ -1324,6 +1327,18 @@ struct App {
         pair.left = trim(pair.left);
         pair.right = trim(pair.right);
         if (pair.left.empty() || pair.right.empty()) { showToast("每对左右都不能为空"); return; }
+        auto normalizeSide = [&](std::vector<QuestionOptionItem>& items,
+                                 const std::string& text) {
+          bool hasVocab = false;
+          for (const auto& item : items) {
+            if (item.kind == "vocab") hasVocab = true;
+          }
+          if (!hasVocab || optionMirror(items) != text) {
+            items.clear();
+          }
+        };
+        normalizeSide(pair.leftItems, pair.left);
+        normalizeSide(pair.rightItems, pair.right);
       }
       editQuestion.prompt = trim(arrangePromptInput);
       editQuestion.name = (editQuestion.prompt.empty() ? "配对" : editQuestion.prompt) +
@@ -1465,6 +1480,7 @@ struct App {
     if (!vocabulary) loadVocabularyData();
     pickerForQuestion = true;
     pickerForChoiceOption = false;
+    pickerForMatchSide = false;
     pickerSelected = editQuestion.parts;
     pickerForId.clear();
     std::snprintf(pickerSearch, sizeof(pickerSearch), "%s", "");
@@ -1611,6 +1627,93 @@ struct App {
     return clicked;
   }
 
+  bool drawMatchSideRow(const std::vector<QuestionOptionItem>& items,
+                        const std::string& fallback, bool selected, bool correct) {
+    bool hasVocab = false;
+    for (const auto& item : items) {
+      if (item.kind == "vocab") hasVocab = true;
+    }
+    if (!hasVocab) {
+      if (correct) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
+      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
+      const bool clicked = ImGui::Button(fallback.c_str(), ImVec2(-1, 42));
+      if (correct || selected) ImGui::PopStyleColor();
+      return clicked;
+    }
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("##match_side_row", ImVec2(-1, 42));
+    const bool clicked = ImGui::IsItemClicked();
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImU32 bg = ImGui::GetColorU32(correct ? ImVec4(0.82f, 0.94f, 0.84f, 1)
+                                         : selected ? ImVec4(0.85f, 0.91f, 1, 1)
+                                                    : ImVec4(0.96f, 0.97f, 0.99f, 1));
+    draw->AddRectFilled(pos, ImVec2(pos.x + ImGui::GetContentRegionAvail().x, pos.y + 42), bg, 6);
+    float x = pos.x + 8;
+    for (const auto& item : items) {
+      if (item.kind == "vocab" && vocabulary) {
+        const VocabEntry* entry = nullptr;
+        for (const auto& candidate : vocabulary->entries) {
+          if (candidate.id == item.vocabId) { entry = &candidate; break; }
+        }
+        if (entry && entry->type == "image") {
+          SDL_Texture* texture = textureForImage(
+              renderer, currentProjectDirectory() / pathFromUtf8(entry->image), imageTextures);
+          if (texture) {
+            draw->AddImage(reinterpret_cast<ImTextureID>(texture), ImVec2(x, pos.y + 9),
+                           ImVec2(x + 24, pos.y + 33));
+            x += 30;
+          }
+        } else if (entry) {
+          const std::string text = displayName(*entry, vocabulary->entries);
+          draw->AddText(ImVec2(x, pos.y + 13), ImGui::GetColorU32(ImGuiCol_Text), text.c_str());
+          x += ImGui::CalcTextSize(text.c_str()).x + 6;
+        }
+      } else if (!item.text.empty()) {
+        draw->AddText(ImVec2(x, pos.y + 13), ImGui::GetColorU32(ImGuiCol_Text), item.text.c_str());
+        x += ImGui::CalcTextSize(item.text.c_str()).x + 6;
+      }
+    }
+    return clicked;
+  }
+
+  void drawMatchItemsPreview(std::vector<QuestionOptionItem>& items, std::string& text,
+                             const char* deleteId) {
+    for (std::size_t j = 0; j < items.size(); ++j) {
+      ImGui::PushID(static_cast<int>(j) + 9400);
+      if (items[j].kind == "vocab") {
+        const VocabEntry* entry = nullptr;
+        if (vocabulary) {
+          for (const auto& candidate : vocabulary->entries) {
+            if (candidate.id == items[j].vocabId) { entry = &candidate; break; }
+          }
+        }
+        if (entry && entry->type == "image") {
+          SDL_Texture* texture = textureForImage(
+              renderer, currentProjectDirectory() / pathFromUtf8(entry->image), imageTextures);
+          if (texture) {
+            ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(24, 24));
+          } else {
+            ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
+          }
+        } else if (entry) {
+          ImGui::TextUnformatted(displayName(*entry, vocabulary->entries).c_str());
+        }
+      } else {
+        ImGui::TextUnformatted(items[j].text.c_str());
+      }
+      ImGui::SameLine();
+      if (ImGui::Button(deleteId, ImVec2(24, 22))) {
+        items.erase(items.begin() + j);
+        text = optionMirror(items);
+        questionDirty = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::PopID();
+      ImGui::SameLine();
+    }
+  }
+
   bool drawBlockChip(const QuestionBlock& block, const char* id, bool green, bool fullWidth) {
     const VocabEntry* entry = nullptr;
     if (vocabulary && !block.vocabId.empty()) entry = vocabulary->find(block.vocabId);
@@ -1652,6 +1755,7 @@ struct App {
     pickerForTypePrompt = false;
     pickerForListenAudio = false;
     pickerForChoiceOption = false;
+    pickerForMatchSide = false;
     pickerSelected.clear();
     pickerOpen = true;
   }
@@ -1661,6 +1765,7 @@ struct App {
     pickerForBlocks = false;
     pickerForTypePrompt = true;
     pickerForChoiceOption = false;
+    pickerForMatchSide = false;
     pickerSelected.clear();
     pickerOpen = true;
   }
@@ -1670,6 +1775,7 @@ struct App {
     pickerForQuestion = false;
     pickerForBlocks = true;
     pickerForChoiceOption = false;
+    pickerForMatchSide = false;
     pickerSelected.clear();
     for (const auto& block : editQuestion.blocks) {
       if (!block.vocabId.empty()) pickerSelected.push_back(block.vocabId);
@@ -1682,6 +1788,7 @@ struct App {
     if (!vocabulary) loadVocabularyData();
     pickerForQuestion = false;
     pickerForChoiceOption = false;
+    pickerForMatchSide = false;
     pickerSelected = editEntry.parts;
     pickerForId = editEntry.id;
     std::snprintf(pickerSearch, sizeof(pickerSearch), "%s", "");
@@ -3006,14 +3113,42 @@ void renderQuestionEditor(App& app) {
       char right[256];
       std::snprintf(left, sizeof(left), "%s", pair.left.c_str());
       std::snprintf(right, sizeof(right), "%s", pair.right.c_str());
-      ImGui::SetNextItemWidth(300);
+      ImGui::SetNextItemWidth(230);
       if (ImGui::InputText("##pair_left", left, sizeof(left))) {
         pair.left = left; app.questionDirty = true;
       }
       ImGui::SameLine();
-      ImGui::SetNextItemWidth(300);
+      if (ImGui::Button("选词左##match_pick_l", ImVec2(60, 0))) {
+        app.pickerForMatchSide = true;
+        app.pickerForChoiceOption = false;
+        app.pickerForListenOption = false;
+        app.pickerForListenAudio = false;
+        app.pickerForTypePrompt = false;
+        app.pickerForBlocks = false;
+        app.pickerForQuestion = false;
+        app.matchPickPair = static_cast<int>(i);
+        app.matchPickSide = "l";
+        app.pickerSelected.clear();
+        app.pickerOpen = true;
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(230);
       if (ImGui::InputText("##pair_right", right, sizeof(right))) {
         pair.right = right; app.questionDirty = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("选词右##match_pick_r", ImVec2(60, 0))) {
+        app.pickerForMatchSide = true;
+        app.pickerForChoiceOption = false;
+        app.pickerForListenOption = false;
+        app.pickerForListenAudio = false;
+        app.pickerForTypePrompt = false;
+        app.pickerForBlocks = false;
+        app.pickerForQuestion = false;
+        app.matchPickPair = static_cast<int>(i);
+        app.matchPickSide = "r";
+        app.pickerSelected.clear();
+        app.pickerOpen = true;
       }
       ImGui::SameLine();
       if (ImGui::Button("×##pair_del", ImVec2(28, 24))) {
@@ -3022,6 +3157,15 @@ void renderQuestionEditor(App& app) {
         ImGui::PopID();
         break;
       }
+      ImGui::NewLine();
+      ImGui::PushID("left_preview");
+      app.drawMatchItemsPreview(pair.leftItems, pair.left, "×##ml");
+      ImGui::PopID();
+      ImGui::SameLine(0, 24);
+      ImGui::PushID("right_preview");
+      app.drawMatchItemsPreview(pair.rightItems, pair.right, "×##mr");
+      ImGui::PopID();
+      ImGui::NewLine();
       ImGui::PopID();
     }
     if (ImGui::Button("＋ 添加配对##match_add", ImVec2(130, 28))) {
@@ -3580,6 +3724,7 @@ void renderLearning(App& app) {
     return;
   }
   if (question->type == "match") {
+    app.ensureVocabularyLoaded();
     if (app.matchQuestionId != question->id) {
       app.matchQuestionId = question->id;
       app.matchLeftOrder.clear();
@@ -3604,10 +3749,9 @@ void renderLearning(App& app) {
     for (int index : app.matchLeftOrder) {
       bool matched = std::find(app.matchMatched.begin(), app.matchMatched.end(), index) != app.matchMatched.end();
       bool selected = app.matchSelLeft == index;
-      if (matched) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
-      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
       ImGui::PushID(index);
-      if (ImGui::Button(question->pairs[index].left.c_str(), ImVec2(-1, 42))) {
+      if (app.drawMatchSideRow(question->pairs[index].leftItems,
+                               question->pairs[index].left, selected, matched)) {
         if (!matched) {
           app.matchSelLeft = index;
           if (app.matchSelRight >= 0) {
@@ -3623,7 +3767,6 @@ void renderLearning(App& app) {
           }
         }
       }
-      if (matched || selected) ImGui::PopStyleColor();
       ImGui::PopID();
     }
     ImGui::EndChild();
@@ -3632,10 +3775,9 @@ void renderLearning(App& app) {
     for (int index : app.matchRightOrder) {
       bool matched = std::find(app.matchMatched.begin(), app.matchMatched.end(), index) != app.matchMatched.end();
       bool selected = app.matchSelRight == index;
-      if (matched) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.82f, 0.94f, 0.84f, 1));
-      else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
       ImGui::PushID(index + 1000);
-      if (ImGui::Button(question->pairs[index].right.c_str(), ImVec2(-1, 42))) {
+      if (app.drawMatchSideRow(question->pairs[index].rightItems,
+                               question->pairs[index].right, selected, matched)) {
         if (!matched) {
           app.matchSelRight = index;
           if (app.matchSelLeft >= 0) {
@@ -3651,7 +3793,6 @@ void renderLearning(App& app) {
           }
         }
       }
-      if (matched || selected) ImGui::PopStyleColor();
       ImGui::PopID();
     }
     ImGui::EndChild();
@@ -6489,11 +6630,34 @@ void renderPicker(App& app) {
     app.pickerForListenAudio = false;
     app.pickerForListenOption = false;
     app.pickerForChoiceOption = false;
+    app.pickerForMatchSide = false;
     open = false;
   }
   ImGui::SameLine();
   if (ImGui::Button("确定", ImVec2(120, 34))) {
-    if (app.pickerForChoiceOption) {
+    if (app.pickerForMatchSide) {
+      if (app.matchPickPair >= 0 &&
+          app.matchPickPair < static_cast<int>(app.editQuestion.pairs.size()) &&
+          app.vocabulary) {
+        auto& pair = app.editQuestion.pairs[app.matchPickPair];
+        auto& items = app.matchPickSide == "l" ? pair.leftItems : pair.rightItems;
+        for (const auto& id : app.pickerSelected) {
+          for (const auto& entry : app.vocabulary->entries) {
+            if (entry.id != id) continue;
+            QuestionOptionItem item;
+            item.kind = "vocab";
+            item.vocabId = id;
+            items.push_back(item);
+            break;
+          }
+        }
+        const std::string mirrored = app.optionMirror(items);
+        if (app.matchPickSide == "l") pair.left = mirrored;
+        else pair.right = mirrored;
+        app.questionDirty = true;
+      }
+      app.pickerForMatchSide = false;
+    } else if (app.pickerForChoiceOption) {
       if (app.choiceOptionPickIndex >= 0 && app.choiceOptionPickIndex < 4 && app.vocabulary) {
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
         for (const auto& id : app.pickerSelected) {

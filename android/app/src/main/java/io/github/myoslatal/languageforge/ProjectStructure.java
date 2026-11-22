@@ -192,7 +192,33 @@ final class ProjectStructure {
                                                 String left = pair.optString("l", "");
                                                 String right = pair.optString("r", "");
                                                 if (!left.trim().isEmpty() && !right.trim().isEmpty()) {
-                                                    question.pairs.add(new Question.MatchPair(left, right));
+                                                    Question.MatchPair value =
+                                                            new Question.MatchPair(left, right);
+                                                    JSONArray lItems = pair.optJSONArray("lItems");
+                                                    if (lItems != null) {
+                                                        for (int li = 0; li < lItems.length(); li++) {
+                                                            JSONObject item = lItems.optJSONObject(li);
+                                                            if (item == null) continue;
+                                                            Question.OptionItem option = new Question.OptionItem();
+                                                            option.kind = item.optString("kind", "text");
+                                                            option.text = item.optString("text", "");
+                                                            option.vocabId = item.optString("vocabId", "");
+                                                            value.leftItems.add(option);
+                                                        }
+                                                    }
+                                                    JSONArray rItems = pair.optJSONArray("rItems");
+                                                    if (rItems != null) {
+                                                        for (int ri = 0; ri < rItems.length(); ri++) {
+                                                            JSONObject item = rItems.optJSONObject(ri);
+                                                            if (item == null) continue;
+                                                            Question.OptionItem option = new Question.OptionItem();
+                                                            option.kind = item.optString("kind", "text");
+                                                            option.text = item.optString("text", "");
+                                                            option.vocabId = item.optString("vocabId", "");
+                                                            value.rightItems.add(option);
+                                                        }
+                                                    }
+                                                    question.pairs.add(value);
                                                 }
                                             }
                                         }
@@ -378,6 +404,12 @@ final class ProjectStructure {
                                 JSONObject object = new JSONObject();
                                 object.put("l", pair.left);
                                 object.put("r", pair.right);
+                                if (!pair.leftItems.isEmpty()) {
+                                    object.put("lItems", optionItemsToJson(pair.leftItems));
+                                }
+                                if (!pair.rightItems.isEmpty()) {
+                                    object.put("rItems", optionItemsToJson(pair.rightItems));
+                                }
                                 pairs.put(object);
                             }
                             questionObject.put("pairs", pairs);
@@ -555,6 +587,19 @@ final class ProjectStructure {
         }
     }
 
+    private static JSONArray optionItemsToJson(List<Question.OptionItem> items)
+            throws org.json.JSONException {
+        JSONArray array = new JSONArray();
+        for (Question.OptionItem item : items) {
+            JSONObject object = new JSONObject();
+            object.put("kind", item.kind);
+            if ("vocab".equals(item.kind)) object.put("vocabId", item.vocabId);
+            else object.put("text", item.text);
+            array.put(object);
+        }
+        return array;
+    }
+
     static final class Question {
         static final String TYPE_TRANSLATION_CHOICE = "translation_choice";
         static final String TYPE_ARRANGE = "arrange";
@@ -580,6 +625,8 @@ final class ProjectStructure {
         static final class MatchPair {
             String left = "";
             String right = "";
+            final List<OptionItem> leftItems = new ArrayList<>();
+            final List<OptionItem> rightItems = new ArrayList<>();
             MatchPair(String left, String right) { this.left = left; this.right = right; }
         }
 

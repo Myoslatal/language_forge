@@ -506,7 +506,7 @@ Arrange learning plays the vocabulary audio of a tapped block (pool or selected)
 
 Arrange blocks are added via the shared vocabulary picker; new blocks store vocabId and display-name text, deduplicate by vocabId, and learning audio prefers vocabId then text.
 
-Match questions use type="match" with prompt and pairs[{l,r}]; editor hides unrelated choice/arrange/audio sections. Learning shows two shuffled columns; wrong pairs toast, correct pairs lock green, all pairs show 下一题/完成.
+Match questions use type="match" with prompt and pairs[{l,r,lItems,rItems}]; editor hides unrelated choice/arrange/audio sections, and each pair side has a 选词 button that appends vocabulary items (structured preview with × removal, text mirror updated from the items, image vocabulary shown as thumbnails). Saving keeps a side's items only when they contain vocab and the side text still matches the mirror; text-only sides stay legacy. Learning shows two shuffled columns; pairs with vocab items render as custom chips (image thumbnail + text) while text pairs keep ForgeButton; wrong pairs toast, correct pairs lock green, all pairs show 下一题/完成.
 
 Type questions use type="type" with prompt/acceptedAnswers/ignoreCase/ignoreSpace/near; learning normalizes input and shows a near-miss hint.
 

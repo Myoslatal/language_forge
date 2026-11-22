@@ -37,6 +37,8 @@ struct WarnRule {
 struct MatchPair {
   std::string left;
   std::string right;
+  std::vector<QuestionOptionItem> leftItems;
+  std::vector<QuestionOptionItem> rightItems;
 };
 
 struct QuestionBlock {

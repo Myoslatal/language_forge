@@ -550,31 +550,59 @@ public class LearningActivity extends ForgeActivity {
         LinearLayout rightColumn = new LinearLayout(this);
         rightColumn.setOrientation(LinearLayout.VERTICAL);
         for (int index : matchLeftOrder) {
-            ForgeButton button = new ForgeButton(this);
-            button.setAllCaps(false);
-            button.setText(item.pairs.get(index).left);
-            button.setTextSize(15f);
-            styleMatch(button, matchMatched.contains(index), matchLeft == index);
-            button.setOnClickListener(v -> {
-                if (matchMatched.contains(index)) return;
-                matchLeft = index;
-                tryMatch(item);
-            });
-            leftColumn.addView(button, new LinearLayout.LayoutParams(
+            ProjectStructure.Question.MatchPair pair = item.pairs.get(index);
+            View view;
+            if (hasVocabItems(pair.leftItems)) {
+                LinearLayout chip = matchSideChip(pair.leftItems, pair.left);
+                styleMatchRow(chip, matchMatched.contains(index), matchLeft == index);
+                chip.setOnClickListener(v -> {
+                    if (matchMatched.contains(index)) return;
+                    matchLeft = index;
+                    tryMatch(item);
+                });
+                view = chip;
+            } else {
+                ForgeButton button = new ForgeButton(this);
+                button.setAllCaps(false);
+                button.setText(pair.left);
+                button.setTextSize(15f);
+                styleMatch(button, matchMatched.contains(index), matchLeft == index);
+                button.setOnClickListener(v -> {
+                    if (matchMatched.contains(index)) return;
+                    matchLeft = index;
+                    tryMatch(item);
+                });
+                view = button;
+            }
+            leftColumn.addView(view, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
         }
         for (int index : matchRightOrder) {
-            ForgeButton button = new ForgeButton(this);
-            button.setAllCaps(false);
-            button.setText(item.pairs.get(index).right);
-            button.setTextSize(15f);
-            styleMatch(button, matchMatched.contains(index), matchRight == index);
-            button.setOnClickListener(v -> {
-                if (matchMatched.contains(index)) return;
-                matchRight = index;
-                tryMatch(item);
-            });
-            rightColumn.addView(button, new LinearLayout.LayoutParams(
+            ProjectStructure.Question.MatchPair pair = item.pairs.get(index);
+            View view;
+            if (hasVocabItems(pair.rightItems)) {
+                LinearLayout chip = matchSideChip(pair.rightItems, pair.right);
+                styleMatchRow(chip, matchMatched.contains(index), matchRight == index);
+                chip.setOnClickListener(v -> {
+                    if (matchMatched.contains(index)) return;
+                    matchRight = index;
+                    tryMatch(item);
+                });
+                view = chip;
+            } else {
+                ForgeButton button = new ForgeButton(this);
+                button.setAllCaps(false);
+                button.setText(pair.right);
+                button.setTextSize(15f);
+                styleMatch(button, matchMatched.contains(index), matchRight == index);
+                button.setOnClickListener(v -> {
+                    if (matchMatched.contains(index)) return;
+                    matchRight = index;
+                    tryMatch(item);
+                });
+                view = button;
+            }
+            rightColumn.addView(view, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
         }
         LinearLayout.LayoutParams columnParams = new LinearLayout.LayoutParams(0,
@@ -586,6 +614,53 @@ public class LearningActivity extends ForgeActivity {
         rightParams.setMargins(dp(6), 0, 0, 0);
         columns.addView(rightColumn, rightParams);
         content.addView(columns);
+    }
+
+    private boolean hasVocabItems(List<ProjectStructure.Question.OptionItem> items) {
+        for (ProjectStructure.Question.OptionItem item : items) {
+            if ("vocab".equals(item.kind)) return true;
+        }
+        return false;
+    }
+
+    private LinearLayout matchSideChip(List<ProjectStructure.Question.OptionItem> items,
+                                       String fallback) {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(10), 0, dp(10), 0);
+        if (items.isEmpty()) {
+            chip.addView(text(fallback, 15, R.color.forge_text));
+            return chip;
+        }
+        for (ProjectStructure.Question.OptionItem item : items) {
+            if ("vocab".equals(item.kind)) {
+                VocabularyEntry entry = findEntry(item.vocabId);
+                if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory,
+                            entry.image);
+                    if (bitmap != null) {
+                        android.widget.ImageView image = new android.widget.ImageView(this);
+                        image.setImageBitmap(bitmap);
+                        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(22), dp(22));
+                        lp.setMargins(0, 0, dp(6), 0);
+                        chip.addView(image, lp);
+                    } else {
+                        chip.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                    }
+                } else if (entry != null) {
+                    TextView name = text(vocabulary.displayName(entry), 15, R.color.forge_text);
+                    name.setPadding(0, 0, dp(6), 0);
+                    chip.addView(name);
+                }
+            } else if (item.text != null && !item.text.isEmpty()) {
+                TextView value = text(item.text, 15, R.color.forge_text);
+                value.setPadding(0, 0, dp(6), 0);
+                chip.addView(value);
+            }
+        }
+        return chip;
     }
 
     private void tryMatch(ProjectStructure.Question item) {

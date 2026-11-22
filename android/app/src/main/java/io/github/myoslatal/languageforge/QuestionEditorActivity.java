@@ -120,6 +120,9 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout matchRows;
     private EditText matchPrompt;
     private final List<ProjectStructure.Question.MatchPair> editPairs = new ArrayList<>();
+    private final List<EditText[]> matchPairFields = new ArrayList<>();
+    private int matchPickPair = -1;
+    private String matchPickSide = "l";
     private LinearLayout editorScrollContent;
 
     @Override
@@ -1229,11 +1232,23 @@ public class QuestionEditorActivity extends ForgeActivity {
     private void renderMatchRows() {
         if (matchRows == null) return;
         matchRows.removeAllViews();
+        matchPairFields.clear();
         for (int i = 0; i < editPairs.size(); i++) {
             final int index = i;
             ProjectStructure.Question.MatchPair pair = editPairs.get(i);
+            if (pair.leftItems.isEmpty() && pair.left != null && !pair.left.isEmpty()) {
+                ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                item.text = pair.left;
+                pair.leftItems.add(item);
+            }
+            if (pair.rightItems.isEmpty() && pair.right != null && !pair.right.isEmpty()) {
+                ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                item.text = pair.right;
+                pair.rightItems.add(item);
+            }
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
             EditText left = new EditText(this);
             left.setHint("左（词形）");
             left.setText(pair.left);
@@ -1243,6 +1258,15 @@ public class QuestionEditorActivity extends ForgeActivity {
                 public void afterTextChanged(android.text.Editable s) {}
             });
             row.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton pickLeft = new ForgeButton(this);
+            pickLeft.setAllCaps(false);
+            pickLeft.setText("选词左");
+            pickLeft.setOnClickListener(v -> {
+                matchPickPair = index;
+                matchPickSide = "l";
+                openMatchOptionPicker();
+            });
+            row.addView(pickLeft);
             EditText right = new EditText(this);
             right.setHint("右（释义）");
             right.setText(pair.right);
@@ -1252,6 +1276,15 @@ public class QuestionEditorActivity extends ForgeActivity {
                 public void afterTextChanged(android.text.Editable s) {}
             });
             row.addView(right, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton pickRight = new ForgeButton(this);
+            pickRight.setAllCaps(false);
+            pickRight.setText("选词右");
+            pickRight.setOnClickListener(v -> {
+                matchPickPair = index;
+                matchPickSide = "r";
+                openMatchOptionPicker();
+            });
+            row.addView(pickRight);
             ForgeButton remove = new ForgeButton(this);
             remove.setAllCaps(false);
             remove.setText("×");
@@ -1262,8 +1295,107 @@ public class QuestionEditorActivity extends ForgeActivity {
             });
             row.addView(remove);
             matchRows.addView(row);
+            LinearLayout previews = new LinearLayout(this);
+            previews.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout leftPreview = new LinearLayout(this);
+            leftPreview.setOrientation(LinearLayout.HORIZONTAL);
+            leftPreview.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            LinearLayout rightPreview = new LinearLayout(this);
+            rightPreview.setOrientation(LinearLayout.HORIZONTAL);
+            rightPreview.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            previews.addView(leftPreview, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            previews.addView(rightPreview, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            matchRows.addView(previews);
+            matchPairFields.add(new EditText[]{left, right});
+            renderMatchSidePreview(index, leftPreview, true);
+            renderMatchSidePreview(index, rightPreview, false);
         }
     }
+
+    private void renderMatchSidePreview(int pairIndex, LinearLayout preview, boolean leftSide) {
+        preview.removeAllViews();
+        ProjectStructure.Question.MatchPair pair = editPairs.get(pairIndex);
+        List<ProjectStructure.Question.OptionItem> items =
+                leftSide ? pair.leftItems : pair.rightItems;
+        for (int j = 0; j < items.size(); j++) {
+            ProjectStructure.Question.OptionItem item = items.get(j);
+            final int itemIndex = j;
+            if ("vocab".equals(item.kind)) {
+                VocabularyEntry entry = findEntry(item.vocabId);
+                if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    android.widget.ImageView image = new android.widget.ImageView(this);
+                    android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory,
+                            entry.image);
+                    if (bitmap != null) {
+                        image.setImageBitmap(bitmap);
+                        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                        preview.addView(image, new LinearLayout.LayoutParams(dp(26), dp(26)));
+                    } else {
+                        preview.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                    }
+                } else if (entry != null) {
+                    preview.addView(text(vocabulary.displayName(entry), 13, R.color.forge_text));
+                } else {
+                    preview.addView(text("〔词汇已删除〕", 12, R.color.forge_warn));
+                }
+            } else {
+                preview.addView(text(item.text, 13, R.color.forge_text));
+            }
+            ForgeButton remove = new ForgeButton(this);
+            remove.setAllCaps(false);
+            remove.setText("×");
+            remove.setOnClickListener(v -> {
+                if (leftSide) pair.leftItems.remove(itemIndex);
+                else pair.rightItems.remove(itemIndex);
+                renderMatchRows();
+                if (pairIndex < matchPairFields.size()) {
+                    EditText[] fields = matchPairFields.get(pairIndex);
+                    fields[leftSide ? 0 : 1].setText(
+                            mirrorListenOption(leftSide ? pair.leftItems : pair.rightItems));
+                }
+                dirty = true;
+            });
+            preview.addView(remove);
+        }
+    }
+
+    private void openMatchOptionPicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "为配对选择词汇");
+        matchOptionLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> matchOptionLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> ids = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (ids == null || ids.isEmpty()) return;
+                int target = matchPickPair;
+                if (target < 0 || target >= editPairs.size()) return;
+                ProjectStructure.Question.MatchPair pair = editPairs.get(target);
+                List<ProjectStructure.Question.OptionItem> items =
+                        "l".equals(matchPickSide) ? pair.leftItems : pair.rightItems;
+                for (String id : ids) {
+                    VocabularyEntry entry = findEntry(id);
+                    if (entry == null) continue;
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.kind = "vocab";
+                    item.vocabId = entry.id;
+                    items.add(item);
+                }
+                String mirrored = mirrorListenOption(items);
+                if ("l".equals(matchPickSide)) pair.left = mirrored;
+                else pair.right = mirrored;
+                renderMatchRows();
+                matchPickPair = -1;
+                matchPickSide = "l";
+                dirty = true;
+            });
 
     private void showListenAudio() {
         hideForMatch(true);
@@ -1672,7 +1804,11 @@ public class QuestionEditorActivity extends ForgeActivity {
             String left = pair.left == null ? "" : pair.left.trim();
             String right = pair.right == null ? "" : pair.right.trim();
             if (left.isEmpty() || right.isEmpty()) { toast("每对左右都不能为空"); return; }
-            valid.add(new ProjectStructure.Question.MatchPair(left, right));
+            ProjectStructure.Question.MatchPair value =
+                    new ProjectStructure.Question.MatchPair(left, right);
+            value.leftItems.addAll(normalizeMatchSide(pair.leftItems, left));
+            value.rightItems.addAll(normalizeMatchSide(pair.rightItems, right));
+            valid.add(value);
         }
         question.type = ProjectStructure.Question.TYPE_MATCH;
         question.prompt = prompt;
@@ -1686,6 +1822,17 @@ public class QuestionEditorActivity extends ForgeActivity {
         saved = true;
         toast("已保存配对题");
         finish();
+    }
+
+    private List<ProjectStructure.Question.OptionItem> normalizeMatchSide(
+            List<ProjectStructure.Question.OptionItem> items, String text) {
+        List<ProjectStructure.Question.OptionItem> result = new ArrayList<>();
+        if (items.isEmpty()) return result;
+        boolean hasVocab = containsVocabItem(items);
+        if (!hasVocab) return result;
+        if (!mirrorListenOption(items).equals(text)) return result;
+        result.addAll(items);
+        return result;
     }
 
     private void renderArrangeAnswers() {

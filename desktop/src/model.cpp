@@ -29,6 +29,28 @@ namespace {
 
 using json = nlohmann::json;
 
+json itemsToJson(const std::vector<QuestionOptionItem>& items) {
+  json result = json::array();
+  for (const auto& item : items) {
+    if (item.kind == "vocab") result.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
+    else result.push_back({{"kind", "text"}, {"text", item.text}});
+  }
+  return result;
+}
+
+std::vector<QuestionOptionItem> itemsFromJson(const json& object, const char* key) {
+  std::vector<QuestionOptionItem> result;
+  if (!object.contains(key) || !object[key].is_array()) return result;
+  for (const auto& value : object[key]) {
+    QuestionOptionItem item;
+    item.kind = value.value("kind", "text");
+    item.text = value.value("text", "");
+    item.vocabId = value.value("vocabId", "");
+    result.push_back(item);
+  }
+  return result;
+}
+
 json segmentsToJson(const std::vector<QuestionSegment>& segments) {
   json result = json::array();
   for (const auto& segment : segments) {
@@ -164,7 +186,10 @@ json structureToJson(const Structure& structure) {
           }
           json pairs = json::array();
           for (const auto& pair : question.pairs) {
-            pairs.push_back({{"l", pair.left}, {"r", pair.right}});
+            json pairJson = {{"l", pair.left}, {"r", pair.right}};
+            if (!pair.leftItems.empty()) pairJson["lItems"] = itemsToJson(pair.leftItems);
+            if (!pair.rightItems.empty()) pairJson["rItems"] = itemsToJson(pair.rightItems);
+            pairs.push_back(std::move(pairJson));
           }
           json promptItems = json::array();
           for (const auto& item : question.promptItems) {
@@ -321,6 +346,8 @@ Structure structureFromJson(const json& value) {
                     MatchPair pair;
                     pair.left = item.value("l", "");
                     pair.right = item.value("r", "");
+                    pair.leftItems = itemsFromJson(item, "lItems");
+                    pair.rightItems = itemsFromJson(item, "rItems");
                     if (!pair.left.empty() && !pair.right.empty()) question.pairs.push_back(pair);
                   }
                 }
