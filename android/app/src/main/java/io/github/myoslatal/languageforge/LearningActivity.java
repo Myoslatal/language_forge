@@ -206,7 +206,8 @@ public class LearningActivity extends ForgeActivity {
             boolean listening = ProjectStructure.Question.TYPE_LISTEN.equals(item.type);
             String typeLabel = arrange ? "词块组句" : match ? "配对"
                     : typing ? "输入翻译" : listening ? "听音选择"
-                    : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片" : "选择正确翻译";
+                    : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片"
+                    : ProjectStructure.Question.TYPE_DIALOG.equals(item.type) ? "选择对话" : "选择正确翻译";
             boolean choice = ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(item.type);
             row.setText(sentence + "\n" + typeLabel +
                     (choice ? (item.hintsEnabled ? " · 学习提示" : " · 无提示") : ""));
@@ -246,7 +247,8 @@ public class LearningActivity extends ForgeActivity {
                 : ProjectStructure.Question.TYPE_MATCH.equals(item.type) ? "配对"
                 : ProjectStructure.Question.TYPE_TYPE.equals(item.type) ? "输入翻译"
                 : ProjectStructure.Question.TYPE_LISTEN.equals(item.type) ? "听音选择"
-                : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片" : "选择正确翻译";
+                : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片"
+                : ProjectStructure.Question.TYPE_DIALOG.equals(item.type) ? "选择对话" : "选择正确翻译";
         subtitleView.setText(selected.name + " · " + mode);
         content.removeAllViews();
         if (ProjectStructure.Question.TYPE_CARD.equals(item.type)) {
@@ -267,6 +269,10 @@ public class LearningActivity extends ForgeActivity {
         }
         if (ProjectStructure.Question.TYPE_ARRANGE.equals(item.type)) {
             renderArrangeQuestion(item);
+            return;
+        }
+        if (ProjectStructure.Question.TYPE_DIALOG.equals(item.type)) {
+            renderDialogQuestion(item);
             return;
         }
 
@@ -298,6 +304,10 @@ public class LearningActivity extends ForgeActivity {
             content.addView(playQuestion);
         }
 
+        renderChoiceOptions(item);
+    }
+
+    private void renderChoiceOptions(ProjectStructure.Question item) {
         content.addView(text("选项（选择后确认）", 14, R.color.forge_muted));
         for (int i = 0; i < item.options.size(); i++) {
             final int index = i;
@@ -363,6 +373,37 @@ public class LearningActivity extends ForgeActivity {
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
             }
         }
+    }
+
+    private void renderDialogQuestion(ProjectStructure.Question item) {
+        content.removeAllViews();
+        for (int i = 0; i < item.lines.size(); i++) {
+            ProjectStructure.Question.DialogLine line = item.lines.get(i);
+            String who = line.who == null ? "" : line.who.trim();
+            String body = line.text == null ? "" : line.text.trim();
+            if (who.isEmpty() && body.isEmpty()) continue;
+            LinearLayout bubble = new LinearLayout(this);
+            bubble.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setCornerRadius(dp(12));
+            shape.setColor(getColor(i % 2 == 0 ? R.color.forge_panel : R.color.forge_accent_soft));
+            bubble.setBackground(shape);
+            bubble.setPadding(dp(12), dp(8), dp(12), dp(8));
+            TextView speaker = text(who.isEmpty() ? String.valueOf(i + 1) : who, 12,
+                    R.color.forge_muted);
+            bubble.addView(speaker);
+            TextView lineText = text(body.isEmpty() ? "（待补全）" : body, 16, R.color.forge_text);
+            bubble.addView(lineText);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.gravity = i % 2 == 0 ? Gravity.START : Gravity.END;
+            lp.bottomMargin = dp(6);
+            content.addView(bubble, lp);
+        }
+        if (item.prompt != null && !item.prompt.isEmpty()) {
+            content.addView(text(item.prompt, 18, R.color.forge_text));
+        }
+        renderChoiceOptions(item);
     }
 
     private void renderCardQuestion(ProjectStructure.Question item) {

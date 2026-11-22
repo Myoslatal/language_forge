@@ -278,6 +278,8 @@ Arrange learning matches tapped block text to vocabulary entries and plays their
 
 Arrange blocks are added from the shared vocabulary picker, storing vocabId + display-name text; duplicates are skipped by vocabId and learning audio prefers vocabId.
 
+Dialog questions use type="dialog": prompt plus lines[{who,text}] and four options with correctIndex; optionItems works like choice. The editor adds a 选择对话 type with prompt, line rows (who/text, ＋台词, ×) and the shared option editor (选词/preview/correct radio); saving requires at least one line with text and four options. Learning renders alternating speaker bubbles, then prompt and the standard option/confirm/next flow.
+
 Card questions use type="card" (new-knowledge intro card, not graded): card={word,pron,def,detail,wordVocabId,examples:[{l,z}]}. The editor has a 新知卡片 type with word/pron/def/detail/example fields, a 从词库生成卡片 button (prefills from a vocabulary entry, keeps wordVocabId for image entries and previews the handwriting) and per-example add/remove. Learning shows the image or text word, /pron/, def, multi-line detail, examples and a note; 继续/完成 advances without grading.
 
 Match questions use type="match" with prompt and pairs[{l,r,lItems,rItems}]; the editor gives each pair side a 选词 button (preview with × removal, mirror text refreshed from items, image thumbnails), and saving keeps side items only when they contain vocab and the text matches the mirror. Desktop learning shows shuffled two columns with immediate pairing; vocab sides render as image-capable rows while text pairs keep the plain button, and 下一题/完成 appears after all pairs.

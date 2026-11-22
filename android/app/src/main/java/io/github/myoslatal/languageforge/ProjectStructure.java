@@ -172,6 +172,17 @@ final class ProjectStructure {
                                                 }
                                             }
                                         }
+                                        JSONArray lines = questionObject.optJSONArray("lines");
+                                        if (lines != null) {
+                                            for (int li = 0; li < lines.length(); li++) {
+                                                JSONObject line = lines.optJSONObject(li);
+                                                if (line == null) continue;
+                                                Question.DialogLine value = new Question.DialogLine();
+                                                value.who = line.optString("who", "");
+                                                value.text = line.optString("text", "");
+                                                question.lines.add(value);
+                                            }
+                                        }
                                         JSONArray promptItems = questionObject.optJSONArray("promptItems");
                                         if (promptItems != null) {
                                             for (int pi = 0; pi < promptItems.length(); pi++) {
@@ -393,6 +404,16 @@ final class ProjectStructure {
                             questionObject.put("near", question.near);
                             if (!question.audioSource.isEmpty()) {
                                 questionObject.put("audioSource", question.audioSource);
+                            }
+                            if (Question.TYPE_DIALOG.equals(question.type)) {
+                                JSONArray lines = new JSONArray();
+                                for (Question.DialogLine line : question.lines) {
+                                    JSONObject object = new JSONObject();
+                                    object.put("who", line.who);
+                                    object.put("text", line.text);
+                                    lines.put(object);
+                                }
+                                questionObject.put("lines", lines);
                             }
                             if (Question.TYPE_CARD.equals(question.type)) {
                                 JSONObject card = new JSONObject();
@@ -643,6 +664,7 @@ final class ProjectStructure {
         static final String TYPE_TYPE = "type";
         static final String TYPE_LISTEN = "listen";
         static final String TYPE_CARD = "card";
+        static final String TYPE_DIALOG = "dialog";
 
         static final class CardExample {
             String l = "";
@@ -656,6 +678,13 @@ final class ProjectStructure {
             String detail = "";
             String wordVocabId = "";
             final List<CardExample> examples = new ArrayList<>();
+        }
+
+        static final class DialogLine {
+            String who = "";
+            String text = "";
+            DialogLine() {}
+            DialogLine(String who, String text) { this.who = who; this.text = text; }
         }
 
         static final class OptionItem {
@@ -733,6 +762,7 @@ final class ProjectStructure {
         final List<List<Question.OptionItem>> optionItems = new ArrayList<>();
         final List<Question.OptionItem> promptItems = new ArrayList<>();
         final Card card = new Card();
+        final List<DialogLine> lines = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();
         final List<MatchPair> pairs = new ArrayList<>();

@@ -199,6 +199,10 @@ json structureToJson(const Structure& structure) {
                         {"def", question.card.def}, {"detail", question.card.detail},
                         {"wordVocabId", question.card.wordVocabId}, {"examples", exs}};
           }
+          json lines = json::array();
+          for (const auto& line : question.lines) {
+            lines.push_back({{"who", line.who}, {"text", line.text}});
+          }
           json promptItems = json::array();
           for (const auto& item : question.promptItems) {
             if (item.kind == "vocab") promptItems.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
@@ -238,6 +242,7 @@ json structureToJson(const Structure& structure) {
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
           if (!cardJson.is_null()) questionJson["card"] = cardJson;
+          if (question.type == "dialog") questionJson["lines"] = lines;
           if (!promptItems.empty()) questionJson["promptItems"] = promptItems;
           if (!optionItems.empty()) questionJson["optionItems"] = optionItems;
           questions.push_back(std::move(questionJson));
@@ -337,6 +342,14 @@ Structure structureFromJson(const json& value) {
                     for (const auto& ex : card["examples"]) {
                       question.card.examples.push_back({ex.value("l", ""), ex.value("z", "")});
                     }
+                  }
+                }
+                if (questionValue.contains("lines") && questionValue["lines"].is_array()) {
+                  for (const auto& lineValue : questionValue["lines"]) {
+                    DialogLine line;
+                    line.who = lineValue.value("who", "");
+                    line.text = lineValue.value("text", "");
+                    question.lines.push_back(line);
                   }
                 }
                 if (questionValue.contains("promptItems") && questionValue["promptItems"].is_array()) {

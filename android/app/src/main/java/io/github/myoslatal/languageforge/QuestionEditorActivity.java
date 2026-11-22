@@ -97,6 +97,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout typeSection;
     private LinearLayout listenSection;
     private LinearLayout cardSection;
+    private LinearLayout dialogSection;
+    private EditText dialogPrompt;
+    private LinearLayout dialogLines;
+    private final List<ProjectStructure.Question.DialogLine> editLines = new ArrayList<>();
     private EditText cardWord, cardPron, cardDef, cardDetail;
     private LinearLayout cardWordPreview;
     private LinearLayout cardExamples;
@@ -202,14 +206,15 @@ public class QuestionEditorActivity extends ForgeActivity {
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
-                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片"});
+                new String[]{"选择正确翻译", "词块组句", "配对", "输入翻译", "听音选择", "新知卡片", "选择对话"});
         typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         typeSpinner.setAdapter(typeAdapter);
         typeSpinner.setSelection(ProjectStructure.Question.TYPE_ARRANGE.equals(question.type) ? 1
                 : ProjectStructure.Question.TYPE_MATCH.equals(question.type) ? 2
                 : ProjectStructure.Question.TYPE_TYPE.equals(question.type) ? 3
                 : ProjectStructure.Question.TYPE_LISTEN.equals(question.type) ? 4
-                : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? 5 : 0);
+                : ProjectStructure.Question.TYPE_CARD.equals(question.type) ? 5
+                : ProjectStructure.Question.TYPE_DIALOG.equals(question.type) ? 6 : 0);
         scrollContent.addView(typeSpinner, 0);
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
@@ -384,6 +389,34 @@ public class QuestionEditorActivity extends ForgeActivity {
         cardSection.addView(addExample);
         cardSection.setVisibility(View.GONE);
         scrollContent.addView(cardSection, 5);
+        dialogSection = new LinearLayout(this);
+        dialogSection.setOrientation(LinearLayout.VERTICAL);
+        dialogPrompt = new EditText(this);
+        dialogPrompt.setHint("题干/提示（默认：选出最合适的回答）");
+        dialogPrompt.setText(question.prompt == null ? "" : question.prompt);
+        dialogPrompt.addTextChangedListener(new SimpleWatcher());
+        dialogSection.addView(dialogPrompt);
+        TextView dialogLinesTitle = new TextView(this);
+        dialogLinesTitle.setText("对话台词（留空 = 待补全）");
+        dialogLinesTitle.setTextSize(13f);
+        dialogLinesTitle.setTextColor(getColor(R.color.forge_muted));
+        dialogSection.addView(dialogLinesTitle);
+        dialogLines = new LinearLayout(this);
+        dialogLines.setOrientation(LinearLayout.VERTICAL);
+        dialogSection.addView(dialogLines);
+        ForgeButton addLine = new ForgeButton(this);
+        addLine.setAllCaps(false);
+        addLine.setText("＋ 台词");
+        addLine.setOnClickListener(v -> {
+            editLines.add(new ProjectStructure.Question.DialogLine("", ""));
+            renderDialogLines();
+            dirty = true;
+        });
+        dialogSection.addView(addLine);
+        editLines.addAll(question.lines);
+        renderDialogLines();
+        dialogSection.setVisibility(View.GONE);
+        scrollContent.addView(dialogSection, 6);
         cardWord.setText(question.card.word);
         cardWord.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int a,int b,int c){}
@@ -447,7 +480,14 @@ public class QuestionEditorActivity extends ForgeActivity {
                 if (typeSection != null) typeSection.setVisibility(View.GONE);
                 if (listenSection != null) listenSection.setVisibility(View.GONE);
                 if (cardSection != null) cardSection.setVisibility(View.GONE);
-                if (position == 5) {
+                if (dialogSection != null) dialogSection.setVisibility(View.GONE);
+                if (position == 6) {
+                    if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+                    if (dialogSection != null) dialogSection.setVisibility(View.VISIBLE);
+                    ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
+                            "选择对话 · " + course.name);
+                    showDialogEditor();
+                } else if (position == 5) {
                     if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
                     if (cardSection != null) cardSection.setVisibility(View.VISIBLE);
                     ((TextView) findViewById(R.id.question_editor_subtitle)).setText(
@@ -481,6 +521,10 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (matchSection != null) matchSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
             hideForMatch(true);
+        } else if (ProjectStructure.Question.TYPE_DIALOG.equals(question.type)) {
+            if (dialogSection != null) dialogSection.setVisibility(View.VISIBLE);
+            if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
+            showDialogEditor();
         } else if (ProjectStructure.Question.TYPE_CARD.equals(question.type)) {
             if (cardSection != null) cardSection.setVisibility(View.VISIBLE);
             if (arrangeSection != null) arrangeSection.setVisibility(View.GONE);
@@ -1887,6 +1931,146 @@ public class QuestionEditorActivity extends ForgeActivity {
                 }
             });
 
+    private void renderDialogLines() {
+        if (dialogLines == null) return;
+        dialogLines.removeAllViews();
+        for (int i = 0; i < editLines.size(); i++) {
+            final int index = i;
+            ProjectStructure.Question.DialogLine line = editLines.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            EditText who = new EditText(this);
+            who.setHint("角色");
+            who.setText(line.who);
+            who.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+                public void onTextChanged(CharSequence s,int a,int b,int c){ line.who = s.toString(); dirty = true; }
+                public void afterTextChanged(android.text.Editable s){}
+            });
+            row.addView(who, new LinearLayout.LayoutParams(dp(84),
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            EditText text = new EditText(this);
+            text.setHint("台词（留空 = 待补全）");
+            text.setText(line.text);
+            text.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+                public void onTextChanged(CharSequence s,int a,int b,int c){ line.text = s.toString(); dirty = true; }
+                public void afterTextChanged(android.text.Editable s){}
+            });
+            row.addView(text, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            ForgeButton remove = small("×");
+            remove.setOnClickListener(v -> {
+                editLines.remove(index);
+                renderDialogLines();
+                dirty = true;
+            });
+            row.addView(remove);
+            dialogLines.addView(row);
+        }
+    }
+
+    private void showDialogEditor() {
+        hideChoiceSections(editorScrollContent, true);
+        int[] hidden = {R.id.question_sentence, R.id.question_parts,
+                R.id.btn_choose_question_parts, R.id.btn_insert_punct,
+                R.id.question_hints_enabled, R.id.question_audio_hint,
+                R.id.question_audio_trim, R.id.question_audio_start,
+                R.id.question_audio_end, R.id.btn_question_record, R.id.btn_question_play,
+                R.id.btn_question_remove_audio, R.id.btn_question_trim_play};
+        for (int id : hidden) {
+            View view = findViewById(id);
+            if (view != null) view.setVisibility(View.GONE);
+        }
+        for (int i = 0; i < 4; i++) {
+            int optionId = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
+            int correctId = getResources().getIdentifier("question_correct_" + i, "id", getPackageName());
+            View option = findViewById(optionId);
+            View correct = findViewById(correctId);
+            if (option != null) option.setVisibility(View.VISIBLE);
+            if (correct != null) correct.setVisibility(View.VISIBLE);
+            if (choiceOptionExtras[i] != null) choiceOptionExtras[i].setVisibility(View.VISIBLE);
+        }
+        showTextView(editorScrollContent, "四个选项");
+    }
+
+    private void showTextView(View view, String prefix) {
+        if (view instanceof TextView) {
+            if (((TextView) view).getText().toString().startsWith(prefix)) {
+                view.setVisibility(View.VISIBLE);
+            }
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                showTextView(group.getChildAt(i), prefix);
+            }
+        }
+    }
+
+    private void saveDialog() {
+        String prompt = dialogPrompt.getText() == null ? "" : dialogPrompt.getText().toString().trim();
+        List<ProjectStructure.Question.DialogLine> lines = new ArrayList<>();
+        boolean hasLineText = false;
+        for (ProjectStructure.Question.DialogLine line : editLines) {
+            String who = line.who == null ? "" : line.who.trim();
+            String text = line.text == null ? "" : line.text.trim();
+            if (who.isEmpty() && text.isEmpty()) continue;
+            ProjectStructure.Question.DialogLine value = new ProjectStructure.Question.DialogLine(who, text);
+            lines.add(value);
+            if (!text.isEmpty()) hasLineText = true;
+        }
+        if (!hasLineText) { toast("对话里至少需要一句台词"); return; }
+        List<String> options = new ArrayList<>();
+        for (ForgeTextField field : optionFields) {
+            String value = field.getText() == null ? "" : field.getText().toString().trim();
+            if (value.isEmpty()) { toast("四个选项都必须填写"); return; }
+            options.add(value);
+        }
+        int correct = -1;
+        for (int i = 0; i < correctButtons.length; i++) {
+            if (correctButtons[i].isChecked()) { correct = i; break; }
+        }
+        if (correct < 0) { toast("请选择一个正确答案"); return; }
+        question.type = ProjectStructure.Question.TYPE_DIALOG;
+        question.prompt = prompt;
+        question.lines.clear();
+        question.lines.addAll(lines);
+        question.options.clear();
+        question.options.addAll(options);
+        question.optionItems.clear();
+        for (int i = 0; i < 4; i++) {
+            List<ProjectStructure.Question.OptionItem> items =
+                    new ArrayList<>(choiceOptionItems.get(i));
+            if (!mirrorListenOption(items).equals(options.get(i))) {
+                ProjectStructure.Question.OptionItem textItem =
+                        new ProjectStructure.Question.OptionItem();
+                textItem.text = options.get(i);
+                items.clear();
+                items.add(textItem);
+            }
+            question.optionItems.add(items);
+        }
+        boolean hasVocabOption = false;
+        for (List<ProjectStructure.Question.OptionItem> group : question.optionItems) {
+            for (ProjectStructure.Question.OptionItem item : group) {
+                if ("vocab".equals(item.kind)) { hasVocabOption = true; break; }
+            }
+            if (hasVocabOption) break;
+        }
+        if (!hasVocabOption) question.optionItems.clear();
+        question.correctIndex = correct;
+        question.hintsEnabled = false;
+        String fallback = lines.isEmpty() ? "" : lines.get(0).text;
+        question.name = prompt.isEmpty() ? (fallback.isEmpty() ? "选择对话" : fallback) : prompt;
+        if (!course.questions.contains(question)) course.questions.add(question);
+        if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        saved = true;
+        toast("已保存对话题");
+        finish();
+    }
+
     private void saveCard() {
         String word = cardWord.getText().toString().trim();
         String def = cardDef.getText().toString().trim();
@@ -2216,6 +2400,10 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 6) {
+            saveDialog();
+            return;
+        }
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 5) {
             saveCard();
             return;

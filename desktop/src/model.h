@@ -48,6 +48,11 @@ struct WarnRule {
   std::string text;
 };
 
+struct DialogLine {
+  std::string who;
+  std::string text;
+};
+
 struct MatchPair {
   std::string left;
   std::string right;
@@ -77,6 +82,7 @@ struct Question {
   std::vector<std::string> options;
   std::vector<std::vector<QuestionOptionItem>> optionItems;
   std::vector<QuestionOptionItem> promptItems;
+  std::vector<DialogLine> lines;
   QuestionCard card;
   std::string prompt;
   std::vector<QuestionBlock> blocks;
