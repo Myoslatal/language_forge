@@ -173,69 +173,74 @@ public class LearningActivity extends ForgeActivity {
         titleView.setText("学习");
         subtitleView.setText("选择课程");
         content.removeAllViews();
+        List<ProjectStructure.Course> courses = new ArrayList<>();
         for (ProjectStructure.Chapter chapter : structure.chapters) {
             for (ProjectStructure.Unit unit : chapter.units) {
-                for (ProjectStructure.Course item : unit.courses) {
-                    Button row = new Button(this);
-                    row.setAllCaps(false);
-                    row.setText(item.name + "\n" + chapter.name + " · " + unit.name
-                            + "  ·  " + item.questions.size() + " 道题目");
-                    row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-                    row.setOnClickListener(v -> showQuestions(item));
-                    content.addView(row, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
-                }
+                for (ProjectStructure.Course item : unit.courses) courses.add(item);
             }
+        }
+        if (courses.size() == 1) {
+            startCourse(courses.get(0));
+            return;
+        }
+        for (ProjectStructure.Course item : courses) {
+            Button row = new Button(this);
+            row.setAllCaps(false);
+            row.setText(item.name + "\n" + item.questions.size() + " 道题目");
+            row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            row.setOnClickListener(v -> startCourse(item));
+            content.addView(row, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
         }
         if (content.getChildCount() == 0) {
             content.addView(text("还没有课程", 16, R.color.forge_muted));
         }
     }
 
-    private void showQuestions(ProjectStructure.Course selected) {
+    private void startCourse(ProjectStructure.Course selected) {
+        if (selected.questions.isEmpty()) {
+            course = selected;
+            question = null;
+            titleView.setText(selected.name);
+            subtitleView.setText("本课");
+            content.removeAllViews();
+            confirmButton.setVisibility(View.GONE);
+            content.addView(text("该课程还没有题目", 16, R.color.forge_muted));
+            Button back = new Button(this);
+            back.setAllCaps(false);
+            back.setText("返回");
+            back.setOnClickListener(v -> goBack());
+            content.addView(back);
+            return;
+        }
+        showQuestion(selected, selected.questions.get(0));
+    }
+
+    private void showComplete() {
         dismissHint();
-        course = selected;
         question = null;
         confirmButton.setVisibility(View.GONE);
-        confirmButton.setText("确认答案");
-        titleView.setText(selected.name);
-        subtitleView.setText("选择题目");
+        titleView.setText("本课完成");
+        subtitleView.setText(course == null ? "" : course.name);
         content.removeAllViews();
-        for (ProjectStructure.Question item : selected.questions) {
-            Button row = new Button(this);
-            row.setAllCaps(false);
-            String sentence = item.sentence == null || item.sentence.isEmpty() ? item.name : item.sentence;
-            if (ProjectStructure.Question.TYPE_CUSTOM.equals(item.type)) {
-                if (item.prompt != null && !item.prompt.isEmpty()) sentence = item.prompt;
-                else if (item.customBody != null && !item.customBody.isEmpty()) {
-                    int cut = item.customBody.indexOf('\n');
-                    sentence = cut < 0 ? item.customBody : item.customBody.substring(0, cut);
-                }
-            }
-            boolean arrange = ProjectStructure.Question.TYPE_ARRANGE.equals(item.type);
-            boolean match = ProjectStructure.Question.TYPE_MATCH.equals(item.type);
-            boolean typing = ProjectStructure.Question.TYPE_TYPE.equals(item.type);
-            boolean listening = ProjectStructure.Question.TYPE_LISTEN.equals(item.type);
-            String typeLabel = arrange ? "词块组句" : match ? "配对"
-                    : typing ? "输入翻译" : listening ? "听音选择"
-                    : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片"
-                    : ProjectStructure.Question.TYPE_DIALOG.equals(item.type) ? "选择对话"
-                    : ProjectStructure.Question.TYPE_READING.equals(item.type) ? "阅读短文"
-                    : ProjectStructure.Question.TYPE_CLOZE.equals(item.type) ? "选词填空"
-                    : ProjectStructure.Question.TYPE_CUSTOM.equals(item.type)
-                            ? (item.customLabel == null || item.customLabel.isEmpty()
-                                    ? "自定义题型" : item.customLabel) : "选择正确翻译";
-            boolean choice = ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(item.type);
-            row.setText(sentence + "\n" + typeLabel +
-                    (choice ? (item.hintsEnabled ? " · 学习提示" : " · 无提示") : ""));
-            row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            row.setOnClickListener(v -> showQuestion(selected, item));
-            content.addView(row, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
-        }
-        if (selected.questions.isEmpty()) {
-            content.addView(text("该课程还没有题目", 16, R.color.forge_muted));
-        }
+        content.addView(text("本课完成", 26, R.color.forge_text));
+        content.addView(text("你已完成本课全部题目。", 16, R.color.forge_muted));
+        Button back = new Button(this);
+        back.setAllCaps(false);
+        back.setText("返回");
+        back.setOnClickListener(v -> {
+            if (structure.chapters.size() > 1 || hasMultipleCourses()) showCourses();
+            else finish();
+        });
+        content.addView(back);
+    }
+
+    private boolean hasMultipleCourses() {
+        int count = 0;
+        for (ProjectStructure.Chapter chapter : structure.chapters)
+            for (ProjectStructure.Unit unit : chapter.units)
+                count += unit.courses.size();
+        return count > 1;
     }
 
     private void showQuestion(ProjectStructure.Course selected, ProjectStructure.Question item) {
@@ -272,7 +277,9 @@ public class LearningActivity extends ForgeActivity {
                 : ProjectStructure.Question.TYPE_CUSTOM.equals(item.type)
                         ? (item.customLabel == null || item.customLabel.isEmpty()
                                 ? "自定义题型" : item.customLabel) : "选择正确翻译";
-        subtitleView.setText(selected.name + " · " + mode);
+        int progress = selected.questions.indexOf(item) + 1;
+        subtitleView.setText(selected.name + " · " + mode + " · 第 " + progress
+                + " / " + selected.questions.size() + " 题");
         content.removeAllViews();
         if (ProjectStructure.Question.TYPE_CLOZE.equals(item.type)) {
             renderClozeQuestion(item);
@@ -1677,7 +1684,7 @@ public class LearningActivity extends ForgeActivity {
         if (index >= 0 && index + 1 < course.questions.size()) {
             showQuestion(course, course.questions.get(index + 1));
         } else {
-            showQuestions(course);
+            showComplete();
         }
     }
 
@@ -1899,7 +1906,7 @@ public class LearningActivity extends ForgeActivity {
     private void goBack() {
         dismissHint();
         if (question != null) {
-            showQuestions(course);
+            if (hasMultipleCourses()) showCourses(); else finish();
         } else if (course != null) {
             showCourses();
         } else {

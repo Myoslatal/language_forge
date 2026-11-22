@@ -305,3 +305,5 @@ Listen options support optionItems (text / vocab) with image previews and mirror
 Choice questions support handwritten vocabulary: image segments render as inline image buttons in learning with the same clickable hint/audio behaviour as words (underline only for text), the editor shows thumbnails in the word list and mirrors image words with their first code, and options reuse optionItems with 选词 pickers, previews/×, mirror collapse and drop-if-text-only rules; pure-text options keep the plain button path.
 
 Arrange blocks with image vocabulary render as image chips in the learning pool/selected row and show a thumbnail in the editor, with image blocks defaulting their text mirror to the first code. Type prompts support promptItems rendered inline as text/images with the same mirror rules; pure-text prompts are unchanged.
+
+Learning starts at the first question of a single course, advances in order, and shows a course-complete page at the end.

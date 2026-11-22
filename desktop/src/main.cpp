@@ -457,6 +457,17 @@ struct App {
   bool pickerForCardWord = false;
   std::vector<int> clozeFilled;
   std::string clozeQuestionId;
+  bool learningComplete = false;
+
+  void finishLearning() {
+    learningComplete = true;
+    learningQuestionId.clear();
+    learningSelected = -1;
+    learningAnswered = false;
+    learningHintId.clear();
+    stopAudioPlayback();
+    showToast("本课完成");
+  }
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
@@ -2067,10 +2078,7 @@ struct App {
       stopAudioPlayback();
       if (learningAnswered) {
         if (last) {
-          learningQuestionId.clear();
-          learningSelected = -1;
-          learningAnswered = false;
-          showToast("本课完成");
+          finishLearning();
         } else {
           for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
             if (course->questions[i].id == question->id) {
@@ -4468,6 +4476,9 @@ void renderQuestionEditor(App& app) {
 }
 
 void renderLearning(App& app) {
+  if (app.learningCourseId.empty() && app.learningQuestionId.empty()) {
+    app.learningComplete = false;
+  }
   if (app.structure.chapters.empty() && !app.folder.empty()) {
     app.store->loadProject(app.folder, app.project, app.structure);
   }
@@ -4492,52 +4503,56 @@ void renderLearning(App& app) {
       }
     }
   }
-  if (app.learningQuestionId.empty()) {
-    if (!course) {
-      pageTitle("LEARN", "选择课程", "语法与词汇学习");
-      for (auto& chapter : app.structure.chapters) {
-        for (auto& unit : chapter.units) {
-          for (auto& item : unit.courses) {
-            ImGui::PushID(item.id.c_str());
-            if (ImGui::Button((item.name + "  ·  " + chapter.name + " / " + unit.name +
-                               "  ·  " + std::to_string(item.questions.size()) + " 题").c_str(),
-                              ImVec2(-1, 44))) {
-              app.learningCourseId = item.id;
-              app.learningQuestionId.clear();
-            }
-            ImGui::PopID();
-          }
-        }
-      }
-      return;
-    }
-    pageTitle("LEARN", course->name, "选择题目");
-    for (auto& question : course->questions) {
-      ImGui::PushID(question.id.c_str());
-      std::string title = question.sentence.empty() ? question.name : question.sentence;
-      if (question.type == "custom") {
-        if (!question.prompt.empty()) {
-          title = question.prompt;
-        } else if (!question.customBody.empty()) {
-          const std::size_t cut = question.customBody.find('\n');
-          title = cut == std::string::npos ? question.customBody
-                                           : question.customBody.substr(0, cut);
-        }
-      }
-      std::string row = title + "  ·  " + questionLabel(question);
-      if (question.type == "translation_choice") {
-        row += question.hintsEnabled ? "  ·  学习提示" : "  ·  无提示";
-      }
-      if (ImGui::Button(row.c_str(), ImVec2(-1, 44))) {
-        app.learningQuestionId = question.id;
-        app.learningSelected = -1;
-        app.learningAnswered = false;
-        app.learningHintId.clear();
-        app.stopAudioPlayback();
-      }
-      ImGui::PopID();
+  if (app.learningComplete) {
+    pageTitle("LEARN", "本课完成", course ? course->name : "");
+    ImGui::TextWrapped("你已完成本课全部题目。");
+    if (ImGui::Button("返回##learning_done_back", ImVec2(-1, 42))) {
+      app.learningComplete = false;
+      app.learningQuestionId.clear();
+      app.learningCourseId.clear();
+      app.screen = App::Screen::Structure;
     }
     return;
+  }
+  if (app.learningQuestionId.empty()) {
+    if (!course) {
+      int courseCount = 0;
+      for (auto& chapter : app.structure.chapters)
+        for (auto& unit : chapter.units) courseCount += unit.courses.size();
+      if (courseCount == 1) {
+        for (auto& chapter : app.structure.chapters)
+          for (auto& unit : chapter.units)
+            for (auto& item : unit.courses)
+              if (course == nullptr) { app.learningCourseId = item.id; course = &item; }
+        if (course && !course->questions.empty()) {
+          app.learningQuestionId = course->questions.front().id;
+          app.learningComplete = false;
+        }
+      } else {
+        pageTitle("LEARN", "选择课程", "语法与词汇学习");
+        for (auto& chapter : app.structure.chapters) {
+          for (auto& unit : chapter.units) {
+            for (auto& item : unit.courses) {
+              ImGui::PushID(item.id.c_str());
+              if (ImGui::Button((item.name + "  ·  " + chapter.name + " / " + unit.name +
+                                 "  ·  " + std::to_string(item.questions.size()) + " 题").c_str(),
+                                ImVec2(-1, 44))) {
+                app.learningCourseId = item.id;
+                app.learningComplete = false;
+                app.learningQuestionId = item.questions.empty() ? "" : item.questions.front().id;
+              }
+              ImGui::PopID();
+            }
+          }
+        }
+        return;
+      }
+    }
+    if (course && !course->questions.empty()) {
+      app.learningQuestionId = course->questions.front().id;
+      app.learningComplete = false;
+    }
+    if (app.learningQuestionId.empty()) return;
   }
   if (!course) return;
   Question* question = nullptr;
@@ -4639,9 +4654,7 @@ void renderLearning(App& app) {
         if (ImGui::Button((std::string(lastCustom ? "完成" : "下一题") + "##custom_next").c_str(),
                           ImVec2(-1, 40))) {
           if (lastCustom) {
-            app.learningQuestionId.clear();
-            app.learningAnswered = false;
-            app.showToast("本课完成");
+            app.finishLearning();
           } else {
             for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
               if (course->questions[i].id == question->id) {
@@ -4724,9 +4737,7 @@ void renderLearning(App& app) {
         if (ImGui::Button((std::string(lastCustom ? "完成" : "下一题") + "##custom_blocks_next").c_str(),
                           ImVec2(-1, 40))) {
           if (lastCustom) {
-            app.learningQuestionId.clear();
-            app.learningAnswered = false;
-            app.showToast("本课完成");
+            app.finishLearning();
           } else {
             for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
               if (course->questions[i].id == question->id) {
@@ -4767,8 +4778,7 @@ void renderLearning(App& app) {
       if (ImGui::Button((std::string(lastCustom ? "完成" : "继续") + "##custom_none_next").c_str(),
                         ImVec2(-1, 40))) {
         if (lastCustom) {
-          app.learningQuestionId.clear();
-          app.showToast("本课完成");
+          app.finishLearning();
         } else {
           for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
             if (course->questions[i].id == question->id) {
@@ -4927,9 +4937,7 @@ void renderLearning(App& app) {
           lastCloze ? "完成##cloze_next" : "下一题##cloze_next";
       if (ImGui::Button(clozeLabel.c_str(), ImVec2(-1, 40))) {
         if (lastCloze) {
-          app.learningQuestionId.clear();
-          app.learningAnswered = false;
-          app.showToast("本课完成");
+          app.finishLearning();
         } else {
           for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
             if (course->questions[i].id == question->id) {
@@ -5025,8 +5033,7 @@ void renderLearning(App& app) {
         if (ImGui::Button((label + "##reading_confirm").c_str(), ImVec2(-1, 42))) {
           if (app.learningAnswered) {
             if (lastReading) {
-              app.learningQuestionId.clear();
-              app.showToast("本课完成");
+              app.finishLearning();
             } else {
               for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
                 if (course->questions[i].id == question->id) {
@@ -5110,7 +5117,7 @@ void renderLearning(App& app) {
     bool lastCard = !course->questions.empty() && course->questions.back().id == question->id;
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 58);
     if (ImGui::Button(lastCard ? "完成##card_done" : "继续##card_next", ImVec2(-1, 42))) {
-      if (lastCard) { app.learningQuestionId.clear(); app.showToast("本课完成"); }
+      if (lastCard) { app.finishLearning(); }
       else {
         for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
           if (course->questions[i].id == question->id) {
@@ -5213,7 +5220,7 @@ void renderLearning(App& app) {
       const std::string nextLabel = (last ? "完成" : "下一题") + std::string("##listen_next");
       if (ImGui::Button(nextLabel.c_str(), ImVec2(-1, 42))) {
         app.stopAudioPlayback();
-        if (last) { app.learningQuestionId.clear(); app.listenAutoId.clear(); app.showToast("本课完成"); }
+        if (last) { app.listenAutoId.clear(); app.finishLearning(); }
         else {
           for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
             if (course->questions[i].id == question->id) {
@@ -5222,6 +5229,8 @@ void renderLearning(App& app) {
             }
           }
           app.listenAutoId.clear();
+          app.learningAnswered = false;
+          app.learningSelected = -1;
         }
       }
     }
@@ -5317,7 +5326,7 @@ void renderLearning(App& app) {
       std::string label = app.typeLearnCorrect ? (last ? "完成" : "下一题") : "确认答案";
       if (ImGui::Button((label + "##type_confirm").c_str(), ImVec2(-1, 42))) {
         if (app.typeLearnCorrect) {
-          if (last) { app.learningQuestionId.clear(); app.typeLearnQuestionId.clear(); app.showToast("本课完成"); }
+          if (last) { app.typeLearnQuestionId.clear(); app.finishLearning(); }
           else {
             for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
               if (course->questions[i].id == question->id) {
@@ -5435,9 +5444,8 @@ void renderLearning(App& app) {
       const std::string label = last ? "完成" : "下一题";
       if (ImGui::Button((label + "##match_next").c_str(), ImVec2(-1, 42))) {
         if (last) {
-          app.learningQuestionId.clear();
           app.matchQuestionId.clear();
-          app.showToast("本课完成");
+          app.finishLearning();
         } else {
           for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
             if (course->questions[i].id == question->id) {
@@ -5570,10 +5578,9 @@ void renderLearning(App& app) {
       if (ImGui::Button((label + "##arrange_confirm").c_str(), ImVec2(-1, 42))) {
         if (app.learningAnswered) {
           if (last) {
-            app.learningQuestionId.clear();
-            app.learningAnswered = false;
+            app.arrangeQuestionId.clear();
             app.arrangeSelected.clear();
-            app.showToast("本课完成");
+            app.finishLearning();
           } else {
             for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
               if (course->questions[i].id == question->id) {

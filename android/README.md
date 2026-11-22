@@ -535,3 +535,5 @@ Listen options may store optionItems (text / vocab). Image vocab items render th
 Choice questions also support handwritten vocabulary: sentence segments whose word is an image entry render the real handwriting inline (ImageSpan + clickable hint, no gloss substitution), the editor's word list shows a thumbnail for image words and its sentence mirror uses the image's first code, and the four options reuse optionItems (选词 picker, structured preview with × removal, mirror-collapse and drop-if-no-vocab rules) with structured rows in learning; pure-text options keep the ForgeButton path.
 
 Arrange blocks whose vocabId points at image vocabulary render as image chips in the learning pool and selected row, and the editor shows a block thumbnail; new image blocks store the first code as their text mirror. Type prompts store promptItems (text / vocab) rendered inline (image thumbnail in the prompt and hint), with the same mirror/collapse/drop rules as options; pure-text prompts keep the original TextView.
+
+Learning starts at the first question of a single course, advances in order, and ends on a course-complete page; entering again restarts at question 1.
