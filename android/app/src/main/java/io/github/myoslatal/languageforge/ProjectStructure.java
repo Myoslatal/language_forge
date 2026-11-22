@@ -153,6 +153,10 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        question.clozeText = questionObject.optString("clozeText", "");
+                                        JSONArray clozeOrder = questionObject.optJSONArray("clozeOrder");
+                                        if (clozeOrder != null) for (int zi = 0; zi < clozeOrder.length(); zi++)
+                                            question.clozeOrder.add(clozeOrder.optInt(zi, 0));
                                         question.passage = questionObject.optString("passage", "");
                                         question.answerMode = questionObject.optString("answerMode", "choice");
                                         JSONObject card = questionObject.optJSONObject("card");
@@ -417,6 +421,12 @@ final class ProjectStructure {
                                 }
                                 questionObject.put("lines", lines);
                             }
+                            if (Question.TYPE_CLOZE.equals(question.type)) {
+                                questionObject.put("clozeText", question.clozeText);
+                                JSONArray clozeOrder = new JSONArray();
+                                for (Integer index : question.clozeOrder) clozeOrder.put(index);
+                                questionObject.put("clozeOrder", clozeOrder);
+                            }
                             if (Question.TYPE_READING.equals(question.type)) {
                                 questionObject.put("passage", question.passage);
                                 questionObject.put("answerMode", question.answerMode);
@@ -671,6 +681,7 @@ final class ProjectStructure {
         static final String TYPE_LISTEN = "listen";
         static final String TYPE_CARD = "card";
         static final String TYPE_READING = "reading";
+        static final String TYPE_CLOZE = "cloze";
         static final String TYPE_DIALOG = "dialog";
 
         static final class CardExample {
@@ -771,6 +782,8 @@ final class ProjectStructure {
         final Card card = new Card();
         String passage = "";
         String answerMode = "choice";
+        String clozeText = "";
+        final List<Integer> clozeOrder = new ArrayList<>();
         final List<DialogLine> lines = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();

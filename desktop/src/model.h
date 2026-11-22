@@ -86,6 +86,8 @@ struct Question {
   QuestionCard card;
   std::string passage;
   std::string answerMode = "choice";
+  std::string clozeText;
+  std::vector<int> clozeOrder;
   std::string prompt;
   std::vector<QuestionBlock> blocks;
   std::vector<std::vector<std::string>> answers;

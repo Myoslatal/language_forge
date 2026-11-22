@@ -303,6 +303,9 @@ void SDLCALL recordCallback(void*, Uint8* stream, int length) {
   gRecordBuffer->insert(gRecordBuffer->end(), stream, stream + length);
 }
 
+static int clozeBlankCount(const std::string& text);
+static std::vector<std::string> clozeSplit(const std::string& text);
+
 struct App {
   std::unique_ptr<Store> store;
   SDL_Window* window = nullptr;
@@ -440,7 +443,13 @@ struct App {
   char readingPassageInput[4096] = {};
   char readingPromptInput[1024] = {};
   int readingMode = 0;
+  char clozeTextInput[4096] = {};
+  char clozePromptInput[1024] = {};
+  char clozeOptionsInput[4][256] = {};
+  bool clozeChecks[4] = {};
   bool pickerForCardWord = false;
+  std::vector<int> clozeFilled;
+  std::string clozeQuestionId;
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
   std::vector<std::string> answerDraft;
@@ -1214,6 +1223,14 @@ struct App {
     std::snprintf(readingPassageInput, sizeof(readingPassageInput), "%s", editQuestion.passage.c_str());
     std::snprintf(readingPromptInput, sizeof(readingPromptInput), "%s", editQuestion.prompt.c_str());
     readingMode = editQuestion.answerMode == "type" ? 1 : 0;
+    std::snprintf(clozeTextInput, sizeof(clozeTextInput), "%s", editQuestion.clozeText.c_str());
+    std::snprintf(clozePromptInput, sizeof(clozePromptInput), "%s", editQuestion.prompt.c_str());
+    for (int i = 0; i < 4; ++i) {
+      clozeOptionsInput[i][0] = 0; clozeChecks[i] = false;
+    }
+    for (std::size_t i = 0; i < editQuestion.options.size() && i < 4; ++i)
+      std::snprintf(clozeOptionsInput[i], sizeof(clozeOptionsInput[i]), "%s", editQuestion.options[i].c_str());
+    for (int index : editQuestion.clozeOrder) if (index >= 0 && index < 4) clozeChecks[index] = true;
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
                   editQuestion.prompt.c_str());
     for (int i = 0; i < 4; ++i) {
@@ -1345,6 +1362,40 @@ struct App {
       }
       if (!persist()) return;
       showToast("听音题已保存");
+      screen = Screen::Course;
+      return;
+    }
+    if (editQuestion.type == "cloze") {
+      std::string text = trim(clozeTextInput);
+      const int blanks = clozeBlankCount(text);
+      if (blanks < 1 || blanks > 4) { showToast("空格数需为 1..4"); return; }
+      std::vector<std::string> options;
+      std::vector<int> order;
+      int compactIndex[4] = {-1, -1, -1, -1};
+      for (int i = 0; i < 4; ++i) {
+        std::string value = trim(clozeOptionsInput[i]);
+        if (!value.empty()) {
+          compactIndex[i] = static_cast<int>(options.size());
+          options.push_back(value);
+        } else if (clozeChecks[i]) {
+          showToast("勾选的正确词不能为空");
+          return;
+        }
+      }
+      for (int i = 0; i < 4; ++i) {
+        if (clozeChecks[i] && compactIndex[i] >= 0) order.push_back(compactIndex[i]);
+      }
+      if (options.size() < 2) { showToast("至少填写两个候选词"); return; }
+      if (static_cast<int>(order.size()) != blanks) { showToast("正确词数量必须等于空格数"); return; }
+      editQuestion.clozeText = text;
+      editQuestion.prompt = trim(clozePromptInput);
+      editQuestion.name = editQuestion.prompt.empty() ? text.substr(0, 40) : editQuestion.prompt;
+      editQuestion.options = options;
+      editQuestion.clozeOrder = order;
+      editQuestion.correctIndex = -1;
+      editQuestion.optionItems.clear();
+      if (!persist()) return;
+      showToast("选词填空已保存");
       screen = Screen::Course;
       return;
     }
@@ -3311,8 +3362,46 @@ std::string questionTypeLabel(const std::string& type) {
   if (type == "listen") return "听音选择";
   if (type == "card") return "新知卡片";
   if (type == "reading") return "阅读短文";
+  if (type == "cloze") return "选词填空";
   if (type == "dialog") return "选择对话";
   return "选择正确翻译";
+}
+
+static int clozeBlankCount(const std::string& text) {
+  int count = 0;
+  for (std::size_t i = 0; i < text.size();) {
+    if (text[i] == '{') {
+      std::size_t j = i + 1;
+      while (j < text.size() && std::isspace(static_cast<unsigned char>(text[j]))) ++j;
+      if (j < text.size() && text[j] == '}') {
+        ++count;
+        i = j + 1;
+        continue;
+      }
+    }
+    ++i;
+  }
+  return count;
+}
+
+static std::vector<std::string> clozeSplit(const std::string& text) {
+  std::vector<std::string> parts;
+  std::size_t start = 0;
+  for (std::size_t i = 0; i < text.size();) {
+    if (text[i] == '{') {
+      std::size_t j = i + 1;
+      while (j < text.size() && std::isspace(static_cast<unsigned char>(text[j]))) ++j;
+      if (j < text.size() && text[j] == '}') {
+        parts.push_back(text.substr(start, i - start));
+        start = j + 1;
+        i = j + 1;
+        continue;
+      }
+    }
+    ++i;
+  }
+  parts.push_back(text.substr(start));
+  return parts;
 }
 
 void renderQuestionEditor(App& app) {
@@ -3336,13 +3425,15 @@ void renderQuestionEditor(App& app) {
                   : app.editQuestion.type == "listen" ? 4
                   : app.editQuestion.type == "card" ? 5
                   : app.editQuestion.type == "dialog" ? 6
-                  : app.editQuestion.type == "reading" ? 7 : 0;
+                  : app.editQuestion.type == "reading" ? 7
+                  : app.editQuestion.type == "cloze" ? 8 : 0;
   ImGui::SetNextItemWidth(220);
-  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0新知卡片\0选择对话\0阅读短文\0")) {
+  if (ImGui::Combo("题型##question_type", &typeIndex, "选择正确翻译\0词块组句\0配对\0输入翻译\0听音选择\0新知卡片\0选择对话\0阅读短文\0选词填空\0")) {
     app.editQuestion.type = typeIndex == 1 ? "arrange" : typeIndex == 2 ? "match"
                              : typeIndex == 3 ? "type" : typeIndex == 4 ? "listen"
                              : typeIndex == 5 ? "card" : typeIndex == 6 ? "dialog"
                              : typeIndex == 7 ? "reading"
+                             : typeIndex == 8 ? "cloze"
                              : "translation_choice";
     app.questionDirty = true;
     if (typeIndex == 2 && app.editQuestion.pairs.empty()) {
@@ -3353,6 +3444,27 @@ void renderQuestionEditor(App& app) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
+  }
+  if (app.editQuestion.type == "cloze") {
+    ImGui::TextUnformatted("填空正文（用 {} 标记空格）");
+    if (ImGui::InputTextMultiline("##cloze_text", app.clozeTextInput,
+                                  sizeof(app.clozeTextInput), ImVec2(-1, 100))) app.questionDirty = true;
+    ImGui::TextUnformatted("问题/题干（可选）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##cloze_prompt", app.clozePromptInput, sizeof(app.clozePromptInput))) app.questionDirty = true;
+    const int blanks = clozeBlankCount(app.clozeTextInput);
+    ImGui::Text("当前空格数：%d", blanks);
+    for (int i = 0; i < 4; ++i) {
+      ImGui::PushID(i + 18000);
+      ImGui::SetNextItemWidth(420);
+      if (ImGui::InputText("##cloze_opt", app.clozeOptionsInput[i], sizeof(app.clozeOptionsInput[i])))
+        app.questionDirty = true;
+      ImGui::SameLine();
+      if (ImGui::Checkbox("正确词", &app.clozeChecks[i])) app.questionDirty = true;
+      ImGui::PopID();
+    }
+    if (ImGui::Button("保存题目##cloze_save", ImVec2(120, 34))) app.saveQuestion();
+    return;
   }
   if (app.editQuestion.type == "reading") {
     ImGui::TextUnformatted("短文正文（可换行）");
@@ -4132,6 +4244,79 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (question->type == "cloze") {
+    if (app.clozeQuestionId != question->id) {
+      app.clozeQuestionId = question->id;
+      app.clozeFilled.assign(8, -1);
+      app.learningAnswered = false;
+    }
+    pageTitle("LEARN", question->name, "选词填空 · " + course->name);
+    if (!question->prompt.empty()) ImGui::TextWrapped("%s", question->prompt.c_str());
+    const std::vector<std::string> parts = clozeSplit(question->clozeText);
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+      if (!parts[i].empty()) ImGui::TextWrapped("%s", parts[i].c_str());
+      if (i + 1 < parts.size()) {
+        ImGui::PushID(static_cast<int>(i) + 19000);
+        const bool filled = static_cast<int>(i) < static_cast<int>(app.clozeFilled.size()) && app.clozeFilled[i] >= 0;
+        std::string label = filled ? question->options[app.clozeFilled[i]] : "＿＿";
+        if (ImGui::Button((label + "##blank").c_str(), ImVec2(90, 34)) && !app.learningAnswered) {
+          app.clozeFilled[i] = -1;
+        }
+        ImGui::PopID();
+        ImGui::SameLine();
+      }
+    }
+    ImGui::NewLine();
+    ImGui::TextDisabled("候选词");
+    for (std::size_t i = 0; i < question->options.size(); ++i) {
+      if (question->options[i].empty()) continue;
+      bool used = false;
+      for (int value : app.clozeFilled) if (value == static_cast<int>(i)) used = true;
+      if (used) ImGui::BeginDisabled();
+      if (ImGui::Button(question->options[i].c_str(), ImVec2(90, 34)) && !app.learningAnswered) {
+        for (std::size_t slot = 0; slot < app.clozeFilled.size(); ++slot) {
+          if (app.clozeFilled[slot] < 0) { app.clozeFilled[slot] = static_cast<int>(i); break; }
+        }
+      }
+      if (used) ImGui::EndDisabled();
+      ImGui::SameLine();
+    }
+    ImGui::NewLine();
+    bool full = true;
+    for (std::size_t i = 0; i < question->clozeOrder.size(); ++i)
+      if (static_cast<int>(i) >= static_cast<int>(app.clozeFilled.size()) || app.clozeFilled[i] < 0) full = false;
+    if (app.learningAnswered) {
+      ImGui::TextColored(ImVec4(0.08f, 0.58f, 0.28f, 1), "回答正确");
+      const bool lastCloze = course->questions.empty() ||
+                             course->questions.back().id == question->id;
+      const std::string clozeLabel =
+          lastCloze ? "完成##cloze_next" : "下一题##cloze_next";
+      if (ImGui::Button(clozeLabel.c_str(), ImVec2(-1, 40))) {
+        if (lastCloze) {
+          app.learningQuestionId.clear();
+          app.learningAnswered = false;
+          app.showToast("本课完成");
+        } else {
+          for (std::size_t i = 0; i + 1 < course->questions.size(); ++i) {
+            if (course->questions[i].id == question->id) {
+              app.learningQuestionId = course->questions[i + 1].id;
+              app.learningAnswered = false;
+              break;
+            }
+          }
+        }
+      }
+    } else if (full) {
+      if (ImGui::Button("确认答案##cloze_confirm", ImVec2(-1, 40))) {
+        bool ok = true;
+        for (std::size_t i = 0; i < question->clozeOrder.size(); ++i)
+          if (app.clozeFilled[i] != question->clozeOrder[i]) ok = false;
+        if (ok) app.learningAnswered = true;
+        else app.showToast("回答错误，请重新选择");
+      }
+    }
+    return;
+  }
   if (question->type == "reading") {
     app.ensureVocabularyLoaded();
     if (app.readingQuestionId != question->id) {

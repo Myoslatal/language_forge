@@ -75,6 +75,8 @@ public class LearningActivity extends ForgeActivity {
     private String listenAutoId = "";
     private ForgeButton listenPlayButton;
     private boolean listenPlaying;
+    private final List<Integer> clozeFilled = new ArrayList<>();
+    private final List<ForgeButton> clozeBlankButtons = new ArrayList<>();
     private TextView typeNearView;
 
     @Override
@@ -209,7 +211,8 @@ public class LearningActivity extends ForgeActivity {
                     : typing ? "输入翻译" : listening ? "听音选择"
                     : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片"
                     : ProjectStructure.Question.TYPE_DIALOG.equals(item.type) ? "选择对话"
-                    : ProjectStructure.Question.TYPE_READING.equals(item.type) ? "阅读短文" : "选择正确翻译";
+                    : ProjectStructure.Question.TYPE_READING.equals(item.type) ? "阅读短文"
+                    : ProjectStructure.Question.TYPE_CLOZE.equals(item.type) ? "选词填空" : "选择正确翻译";
             boolean choice = ProjectStructure.Question.TYPE_TRANSLATION_CHOICE.equals(item.type);
             row.setText(sentence + "\n" + typeLabel +
                     (choice ? (item.hintsEnabled ? " · 学习提示" : " · 无提示") : ""));
@@ -251,9 +254,14 @@ public class LearningActivity extends ForgeActivity {
                 : ProjectStructure.Question.TYPE_LISTEN.equals(item.type) ? "听音选择"
                 : ProjectStructure.Question.TYPE_CARD.equals(item.type) ? "新知卡片"
                 : ProjectStructure.Question.TYPE_DIALOG.equals(item.type) ? "选择对话"
-                : ProjectStructure.Question.TYPE_READING.equals(item.type) ? "阅读短文" : "选择正确翻译";
+                : ProjectStructure.Question.TYPE_READING.equals(item.type) ? "阅读短文"
+                : ProjectStructure.Question.TYPE_CLOZE.equals(item.type) ? "选词填空" : "选择正确翻译";
         subtitleView.setText(selected.name + " · " + mode);
         content.removeAllViews();
+        if (ProjectStructure.Question.TYPE_CLOZE.equals(item.type)) {
+            renderClozeQuestion(item);
+            return;
+        }
         if (ProjectStructure.Question.TYPE_READING.equals(item.type)) {
             renderReadingQuestion(item);
             return;
@@ -411,6 +419,92 @@ public class LearningActivity extends ForgeActivity {
             content.addView(text(item.prompt, 18, R.color.forge_text));
         }
         renderChoiceOptions(item);
+    }
+
+    private void renderClozeQuestion(ProjectStructure.Question item) {
+        content.removeAllViews();
+        clozeFilled.clear();
+        clozeBlankButtons.clear();
+        for (int i = 0; i < 9; i++) clozeFilled.add(-1);
+        if (!item.prompt.isEmpty()) content.addView(text(item.prompt, 18, R.color.forge_text));
+        LinearLayout flow = new LinearLayout(this);
+        flow.setOrientation(LinearLayout.VERTICAL);
+        String[] parts = item.clozeText.split("\\{\\s*\\}", -1);
+        int blank = 0;
+        for (int i = 0; i < parts.length; i++) {
+            if (!parts[i].isEmpty()) {
+                TextView segment = text(parts[i], 16, R.color.forge_text);
+                segment.setTextIsSelectable(true);
+                flow.addView(segment);
+            }
+            if (i < parts.length - 1) {
+                final int index = blank++;
+                ForgeButton button = new ForgeButton(this);
+                button.setAllCaps(false);
+                button.setText("＿＿");
+                button.setOnClickListener(v -> {
+                    if (answered) return;
+                    clozeFilled.set(index, -1);
+                    refreshCloze(item);
+                });
+                clozeBlankButtons.add(button);
+                flow.addView(button, new LinearLayout.LayoutParams(dp(100), dp(40)));
+            }
+        }
+        content.addView(flow);
+        content.addView(text("候选词", 14, R.color.forge_muted));
+        LinearLayout candidates = new LinearLayout(this);
+        candidates.setOrientation(LinearLayout.VERTICAL);
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < item.options.size(); i++) order.add(i);
+        java.util.Collections.shuffle(order, new java.util.Random(7));
+        for (int optionIndex : order) {
+            final int index = optionIndex;
+            ForgeButton candidate = new ForgeButton(this);
+            candidate.setAllCaps(false);
+            candidate.setText(item.options.get(index));
+            candidate.setTag("cloze_candidate:" + index);
+            candidate.setOnClickListener(v -> {
+                if (answered) return;
+                int target = -1;
+                for (int i = 0; i < clozeFilled.size(); i++) if (clozeFilled.get(i) < 0) { target = i; break; }
+                if (target < 0 || clozeFilled.contains(index)) return;
+                clozeFilled.set(target, index);
+                refreshCloze(item);
+            });
+            candidates.addView(candidate);
+        }
+        content.addView(candidates);
+        refreshCloze(item);
+    }
+
+    private void refreshCloze(ProjectStructure.Question item) {
+        boolean full = true;
+        for (int i = 0; i < clozeBlankButtons.size(); i++) {
+            int filled = clozeFilled.get(i);
+            clozeBlankButtons.get(i).setText(filled < 0 ? "＿＿" : item.options.get(filled));
+            clozeBlankButtons.get(i).setEnabled(!answered);
+            if (filled < 0) full = false;
+        }
+        for (int i = 0; i < content.getChildCount(); i++) {
+            View child = content.getChildAt(i);
+            if (child instanceof LinearLayout) {
+                LinearLayout group = (LinearLayout) child;
+                for (int j = 0; j < group.getChildCount(); j++) {
+                    View button = group.getChildAt(j);
+                    if (button instanceof ForgeButton && button.getTag() instanceof String
+                            && ((String) button.getTag()).startsWith("cloze_candidate:")) {
+                        int optionIndex = Integer.parseInt(
+                                ((String) button.getTag()).substring("cloze_candidate:".length()));
+                        boolean used = clozeFilled.contains(optionIndex);
+                        button.setEnabled(!used && !answered);
+                        button.setAlpha(used ? 0.5f : 1f);
+                    }
+                }
+            }
+        }
+        confirmButton.setText(answered ? (isLastQuestion() ? "完成" : "下一题") : "确认答案");
+        confirmButton.setVisibility(answered || full ? View.VISIBLE : View.GONE);
     }
 
     private void renderReadingQuestion(ProjectStructure.Question item) {
@@ -1118,6 +1212,24 @@ public class LearningActivity extends ForgeActivity {
         if (question == null) return;
         if (ProjectStructure.Question.TYPE_CARD.equals(question.type)) {
             nextQuestion();
+            return;
+        }
+        if (ProjectStructure.Question.TYPE_CLOZE.equals(question.type)) {
+            if (answered) { nextQuestion(); return; }
+            boolean full = true;
+            for (int i = 0; i < question.clozeOrder.size(); i++)
+                if (i >= clozeFilled.size() || clozeFilled.get(i) < 0) full = false;
+            if (!full) return;
+            boolean ok = true;
+            for (int i = 0; i < question.clozeOrder.size(); i++)
+                if (i >= clozeFilled.size() || !clozeFilled.get(i).equals(question.clozeOrder.get(i))) ok = false;
+            if (ok) {
+                answered = true;
+                refreshCloze(question);
+                toast("回答正确");
+            } else {
+                toast("回答错误，请重新选择");
+            }
             return;
         }
         if (answered) return;
