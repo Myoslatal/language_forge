@@ -157,6 +157,25 @@ final class ProjectStructure {
                                         JSONArray clozeOrder = questionObject.optJSONArray("clozeOrder");
                                         if (clozeOrder != null) for (int zi = 0; zi < clozeOrder.length(); zi++)
                                             question.clozeOrder.add(clozeOrder.optInt(zi, 0));
+                                        JSONArray clozeItems = questionObject.optJSONArray("clozeItems");
+                                        if (clozeItems != null) {
+                                            for (int ci = 0; ci < clozeItems.length(); ci++) {
+                                                JSONArray group = clozeItems.optJSONArray(ci);
+                                                List<Question.OptionItem> parsed = new ArrayList<>();
+                                                if (group != null) {
+                                                    for (int ii = 0; ii < group.length(); ii++) {
+                                                        JSONObject item = group.optJSONObject(ii);
+                                                        if (item == null) continue;
+                                                        Question.OptionItem value = new Question.OptionItem();
+                                                        value.kind = item.optString("kind", "text");
+                                                        value.text = item.optString("text", "");
+                                                        value.vocabId = item.optString("vocabId", "");
+                                                        parsed.add(value);
+                                                    }
+                                                }
+                                                question.clozeItems.add(parsed);
+                                            }
+                                        }
                                         question.passage = questionObject.optString("passage", "");
                                         question.answerMode = questionObject.optString("answerMode", "choice");
                                         JSONObject card = questionObject.optJSONObject("card");
@@ -426,6 +445,13 @@ final class ProjectStructure {
                                 JSONArray clozeOrder = new JSONArray();
                                 for (Integer index : question.clozeOrder) clozeOrder.put(index);
                                 questionObject.put("clozeOrder", clozeOrder);
+                                JSONArray clozeItems = new JSONArray();
+                                for (List<Question.OptionItem> group : question.clozeItems) {
+                                    clozeItems.put(optionItemsToJson(group));
+                                }
+                                if (!question.clozeItems.isEmpty()) {
+                                    questionObject.put("clozeItems", clozeItems);
+                                }
                             }
                             if (Question.TYPE_READING.equals(question.type)) {
                                 questionObject.put("passage", question.passage);
@@ -784,6 +810,7 @@ final class ProjectStructure {
         String answerMode = "choice";
         String clozeText = "";
         final List<Integer> clozeOrder = new ArrayList<>();
+        final List<List<OptionItem>> clozeItems = new ArrayList<>();
         final List<DialogLine> lines = new ArrayList<>();
         final List<Block> blocks = new ArrayList<>();
         final List<List<String>> answers = new ArrayList<>();

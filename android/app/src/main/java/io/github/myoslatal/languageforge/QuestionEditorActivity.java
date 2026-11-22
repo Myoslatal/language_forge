@@ -105,6 +105,11 @@ public class QuestionEditorActivity extends ForgeActivity {
     private TextView clozeCount;
     private final EditText[] clozeOptions = new EditText[4];
     private final CheckBox[] clozeChecks = new CheckBox[4];
+    private final List<ProjectStructure.Question.OptionItem> clozePromptItems = new ArrayList<>();
+    private final List<List<ProjectStructure.Question.OptionItem>> clozeCandidateItems = new ArrayList<>();
+    private final LinearLayout[] clozePreviews = new LinearLayout[4];
+    private LinearLayout clozePromptPreview;
+    private int clozePickIndex = -2;
     private CheckBox readingIgnoreCase, readingIgnoreSpace, readingNear;
     private LinearLayout dialogSection;
     private EditText dialogPrompt;
@@ -457,13 +462,44 @@ public class QuestionEditorActivity extends ForgeActivity {
         clozeSection = new LinearLayout(this); clozeSection.setOrientation(LinearLayout.VERTICAL);
         clozeText = new EditText(this); clozeText.setHint("用 {} 标记空格，例如：et, {} uzoz"); clozeText.setMinLines(3); clozeSection.addView(clozeText);
         clozePrompt = new EditText(this); clozePrompt.setHint("问题/题干（可选）"); clozeSection.addView(clozePrompt);
+        LinearLayout clozePromptTools = new LinearLayout(this);
+        clozePromptTools.setOrientation(LinearLayout.HORIZONTAL);
+        clozePromptTools.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        ForgeButton promptPick = new ForgeButton(this);
+        promptPick.setAllCaps(false);
+        promptPick.setText("题干选词");
+        promptPick.setOnClickListener(v -> {
+            clozePickIndex = -1;
+            openClozePicker();
+        });
+        clozePromptTools.addView(promptPick);
+        clozePromptPreview = new LinearLayout(this);
+        clozePromptPreview.setOrientation(LinearLayout.HORIZONTAL);
+        clozePromptPreview.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        clozePromptTools.addView(clozePromptPreview, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        clozeSection.addView(clozePromptTools);
         clozeCount = new TextView(this); clozeSection.addView(clozeCount);
         for (int i = 0; i < 4; i++) {
             LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
             clozeOptions[i] = new EditText(this); clozeOptions[i].setHint("候选词 " + (i + 1));
             row.addView(clozeOptions[i], new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            final int candidateIndex = i;
+            ForgeButton pick = new ForgeButton(this);
+            pick.setAllCaps(false);
+            pick.setText("选词");
+            pick.setOnClickListener(v -> {
+                clozePickIndex = candidateIndex;
+                openClozePicker();
+            });
+            row.addView(pick);
             clozeChecks[i] = new CheckBox(this); clozeChecks[i].setText("正确词"); row.addView(clozeChecks[i]);
             clozeSection.addView(row);
+            LinearLayout preview = new LinearLayout(this);
+            preview.setOrientation(LinearLayout.HORIZONTAL);
+            preview.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            clozePreviews[i] = preview;
+            clozeSection.addView(preview);
         }
         clozeText.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int a,int b,int c){}
@@ -471,9 +507,28 @@ public class QuestionEditorActivity extends ForgeActivity {
             public void afterTextChanged(android.text.Editable s){}
         });
         clozeSection.setVisibility(View.GONE); scrollContent.addView(clozeSection, 8);
-        clozeText.setText(question.clozeText); clozePrompt.setText(question.prompt);
-        for (int i = 0; i < question.options.size(); i++) clozeOptions[i].setText(question.options.get(i));
+        clozeText.setText(question.clozeText);
+        clozePromptItems.addAll(question.promptItems);
+        if (clozePromptItems.isEmpty() && question.prompt != null && !question.prompt.isEmpty()) {
+            ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+            item.text = question.prompt;
+            clozePromptItems.add(item);
+        }
+        clozePrompt.setText(mirrorListenOption(clozePromptItems));
+        for (int i = 0; i < 4; i++) {
+            List<ProjectStructure.Question.OptionItem> items = new ArrayList<>();
+            if (i < question.clozeItems.size()) items.addAll(question.clozeItems.get(i));
+            if (items.isEmpty() && i < question.options.size() && !question.options.get(i).isEmpty()) {
+                ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                item.text = question.options.get(i);
+                items.add(item);
+            }
+            clozeCandidateItems.add(items);
+            clozeOptions[i].setText(containsVocabItem(items) ? mirrorListenOption(items)
+                    : (i < question.options.size() ? question.options.get(i) : ""));
+        }
         for (Integer index : question.clozeOrder) if (index >= 0 && index < 4) clozeChecks[index].setChecked(true);
+        renderClozeVocabulary();
         updateClozeCount();
         readingMode.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
@@ -2171,6 +2226,58 @@ public class QuestionEditorActivity extends ForgeActivity {
         clozeCount.setText("当前空格数：" + count);
     }
 
+    private void renderClozeVocabulary() {
+        if (clozePromptPreview != null) {
+            renderOptionPreviewItems(clozePromptItems, clozePrompt, clozePromptPreview,
+                    this::renderClozeVocabulary);
+        }
+        for (int i = 0; i < 4; i++) {
+            if (clozePreviews[i] != null) {
+                renderOptionPreviewItems(clozeCandidateItems.get(i), clozeOptions[i],
+                        clozePreviews[i], this::renderClozeVocabulary);
+            }
+        }
+    }
+
+    private void openClozePicker() {
+        Intent intent = new Intent(this, VocabularyPickerActivity.class);
+        intent.putExtra(VocabularyPickerActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(VocabularyPickerActivity.EXTRA_TITLE, "为选词填空选择词汇");
+        clozePickLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> clozePickLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                ArrayList<String> ids = result.getData()
+                        .getStringArrayListExtra(VocabularyPickerActivity.EXTRA_SELECTED_IDS);
+                if (ids == null || ids.isEmpty()) return;
+                List<ProjectStructure.Question.OptionItem> target;
+                EditText mirror;
+                if (clozePickIndex == -1) {
+                    target = clozePromptItems;
+                    mirror = clozePrompt;
+                } else if (clozePickIndex >= 0 && clozePickIndex < 4) {
+                    target = clozeCandidateItems.get(clozePickIndex);
+                    mirror = clozeOptions[clozePickIndex];
+                } else {
+                    return;
+                }
+                for (String id : ids) {
+                    VocabularyEntry entry = findEntry(id);
+                    if (entry == null) continue;
+                    ProjectStructure.Question.OptionItem item = new ProjectStructure.Question.OptionItem();
+                    item.kind = "vocab";
+                    item.vocabId = entry.id;
+                    target.add(item);
+                }
+                mirror.setText(mirrorListenOption(target));
+                renderClozeVocabulary();
+                dirty = true;
+                clozePickIndex = -2;
+            });
+
     private void saveCloze() {
         String text = clozeText.getText() == null ? "" : clozeText.getText().toString().trim();
         int count = 0;
@@ -2199,11 +2306,41 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (order.size() != count) { toast("正确词数量必须等于空格数"); return; }
         question.type = ProjectStructure.Question.TYPE_CLOZE;
         question.clozeText = text;
-        question.prompt = clozePrompt.getText().toString().trim();
-        question.name = question.prompt.isEmpty()
-                ? (text.length() > 40 ? text.substring(0, 40) : text) : question.prompt;
+        String prompt = clozePrompt.getText().toString().trim();
+        String promptMirror = mirrorListenOption(clozePromptItems);
+        question.prompt = prompt;
+        question.promptItems.clear();
+        if (containsVocabItem(clozePromptItems) && promptMirror.equals(prompt)) {
+            question.promptItems.addAll(clozePromptItems);
+        }
+        question.name = prompt.isEmpty()
+                ? (text.length() > 40 ? text.substring(0, 40) : text) : prompt;
         question.options.clear(); question.options.addAll(options);
         question.clozeOrder.clear(); question.clozeOrder.addAll(order);
+        question.clozeItems.clear();
+        for (int i = 0; i < 4; i++) {
+            String value = clozeOptions[i].getText().toString().trim();
+            if (value.isEmpty()) continue;
+            List<ProjectStructure.Question.OptionItem> items =
+                    new ArrayList<>(clozeCandidateItems.get(i));
+            if (!containsVocabItem(items)
+                    || !mirrorListenOption(items).equals(value)) {
+                ProjectStructure.Question.OptionItem textItem =
+                        new ProjectStructure.Question.OptionItem();
+                textItem.text = value;
+                items.clear();
+                items.add(textItem);
+            }
+            question.clozeItems.add(items);
+        }
+        boolean hasVocabItem = false;
+        for (List<ProjectStructure.Question.OptionItem> group : question.clozeItems) {
+            for (ProjectStructure.Question.OptionItem item : group) {
+                if ("vocab".equals(item.kind)) { hasVocabItem = true; break; }
+            }
+            if (hasVocabItem) break;
+        }
+        if (!hasVocabItem) question.clozeItems.clear();
         question.correctIndex = -1;
         question.optionItems.clear();
         if (!course.questions.contains(question)) course.questions.add(question);

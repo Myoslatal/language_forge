@@ -87,6 +87,7 @@ struct Question {
   std::string passage;
   std::string answerMode = "choice";
   std::string clozeText;
+  std::vector<std::vector<QuestionOptionItem>> clozeItems;
   std::vector<int> clozeOrder;
   std::string prompt;
   std::vector<QuestionBlock> blocks;

@@ -447,6 +447,10 @@ struct App {
   char clozePromptInput[1024] = {};
   char clozeOptionsInput[4][256] = {};
   bool clozeChecks[4] = {};
+  std::vector<QuestionOptionItem> clozePromptItems;
+  std::vector<std::vector<QuestionOptionItem>> clozeCandidateItems;
+  bool pickerForClozeWord = false;
+  int clozePickIndex = -1;
   bool pickerForCardWord = false;
   std::vector<int> clozeFilled;
   std::string clozeQuestionId;
@@ -1220,17 +1224,46 @@ struct App {
     std::snprintf(cardPronInput, sizeof(cardPronInput), "%s", editQuestion.card.pron.c_str());
     std::snprintf(cardDefInput, sizeof(cardDefInput), "%s", editQuestion.card.def.c_str());
     std::snprintf(cardDetailInput, sizeof(cardDetailInput), "%s", editQuestion.card.detail.c_str());
+    std::snprintf(clozeTextInput, sizeof(clozeTextInput), "%s", editQuestion.clozeText.c_str());
+    clozePromptItems = editQuestion.promptItems;
+    if (clozePromptItems.empty() && !editQuestion.prompt.empty()) {
+      QuestionOptionItem item;
+      item.kind = "text";
+      item.text = editQuestion.prompt;
+      clozePromptItems.push_back(item);
+    }
+    std::snprintf(clozePromptInput, sizeof(clozePromptInput), "%s",
+                  optionMirror(clozePromptItems).c_str());
+    clozeCandidateItems.clear();
+    for (int i = 0; i < 4; ++i) {
+      std::vector<QuestionOptionItem> group;
+      if (i < static_cast<int>(editQuestion.clozeItems.size())) {
+        group = editQuestion.clozeItems[i];
+      }
+      if (group.empty() && i < static_cast<int>(editQuestion.options.size()) &&
+          !editQuestion.options[i].empty()) {
+        QuestionOptionItem item;
+        item.kind = "text";
+        item.text = editQuestion.options[i];
+        group.push_back(item);
+      }
+      clozeCandidateItems.push_back(group);
+      bool hasVocab = false;
+      for (const auto& item : group) if (item.kind == "vocab") hasVocab = true;
+      const std::string value = hasVocab
+          ? optionMirror(group)
+          : (i < static_cast<int>(editQuestion.options.size()) ? editQuestion.options[i] : "");
+      std::snprintf(clozeOptionsInput[i], sizeof(clozeOptionsInput[i]), "%s", value.c_str());
+    }
+    for (int i = 0; i < 4; ++i) clozeChecks[i] = false;
+    for (int index : editQuestion.clozeOrder) {
+      if (index >= 0 && index < static_cast<int>(editQuestion.clozeItems.size())) {
+        clozeChecks[index] = true;
+      }
+    }
     std::snprintf(readingPassageInput, sizeof(readingPassageInput), "%s", editQuestion.passage.c_str());
     std::snprintf(readingPromptInput, sizeof(readingPromptInput), "%s", editQuestion.prompt.c_str());
     readingMode = editQuestion.answerMode == "type" ? 1 : 0;
-    std::snprintf(clozeTextInput, sizeof(clozeTextInput), "%s", editQuestion.clozeText.c_str());
-    std::snprintf(clozePromptInput, sizeof(clozePromptInput), "%s", editQuestion.prompt.c_str());
-    for (int i = 0; i < 4; ++i) {
-      clozeOptionsInput[i][0] = 0; clozeChecks[i] = false;
-    }
-    for (std::size_t i = 0; i < editQuestion.options.size() && i < 4; ++i)
-      std::snprintf(clozeOptionsInput[i], sizeof(clozeOptionsInput[i]), "%s", editQuestion.options[i].c_str());
-    for (int index : editQuestion.clozeOrder) if (index >= 0 && index < 4) clozeChecks[index] = true;
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
                   editQuestion.prompt.c_str());
     for (int i = 0; i < 4; ++i) {
@@ -1371,12 +1404,25 @@ struct App {
       if (blanks < 1 || blanks > 4) { showToast("空格数需为 1..4"); return; }
       std::vector<std::string> options;
       std::vector<int> order;
+      std::vector<std::vector<QuestionOptionItem>> clozeItemGroups;
       int compactIndex[4] = {-1, -1, -1, -1};
       for (int i = 0; i < 4; ++i) {
         std::string value = trim(clozeOptionsInput[i]);
         if (!value.empty()) {
           compactIndex[i] = static_cast<int>(options.size());
           options.push_back(value);
+          while (clozeCandidateItems.size() < 4) clozeCandidateItems.push_back({});
+          std::vector<QuestionOptionItem> group = clozeCandidateItems[i];
+          bool hasVocab = false;
+          for (const auto& item : group) if (item.kind == "vocab") hasVocab = true;
+          if (!hasVocab || optionMirror(group) != value) {
+            group.clear();
+            QuestionOptionItem textItem;
+            textItem.kind = "text";
+            textItem.text = value;
+            group.push_back(textItem);
+          }
+          clozeItemGroups.push_back(group);
         } else if (clozeChecks[i]) {
           showToast("勾选的正确词不能为空");
           return;
@@ -1388,10 +1434,22 @@ struct App {
       if (options.size() < 2) { showToast("至少填写两个候选词"); return; }
       if (static_cast<int>(order.size()) != blanks) { showToast("正确词数量必须等于空格数"); return; }
       editQuestion.clozeText = text;
-      editQuestion.prompt = trim(clozePromptInput);
-      editQuestion.name = editQuestion.prompt.empty() ? text.substr(0, 40) : editQuestion.prompt;
+      const std::string prompt = trim(clozePromptInput);
+      editQuestion.prompt = prompt;
+      editQuestion.promptItems.clear();
+      bool promptHasVocab = false;
+      for (const auto& item : clozePromptItems) if (item.kind == "vocab") promptHasVocab = true;
+      if (promptHasVocab && optionMirror(clozePromptItems) == prompt) {
+        editQuestion.promptItems = clozePromptItems;
+      }
+      editQuestion.name = prompt.empty() ? text.substr(0, 40) : prompt;
       editQuestion.options = options;
       editQuestion.clozeOrder = order;
+      editQuestion.clozeItems = clozeItemGroups;
+      bool anyVocab = false;
+      for (const auto& group : clozeItemGroups)
+        for (const auto& item : group) if (item.kind == "vocab") anyVocab = true;
+      if (!anyVocab) editQuestion.clozeItems.clear();
       editQuestion.correctIndex = -1;
       editQuestion.optionItems.clear();
       if (!persist()) return;
@@ -3452,6 +3510,21 @@ void renderQuestionEditor(App& app) {
     ImGui::TextUnformatted("问题/题干（可选）");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputText("##cloze_prompt", app.clozePromptInput, sizeof(app.clozePromptInput))) app.questionDirty = true;
+    if (ImGui::Button("题干选词##cloze_prompt_pick", ImVec2(100, 26))) {
+      app.pickerForClozeWord = true;
+      app.pickerForChoiceOption = false;
+      app.pickerForMatchSide = false;
+      app.pickerForListenOption = false;
+      app.pickerForListenAudio = false;
+      app.pickerForTypePrompt = false;
+      app.pickerForBlocks = false;
+      app.pickerForQuestion = false;
+      app.clozePickIndex = -1;
+      app.pickerSelected.clear();
+      app.pickerOpen = true;
+    }
+    app.drawOptionItemsEditor(app.clozePromptItems, app.clozePromptInput,
+                              sizeof(app.clozePromptInput));
     const int blanks = clozeBlankCount(app.clozeTextInput);
     ImGui::Text("当前空格数：%d", blanks);
     for (int i = 0; i < 4; ++i) {
@@ -3461,7 +3534,24 @@ void renderQuestionEditor(App& app) {
         app.questionDirty = true;
       ImGui::SameLine();
       if (ImGui::Checkbox("正确词", &app.clozeChecks[i])) app.questionDirty = true;
+      ImGui::SameLine();
+      if (ImGui::Button("选词##cloze_opt_pick", ImVec2(64, 0))) {
+        app.pickerForClozeWord = true;
+        app.pickerForChoiceOption = false;
+        app.pickerForMatchSide = false;
+        app.pickerForListenOption = false;
+        app.pickerForListenAudio = false;
+        app.pickerForTypePrompt = false;
+        app.pickerForBlocks = false;
+        app.pickerForQuestion = false;
+        app.clozePickIndex = i;
+        app.pickerSelected.clear();
+        app.pickerOpen = true;
+      }
       ImGui::PopID();
+      while (app.clozeCandidateItems.size() < 4) app.clozeCandidateItems.push_back({});
+      app.drawOptionItemsEditor(app.clozeCandidateItems[i], app.clozeOptionsInput[i],
+                                sizeof(app.clozeOptionsInput[i]));
     }
     if (ImGui::Button("保存题目##cloze_save", ImVec2(120, 34))) app.saveQuestion();
     return;
@@ -4251,7 +4341,38 @@ void renderLearning(App& app) {
       app.learningAnswered = false;
     }
     pageTitle("LEARN", question->name, "选词填空 · " + course->name);
-    if (!question->prompt.empty()) ImGui::TextWrapped("%s", question->prompt.c_str());
+    app.ensureVocabularyLoaded();
+    bool promptStructured = false;
+    for (const auto& item : question->promptItems) {
+      if (item.kind == "vocab") promptStructured = true;
+    }
+    if (promptStructured) {
+      for (const auto& item : question->promptItems) {
+        if (item.kind == "vocab" && app.vocabulary) {
+          const VocabEntry* entry = nullptr;
+          for (const auto& candidate : app.vocabulary->entries) {
+            if (candidate.id == item.vocabId) { entry = &candidate; break; }
+          }
+          if (entry && entry->type == "image") {
+            SDL_Texture* texture = textureForImage(app.renderer,
+                app.currentProjectDirectory() / pathFromUtf8(entry->image), app.imageTextures);
+            if (texture) {
+              ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(28, 28));
+            } else {
+              ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
+            }
+          } else if (entry) {
+            ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
+          }
+        } else if (!item.text.empty()) {
+          ImGui::TextUnformatted(item.text.c_str());
+        }
+        ImGui::SameLine();
+      }
+      ImGui::NewLine();
+    } else if (!question->prompt.empty()) {
+      ImGui::TextWrapped("%s", question->prompt.c_str());
+    }
     const std::vector<std::string> parts = clozeSplit(question->clozeText);
     for (std::size_t i = 0; i < parts.size(); ++i) {
       if (!parts[i].empty()) ImGui::TextWrapped("%s", parts[i].c_str());
@@ -4272,14 +4393,67 @@ void renderLearning(App& app) {
       if (question->options[i].empty()) continue;
       bool used = false;
       for (int value : app.clozeFilled) if (value == static_cast<int>(i)) used = true;
-      if (used) ImGui::BeginDisabled();
-      if (ImGui::Button(question->options[i].c_str(), ImVec2(90, 34)) && !app.learningAnswered) {
+      bool hasVocab = false;
+      if (i < question->clozeItems.size()) {
+        for (const auto& item : question->clozeItems[i]) {
+          if (item.kind == "vocab") hasVocab = true;
+        }
+      }
+      auto fill = [&] {
         for (std::size_t slot = 0; slot < app.clozeFilled.size(); ++slot) {
           if (app.clozeFilled[slot] < 0) { app.clozeFilled[slot] = static_cast<int>(i); break; }
         }
+      };
+      if (hasVocab) {
+        ImGui::PushID(static_cast<int>(i) + 21000);
+        if (used) ImGui::BeginDisabled();
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##cloze_cand", ImVec2(220, 40));
+        const bool clicked = ImGui::IsItemClicked() && !app.learningAnswered && !used;
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        draw->AddRectFilled(pos, ImVec2(pos.x + 220, pos.y + 40),
+                            ImGui::GetColorU32(ImGuiCol_Button), 6);
+        float x = pos.x + 8;
+        for (const auto& item : question->clozeItems[i]) {
+          if (item.kind == "vocab" && app.vocabulary) {
+            const VocabEntry* entry = nullptr;
+            for (const auto& candidate : app.vocabulary->entries) {
+              if (candidate.id == item.vocabId) { entry = &candidate; break; }
+            }
+            if (entry && entry->type == "image") {
+              SDL_Texture* texture = textureForImage(app.renderer,
+                  app.currentProjectDirectory() / pathFromUtf8(entry->image),
+                  app.imageTextures);
+              if (texture) {
+                draw->AddImage(reinterpret_cast<ImTextureID>(texture), ImVec2(x, pos.y + 8),
+                               ImVec2(x + 24, pos.y + 32));
+                x += 30;
+              }
+            } else if (entry) {
+              const std::string text = displayName(*entry, app.vocabulary->entries);
+              draw->AddText(ImVec2(x, pos.y + 12), ImGui::GetColorU32(ImGuiCol_Text),
+                            text.c_str());
+              x += ImGui::CalcTextSize(text.c_str()).x + 6;
+            }
+          } else if (!item.text.empty()) {
+            draw->AddText(ImVec2(x, pos.y + 12), ImGui::GetColorU32(ImGuiCol_Text),
+                          item.text.c_str());
+            x += ImGui::CalcTextSize(item.text.c_str()).x + 6;
+          }
+        }
+        if (clicked) fill();
+        if (used) ImGui::EndDisabled();
+        ImGui::PopID();
+        ImGui::SameLine();
+      } else {
+        if (used) ImGui::BeginDisabled();
+        if (ImGui::Button(question->options[i].c_str(), ImVec2(90, 34)) &&
+            !app.learningAnswered) {
+          fill();
+        }
+        if (used) ImGui::EndDisabled();
+        ImGui::SameLine();
       }
-      if (used) ImGui::EndDisabled();
-      ImGui::SameLine();
     }
     ImGui::NewLine();
     bool full = true;
@@ -7514,6 +7688,36 @@ void renderPicker(App& app) {
         app.questionDirty = true;
       }
       app.pickerForMatchSide = false;
+    } else if (app.pickerForClozeWord) {
+      if (app.clozePickIndex >= -1 && app.clozePickIndex < 4 && app.vocabulary) {
+        std::vector<QuestionOptionItem>* target = nullptr;
+        if (app.clozePickIndex == -1) target = &app.clozePromptItems;
+        else {
+          while (app.clozeCandidateItems.size() < 4) app.clozeCandidateItems.push_back({});
+          target = &app.clozeCandidateItems[app.clozePickIndex];
+        }
+        for (const auto& id : app.pickerSelected) {
+          for (const auto& entry : app.vocabulary->entries) {
+            if (entry.id != id) continue;
+            QuestionOptionItem item;
+            item.kind = "vocab";
+            item.vocabId = id;
+            target->push_back(item);
+            break;
+          }
+        }
+        const std::string mirrored = app.optionMirror(*target);
+        if (app.clozePickIndex == -1) {
+          std::snprintf(app.clozePromptInput, sizeof(app.clozePromptInput), "%s",
+                        mirrored.c_str());
+        } else {
+          std::snprintf(app.clozeOptionsInput[app.clozePickIndex],
+                        sizeof(app.clozeOptionsInput[app.clozePickIndex]), "%s",
+                        mirrored.c_str());
+        }
+        app.questionDirty = true;
+      }
+      app.pickerForClozeWord = false;
     } else if (app.pickerForChoiceOption) {
       if (app.choiceOptionPickIndex >= 0 && app.choiceOptionPickIndex < 4 && app.vocabulary) {
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});

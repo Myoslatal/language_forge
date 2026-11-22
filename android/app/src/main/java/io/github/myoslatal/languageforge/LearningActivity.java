@@ -77,6 +77,7 @@ public class LearningActivity extends ForgeActivity {
     private boolean listenPlaying;
     private final List<Integer> clozeFilled = new ArrayList<>();
     private final List<ForgeButton> clozeBlankButtons = new ArrayList<>();
+    private final List<View> clozeCandidateViews = new ArrayList<>();
     private TextView typeNearView;
 
     @Override
@@ -426,7 +427,43 @@ public class LearningActivity extends ForgeActivity {
         clozeFilled.clear();
         clozeBlankButtons.clear();
         for (int i = 0; i < 9; i++) clozeFilled.add(-1);
-        if (!item.prompt.isEmpty()) content.addView(text(item.prompt, 18, R.color.forge_text));
+        boolean promptStructured = false;
+        for (ProjectStructure.Question.OptionItem value : item.promptItems) {
+            if ("vocab".equals(value.kind)) promptStructured = true;
+        }
+        if (promptStructured) {
+            LinearLayout promptRow = new LinearLayout(this);
+            promptRow.setOrientation(LinearLayout.HORIZONTAL);
+            promptRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            for (ProjectStructure.Question.OptionItem value : item.promptItems) {
+                if ("vocab".equals(value.kind)) {
+                    VocabularyEntry entry = findEntry(value.vocabId);
+                    if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(
+                                projectDirectory, entry.image);
+                        if (bitmap != null) {
+                            android.widget.ImageView image = new android.widget.ImageView(this);
+                            image.setImageBitmap(bitmap);
+                            image.setAdjustViewBounds(true);
+                            int h = dp(28);
+                            int w = Math.max(dp(28), bitmap.getWidth() * h
+                                    / Math.max(1, bitmap.getHeight()));
+                            promptRow.addView(image, new LinearLayout.LayoutParams(w, h));
+                        } else {
+                            promptRow.addView(text("〔图片缺失〕", 14, R.color.forge_warn));
+                        }
+                    } else if (entry != null) {
+                        promptRow.addView(text(vocabulary.displayName(entry), 18,
+                                R.color.forge_text));
+                    }
+                } else if (value.text != null && !value.text.isEmpty()) {
+                    promptRow.addView(text(value.text, 18, R.color.forge_text));
+                }
+            }
+            content.addView(promptRow);
+        } else if (!item.prompt.isEmpty()) {
+            content.addView(text(item.prompt, 18, R.color.forge_text));
+        }
         LinearLayout flow = new LinearLayout(this);
         flow.setOrientation(LinearLayout.VERTICAL);
         String[] parts = item.clozeText.split("\\{\\s*\\}", -1);
@@ -458,21 +495,65 @@ public class LearningActivity extends ForgeActivity {
         List<Integer> order = new ArrayList<>();
         for (int i = 0; i < item.options.size(); i++) order.add(i);
         java.util.Collections.shuffle(order, new java.util.Random(7));
+        clozeCandidateViews.clear();
         for (int optionIndex : order) {
             final int index = optionIndex;
-            ForgeButton candidate = new ForgeButton(this);
-            candidate.setAllCaps(false);
-            candidate.setText(item.options.get(index));
+            View candidate;
+            List<ProjectStructure.Question.OptionItem> items = index < item.clozeItems.size()
+                    ? item.clozeItems.get(index) : null;
+            boolean hasVocab = items != null && !items.isEmpty() && hasVocabItems(items);
+            if (hasVocab) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(12), dp(4), dp(12), dp(4));
+                for (ProjectStructure.Question.OptionItem value : items) {
+                    if ("vocab".equals(value.kind)) {
+                        VocabularyEntry entry = findEntry(value.vocabId);
+                        if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                            android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(
+                                    projectDirectory, entry.image);
+                            if (bitmap != null) {
+                                android.widget.ImageView image = new android.widget.ImageView(this);
+                                image.setImageBitmap(bitmap);
+                                image.setAdjustViewBounds(true);
+                                int h = dp(24);
+                                int w = Math.max(dp(24), bitmap.getWidth() * h
+                                        / Math.max(1, bitmap.getHeight()));
+                                row.addView(image, new LinearLayout.LayoutParams(w, h));
+                            } else {
+                                row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                            }
+                        } else if (entry != null) {
+                            row.addView(text(vocabulary.displayName(entry), 16,
+                                    R.color.forge_text));
+                        }
+                    } else {
+                        row.addView(text(value.text, 16, R.color.forge_text));
+                    }
+                }
+                styleMatchRow(row, false, false);
+                candidate = row;
+            } else {
+                ForgeButton button = new ForgeButton(this);
+                button.setAllCaps(false);
+                button.setText(item.options.get(index));
+                candidate = button;
+            }
             candidate.setTag("cloze_candidate:" + index);
             candidate.setOnClickListener(v -> {
                 if (answered) return;
                 int target = -1;
-                for (int i = 0; i < clozeFilled.size(); i++) if (clozeFilled.get(i) < 0) { target = i; break; }
+                for (int i = 0; i < clozeFilled.size(); i++) {
+                    if (clozeFilled.get(i) < 0) { target = i; break; }
+                }
                 if (target < 0 || clozeFilled.contains(index)) return;
                 clozeFilled.set(target, index);
                 refreshCloze(item);
             });
-            candidates.addView(candidate);
+            clozeCandidateViews.add(candidate);
+            candidates.addView(candidate, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
         }
         content.addView(candidates);
         refreshCloze(item);
@@ -486,22 +567,14 @@ public class LearningActivity extends ForgeActivity {
             clozeBlankButtons.get(i).setEnabled(!answered);
             if (filled < 0) full = false;
         }
-        for (int i = 0; i < content.getChildCount(); i++) {
-            View child = content.getChildAt(i);
-            if (child instanceof LinearLayout) {
-                LinearLayout group = (LinearLayout) child;
-                for (int j = 0; j < group.getChildCount(); j++) {
-                    View button = group.getChildAt(j);
-                    if (button instanceof ForgeButton && button.getTag() instanceof String
-                            && ((String) button.getTag()).startsWith("cloze_candidate:")) {
-                        int optionIndex = Integer.parseInt(
-                                ((String) button.getTag()).substring("cloze_candidate:".length()));
-                        boolean used = clozeFilled.contains(optionIndex);
-                        button.setEnabled(!used && !answered);
-                        button.setAlpha(used ? 0.5f : 1f);
-                    }
-                }
-            }
+        for (View candidate : clozeCandidateViews) {
+            if (!(candidate.getTag() instanceof String)) continue;
+            String tag = (String) candidate.getTag();
+            if (!tag.startsWith("cloze_candidate:")) continue;
+            int optionIndex = Integer.parseInt(tag.substring("cloze_candidate:".length()));
+            boolean used = clozeFilled.contains(optionIndex);
+            candidate.setEnabled(!used && !answered);
+            candidate.setAlpha(used ? 0.5f : 1f);
         }
         confirmButton.setText(answered ? (isLastQuestion() ? "完成" : "下一题") : "确认答案");
         confirmButton.setVisibility(answered || full ? View.VISIBLE : View.GONE);

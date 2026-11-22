@@ -244,6 +244,11 @@ json structureToJson(const Structure& structure) {
           if (question.type == "cloze") {
             questionJson["clozeText"] = question.clozeText;
             questionJson["clozeOrder"] = question.clozeOrder;
+            if (!question.clozeItems.empty()) {
+              json groups = json::array();
+              for (const auto& group : question.clozeItems) groups.push_back(itemsToJson(group));
+              questionJson["clozeItems"] = groups;
+            }
           }
           if (question.type == "reading") {
             questionJson["passage"] = question.passage;
@@ -343,6 +348,21 @@ Structure structureFromJson(const json& value) {
                 if (questionValue.contains("clozeOrder") && questionValue["clozeOrder"].is_array()) {
                   for (const auto& index : questionValue["clozeOrder"])
                     question.clozeOrder.push_back(index.get<int>());
+                }
+                if (questionValue.contains("clozeItems") && questionValue["clozeItems"].is_array()) {
+                  for (const auto& groupValue : questionValue["clozeItems"]) {
+                    std::vector<QuestionOptionItem> group;
+                    if (groupValue.is_array()) {
+                      for (const auto& itemValue : groupValue) {
+                        QuestionOptionItem item;
+                        item.kind = itemValue.value("kind", "text");
+                        item.text = itemValue.value("text", "");
+                        item.vocabId = itemValue.value("vocabId", "");
+                        group.push_back(item);
+                      }
+                    }
+                    question.clozeItems.push_back(group);
+                  }
                 }
                 question.passage = questionValue.value("passage", "");
                 question.answerMode = questionValue.value("answerMode", "choice");
