@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "active": "44216101-faa6-5c18-9c6d-6d249e10557d",
+  "fonts": [
+    {
+      "id": "44216101-faa6-5c18-9c6d-6d249e10557d",
+      "name": "Nozu Sans",
+      "file": "resources/fonts/nozu_sans.ttf",
+      "createdAt": 1795600000000
+    }
+  ]
+}

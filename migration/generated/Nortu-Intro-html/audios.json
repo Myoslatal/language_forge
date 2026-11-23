@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "audios": [
+    {
+      "id": "3e47ed8e-2e46-5b57-ad05-43dbeb1cf461",
+      "name": "et (TTS)",
+      "code": "listen-et",
+      "file": "resources/audio/listen_et.wav",
+      "duration": 520,
+      "createdAt": 1795600000000
+    }
+  ]
+}
