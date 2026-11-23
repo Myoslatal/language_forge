@@ -89,6 +89,7 @@ struct Question {
   std::string customLabel;
   std::string customBody;
   std::string customMode = "choice";
+  std::string explain;
   std::string clozeText;
   std::vector<std::vector<QuestionOptionItem>> clozeItems;
   std::vector<int> clozeOrder;

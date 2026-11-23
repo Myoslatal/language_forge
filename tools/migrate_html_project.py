@@ -308,6 +308,7 @@ def main():
         "card": None, "lines": None, "passage": None, "answerMode": None,
         "clozeText": None, "clozeOrder": None, "clozeItems": None,
         "customLabel": None, "customBody": None, "customMode": None,
+        "explain": "",
     }
 
     def option_texts(options):
@@ -324,6 +325,7 @@ def main():
         item["type"] = q["type"] if q["type"] != "choice" else "translation_choice"
         item["name"] = q.get("prompt", "") or item["type"]
         item["prompt"] = q.get("prompt", "")
+        item["explain"] = q.get("explain", "") or ""
         if q["type"] == "choice":
             texts, items, correct = option_texts(q.get("options", []))
             item["options"], item["optionItems"], item["correctIndex"] = texts, items, correct

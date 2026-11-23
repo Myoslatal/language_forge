@@ -441,6 +441,7 @@ struct App {
   char cardDefInput[1024] = {};
   char cardDetailInput[2048] = {};
   char readingPassageInput[4096] = {};
+  char explainInput[2048] = {};
   char readingPromptInput[1024] = {};
   int readingMode = 0;
   char clozeTextInput[4096] = {};
@@ -458,6 +459,8 @@ struct App {
   std::vector<int> clozeFilled;
   std::string clozeQuestionId;
   bool learningComplete = false;
+  bool learningWrongExplain = false;
+  std::string explainQuestionId;
   bool learningShowList = false;
   bool learningExitConfirm = false;
   std::set<std::string> unlockedCourseIds;
@@ -1378,6 +1381,7 @@ struct App {
     std::snprintf(customPromptInput, sizeof(customPromptInput), "%s",
                   editQuestion.prompt.c_str());
     std::snprintf(readingPassageInput, sizeof(readingPassageInput), "%s", editQuestion.passage.c_str());
+    std::snprintf(explainInput, sizeof(explainInput), "%s", editQuestion.explain.c_str());
     std::snprintf(readingPromptInput, sizeof(readingPromptInput), "%s", editQuestion.prompt.c_str());
     readingMode = editQuestion.answerMode == "type" ? 1 : 0;
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
@@ -1399,6 +1403,7 @@ struct App {
   }
 
   void saveQuestion() {
+    editQuestion.explain = explainInput;
     Course* course = selectedCourse();
     if (!course) return;
     auto trim = [](std::string value) {
@@ -2189,6 +2194,7 @@ struct App {
         learningAnswered = true;
         if (last) showToast("回答正确，本课完成");
       } else {
+        learningWrongExplain = true;
         showToast("回答错误，请重新选择");
       }
     }
@@ -3702,6 +3708,11 @@ void renderQuestionEditor(App& app) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
   }
+  ImGui::TextUnformatted("解析（答完后显示）");
+  if (ImGui::InputTextMultiline("##question_explain", app.explainInput,
+                                sizeof(app.explainInput), ImVec2(-1, 70))) {
+    app.questionDirty = true;
+  }
   if (app.editQuestion.type == "cloze") {
     ImGui::TextUnformatted("填空正文（用 {} 标记空格）");
     if (ImGui::InputTextMultiline("##cloze_text", app.clozeTextInput,
@@ -4754,6 +4765,18 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (app.explainQuestionId != question->id) {
+    app.explainQuestionId = question->id;
+    app.learningWrongExplain = false;
+  }
+  if ((app.learningAnswered || app.learningWrongExplain) && !question->explain.empty()) {
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 430,
+                                   ImGui::GetIO().DisplaySize.y - 330), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(420, 150), ImGuiCond_Always);
+    ImGui::Begin("解析##explain_panel", nullptr, ImGuiWindowFlags_NoCollapse);
+    ImGui::TextWrapped("%s", question->explain.c_str());
+    ImGui::End();
+  }
   if (question->type == "custom") {
     app.ensureVocabularyLoaded();
     const std::string mode = question->customMode.empty() ? "choice" : question->customMode;
@@ -4887,7 +4910,7 @@ void renderLearning(App& app) {
             app.learningAnswered = true;
             app.showToast("回答正确");
           } else {
-            app.showToast("回答错误，请再试一次");
+            app.learningWrongExplain = true; app.showToast("回答错误，请再试一次");
           }
         }
       }
@@ -4959,7 +4982,7 @@ void renderLearning(App& app) {
             app.learningAnswered = true;
             app.showToast("回答正确");
           } else {
-            app.showToast("回答错误，请重新选择");
+            app.learningWrongExplain = true; app.showToast("回答错误，请重新选择");
           }
         }
       }
@@ -5148,7 +5171,7 @@ void renderLearning(App& app) {
         for (std::size_t i = 0; i < question->clozeOrder.size(); ++i)
           if (app.clozeFilled[i] != question->clozeOrder[i]) ok = false;
         if (ok) app.learningAnswered = true;
-        else app.showToast("回答错误，请重新选择");
+        else app.learningWrongExplain = true; app.showToast("回答错误，请重新选择");
       }
     }
     return;
@@ -5261,7 +5284,7 @@ void renderLearning(App& app) {
               app.learningAnswered = true;
               app.showToast(lastReading ? "回答正确，本课完成" : "回答正确");
             } else {
-              app.showToast("回答错误，请再试一次");
+              app.learningWrongExplain = true; app.showToast("回答错误，请再试一次");
             }
           }
         }
@@ -5406,7 +5429,7 @@ void renderLearning(App& app) {
           app.showToast("回答正确");
         } else {
           app.listenSel = -1;
-          app.showToast("回答错误，请重新选择");
+          app.learningWrongExplain = true; app.showToast("回答错误，请重新选择");
         }
       }
     } else if (app.learningAnswered) {
@@ -5553,7 +5576,7 @@ void renderLearning(App& app) {
               }
             }
           }
-          if (!warned) app.showToast("回答错误，请再试一次");
+          if (!warned) app.learningWrongExplain = true; app.showToast("回答错误，请再试一次");
         }
       }
     }
@@ -5808,7 +5831,7 @@ void renderLearning(App& app) {
             app.learningAnswered = true;
             if (last) app.showToast("回答正确，本课完成");
           } else {
-            app.showToast("回答错误，请重新选择");
+            app.learningWrongExplain = true; app.showToast("回答错误，请重新选择");
           }
         }
       }

@@ -153,6 +153,7 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        question.explain = questionObject.optString("explain", "");
                                         question.customLabel = questionObject.optString("customLabel", "");
                                         question.customBody = questionObject.optString("customBody", "");
                                         question.customMode = questionObject.optString("customMode", "choice");
@@ -443,6 +444,7 @@ final class ProjectStructure {
                                 }
                                 questionObject.put("lines", lines);
                             }
+                            if (!question.explain.isEmpty()) questionObject.put("explain", question.explain);
                             if (Question.TYPE_CUSTOM.equals(question.type)) {
                                 questionObject.put("customLabel", question.customLabel);
                                 questionObject.put("customBody", question.customBody);
@@ -821,6 +823,7 @@ final class ProjectStructure {
         String customLabel = "";
         String customBody = "";
         String customMode = "choice";
+        String explain = "";
         final List<Integer> clozeOrder = new ArrayList<>();
         final List<List<OptionItem>> clozeItems = new ArrayList<>();
         final List<DialogLine> lines = new ArrayList<>();

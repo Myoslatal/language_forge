@@ -306,6 +306,8 @@ Choice questions support handwritten vocabulary: image segments render as inline
 
 Arrange blocks with image vocabulary render as image chips in the learning pool/selected row and show a thumbnail in the editor, with image blocks defaulting their text mirror to the first code. Type prompts support promptItems rendered inline as text/images with the same mirror rules; pure-text prompts are unchanged.
 
+Questions store an optional explain field edited by the shared 「解析（答完后显示）」 multiline input in the question editor (all types). After a check — correct or wrong — learning shows a 解析 window with the explanation; it hides when moving to the next question. Old projects without explain show no panel.
+
 Learning starts at the first question of a single course, advances in order, and shows a course-complete page at the end. Courses unlock linearly by stable course id (first always unlocked, completing one unlocks the next); progress.json in the project directory stores version/unlockedCourseIds/completedCourseIds with atomic temp+rename, learning resumes the first unlocked unfinished course from question 1, the course list marks locked/completed entries, and leaving mid-question shows a discard-progress confirmation.
 
 Course progress is persisted per project in progress.json; courses unlock linearly and the learning entry resumes at the first unlocked, incomplete course.

@@ -56,6 +56,8 @@ public class LearningActivity extends ForgeActivity {
     private PopupWindow hintPopup;
     private LinearLayout bottomBar;
     private ForgeButton confirmButton;
+    private TextView explainView;
+    private boolean explainWrongShown;
     private EditText readingInput;
     private int selectedOption = -1;
     private boolean answered;
@@ -144,6 +146,17 @@ public class LearningActivity extends ForgeActivity {
         bottomBar = new LinearLayout(this);
         bottomBar.setPadding(dp(16), dp(8), dp(16), dp(8));
         bottomBar.setOrientation(LinearLayout.VERTICAL);
+        explainView = new TextView(this);
+        explainView.setTextSize(13f);
+        explainView.setTextColor(getColor(R.color.forge_text));
+        explainView.setPadding(dp(12), dp(8), dp(12), dp(8));
+        GradientDrawable explainBg = new GradientDrawable();
+        explainBg.setColor(getColor(R.color.forge_panel));
+        explainBg.setCornerRadius(dp(10));
+        explainBg.setStroke(dp(1), getColor(R.color.forge_panel3));
+        explainView.setBackground(explainBg);
+        explainView.setVisibility(View.GONE);
+        bottomBar.addView(explainView);
         confirmButton = new ForgeButton(this);
         confirmButton.setVariant(ForgeButton.VARIANT_PRIMARY);
         confirmButton.setText("确认答案");
@@ -344,6 +357,8 @@ public class LearningActivity extends ForgeActivity {
         listenPlayButton = null;
         confirmButton.setVisibility(View.GONE);
         confirmButton.setText("确认答案");
+        if (explainView != null) explainView.setVisibility(View.GONE);
+        explainWrongShown = false;
         course = selected;
         question = item;
         titleView.setText(item.name == null || item.name.isEmpty() ? "题目" : item.name);
@@ -670,6 +685,17 @@ public class LearningActivity extends ForgeActivity {
         }
         content.addView(candidates);
         refreshCloze(item);
+    }
+
+    private void refreshExplainPanel() {
+        if (explainView == null) return;
+        if (question != null && (answered || explainWrongShown) && question.explain != null
+                && !question.explain.trim().isEmpty()) {
+            explainView.setText("解析\n" + question.explain.trim());
+            explainView.setVisibility(View.VISIBLE);
+        } else {
+            explainView.setVisibility(View.GONE);
+        }
     }
 
     private void refreshCloze(ProjectStructure.Question item) {
@@ -1568,6 +1594,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void confirmAnswer() {
         if (question == null) return;
+        handler.postDelayed(this::refreshExplainPanel, 100);
         if (ProjectStructure.Question.TYPE_CARD.equals(question.type)) {
             nextQuestion();
             return;
@@ -1596,7 +1623,7 @@ public class LearningActivity extends ForgeActivity {
                     confirmButton.setVisibility(View.VISIBLE);
                     toast("回答正确");
                 } else {
-                    toast("回答错误，请再试一次");
+                    { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请再试一次"); }
                 }
                 return;
             }
@@ -1609,7 +1636,7 @@ public class LearningActivity extends ForgeActivity {
                     confirmButton.setVisibility(View.VISIBLE);
                     toast("回答正确");
                 } else {
-                    toast("回答错误，请重新选择");
+                    { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
                 }
                 return;
             }
@@ -1629,7 +1656,7 @@ public class LearningActivity extends ForgeActivity {
                 refreshCloze(question);
                 toast("回答正确");
             } else {
-                toast("回答错误，请重新选择");
+                { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
             }
             return;
         }
@@ -1650,7 +1677,7 @@ public class LearningActivity extends ForgeActivity {
                 toast("回答正确");
                 renderListenQuestion(question);
             } else {
-                toast("回答错误，请重新选择");
+                { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
                 listenSelected = -1;
                 renderListenQuestion(question);
             }
@@ -1676,7 +1703,7 @@ public class LearningActivity extends ForgeActivity {
                 confirmButton.setVisibility(View.VISIBLE);
                 toast("回答正确");
             } else {
-                toast("回答错误，请再试一次");
+                { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请再试一次"); }
             }
             return;
         }
@@ -1723,7 +1750,7 @@ public class LearningActivity extends ForgeActivity {
                         }
                     }
                 }
-                if (!warned) toast("回答错误，请再试一次");
+                if (!warned) { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请再试一次"); }
             }
             return;
         }
@@ -1736,7 +1763,7 @@ public class LearningActivity extends ForgeActivity {
                 confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                 confirmButton.setVisibility(View.VISIBLE);
             } else {
-                toast("回答错误，请重新选择");
+                { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
             }
             return;
         }
@@ -1749,7 +1776,7 @@ public class LearningActivity extends ForgeActivity {
             confirmButton.setVisibility(View.VISIBLE);
             if (isLastQuestion()) toast("本课完成");
         } else {
-            toast("回答错误，请重新选择");
+            { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
         }
     }
 

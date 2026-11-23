@@ -116,6 +116,7 @@ public class QuestionEditorActivity extends ForgeActivity {
     private CheckBox readingIgnoreCase, readingIgnoreSpace, readingNear;
     private LinearLayout dialogSection;
     private EditText dialogPrompt;
+    private EditText explainInput;
     private LinearLayout dialogLines;
     private final List<ProjectStructure.Question.DialogLine> editLines = new ArrayList<>();
     private EditText cardWord, cardPron, cardDef, cardDetail;
@@ -220,6 +221,11 @@ public class QuestionEditorActivity extends ForgeActivity {
         LinearLayout scrollContent = (LinearLayout) ((ScrollView)
                 findViewById(R.id.question_editor_scroll)).getChildAt(0);
         editorScrollContent = scrollContent;
+        explainInput = new EditText(this);
+        explainInput.setHint("解析（答完后显示）");
+        explainInput.setMinLines(2);
+        explainInput.setText(question.explain == null ? "" : question.explain);
+        scrollContent.addView(explainInput);
         typeSpinner = new Spinner(this);
         ArrayAdapter<String> typeAdapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_item,
@@ -2047,6 +2053,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.hintsEnabled = false;
         question.name = (prompt.isEmpty() ? "听音选择" : prompt) + " · " + options.get(correct);
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true;
         toast("已保存听音题");
@@ -2398,6 +2405,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (question.answers.isEmpty()) { toast("至少填写一条答案顺序"); return; }
         }
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true; toast("已保存自定义题型"); finish();
     }
@@ -2468,6 +2476,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.correctIndex = -1;
         question.optionItems.clear();
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true; toast("已保存选词填空"); finish();
     }
@@ -2525,6 +2534,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (!hasVocab) question.optionItems.clear();
         }
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true; toast("已保存阅读短文"); finish();
     }
@@ -2585,6 +2595,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         String fallback = lines.isEmpty() ? "" : lines.get(0).text;
         question.name = prompt.isEmpty() ? (fallback.isEmpty() ? "选择对话" : fallback) : prompt;
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true;
         toast("已保存对话题");
@@ -2610,6 +2621,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.name = word + " · " + def;
         question.hintsEnabled = false;
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true; toast("已保存新知卡片"); finish();
     }
@@ -2657,6 +2669,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.name = prompt + " → " + accepted.get(0);
         question.hintsEnabled = false;
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true;
         toast("已保存输入题");
@@ -2685,6 +2698,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.name = base + " · " + valid.size() + " 对";
         question.hintsEnabled = false;
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true;
         toast("已保存配对题");
@@ -2913,6 +2927,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.name = name.toString();
         question.hintsEnabled = hintsEnabledView.isChecked();
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
         saved = true;
         toast("已保存词块组句");
@@ -3060,6 +3075,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (display.isEmpty()) display = "未命名题目";
         question.name = display;
         if (!course.questions.contains(question)) course.questions.add(question);
+        if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) {
             toast("保存题目失败");
             return;

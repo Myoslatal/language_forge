@@ -27,13 +27,15 @@ Counts after generation: 1 course, 10 questions, 7 vocabulary entries, 3 POS ent
 
 ## Not migrated (HTML-only fields)
 
-- `explain`, per-question `glosses` text, `note`, `pron` on options, `kp` ids (used to select vocabulary),
+- Per-question `glosses` text, `note`, `pron` on options, `kp` ids (used to select vocabulary),
   `ttsLang`, `sfx`, `anim`, `imgMax`, `typeNames`, `defaultMode`, `recs`.
+- `explain` **is migrated** into the app question's `explain` field (shown after answering).
 - The full 5000-word built-in Nortu dictionary is **not** bulk-imported: only words referenced by the
   course (`kp`/`glosses`) are written to `vocabulary.json`. If a full lexicon is wanted, extend the
   script to iterate `<BUILTIN>.words` instead of the referenced ids.
-- HTML quiz behavior `explain`/gloss popovers are replaced by the app's vocabulary hint popup; the
-  migrated questions set `hintsEnabled` and the relevant tokens are underlined in learning.
+- HTML gloss popovers are replaced by the app's vocabulary hint popup; the migrated questions set
+  `hintsEnabled` and the relevant tokens are underlined in learning. HTML `explain` prose is shown in
+  the app's post-answer explanation panel.
 
 ## Regenerate
 
@@ -64,4 +66,5 @@ python3 tools/migrate_html_project.py
   correctly, and the type engine is covered by other fixtures).
 - The listen audio is a synthesized English pronunciation of `et` (the HTML used browser TTS); replace it
   with a real recording if desired.
-- HTML `explain`/`gloss` prose is not part of the app schema and is recorded here rather than in the project.
+- HTML `gloss` prose is not part of the app schema and is recorded here rather than in the project;
+  HTML `explain` is migrated to question.explain.

@@ -241,6 +241,7 @@ json structureToJson(const Structure& structure) {
                                {"audioSource", question.audioSource},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
+          if (!question.explain.empty()) questionJson["explain"] = question.explain;
           if (question.type == "custom") {
             questionJson["customLabel"] = question.customLabel;
             questionJson["customBody"] = question.customBody;
@@ -349,6 +350,7 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                question.explain = questionValue.value("explain", "");
                 question.customLabel = questionValue.value("customLabel", "");
                 question.customBody = questionValue.value("customBody", "");
                 question.customMode = questionValue.value("customMode", "choice");
