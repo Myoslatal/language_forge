@@ -41,3 +41,10 @@ HTML: NostongueForge_v1.3.1.html unchanged
 - 课程列表入口在完成页/全部完成页（学习入口直接进入当前课程，不显示列表）。
 - 桌面未做多课程增删的额外 Android 截图（逻辑同一 CourseProgress 规则）。
 - 题目级进度不保存，符合需求；重新进入课程从第 1 题开始。
+
+## 2026-11-23 三层级课程列表与退出回列表
+- 夹具：/tmp/multich/多课测试-abc（2 章 × 2 单元 × 1-2 课程）。
+- Android：/tmp/learn-lock-list.png（章节大标题/单元小标题/缩进课程行），/tmp/learn-lock-toast.png，/tmp/learn-exit-confirm.png。
+- 桌面：/tmp/forge-sdl-shots/learn-lock-list.png、learn-lock-toast.png、learn-exit-confirm.png。
+- 退出确认 positive 回到课程列表，不结束学习；继续留下保持当前题。
+- Android clean build、桌面 clean build；桌面 smoke 两次 PASS。

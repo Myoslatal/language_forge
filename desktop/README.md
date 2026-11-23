@@ -309,3 +309,5 @@ Arrange blocks with image vocabulary render as image chips in the learning pool/
 Learning starts at the first question of a single course, advances in order, and shows a course-complete page at the end. Courses unlock linearly by stable course id (first always unlocked, completing one unlocks the next); progress.json in the project directory stores version/unlockedCourseIds/completedCourseIds with atomic temp+rename, learning resumes the first unlocked unfinished course from question 1, the course list marks locked/completed entries, and leaving mid-question shows a discard-progress confirmation.
 
 Course progress is persisted per project in progress.json; courses unlock linearly and the learning entry resumes at the first unlocked, incomplete course.
+
+Learning course list is grouped by chapter → unit → course; exiting mid-question returns to this grouped list after confirmation.

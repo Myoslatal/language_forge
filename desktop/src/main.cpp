@@ -4607,9 +4607,8 @@ void renderLearning(App& app) {
       app.stopAudioPlayback();
       app.learningQuestionId.clear();
       app.learningCourseId.clear();
-      app.learningShowList = false;
+      app.learningShowList = true;
       app.learningComplete = false;
-      app.screen = App::Screen::Structure;
       ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
@@ -4627,25 +4626,36 @@ void renderLearning(App& app) {
   }
   if (app.learningQuestionId.empty() && !app.learningComplete) {
     if (app.learningShowList) {
-      pageTitle("LEARN", "课程", "选择课程");
-      auto courses = app.allCoursesFlat();
-      for (Course* item : courses) {
-        bool unlocked = app.unlockedCourseIds.count(item->id) > 0;
-        bool completed = app.completedCourseIds.count(item->id) > 0;
-        ImGui::PushID(item->id.c_str());
-        std::string label = (unlocked ? "" : "🔒 ") + item->name +
-            (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁") +
-            "  ·  " + std::to_string(item->questions.size()) + " 题";
-        if (ImGui::Button(label.c_str(), ImVec2(-1, 44))) {
-          if (!unlocked) app.showToast("完成上一课程后解锁");
-          else if (!item->questions.empty()) {
-            app.learningShowList = false;
-            app.learningCourseId = item->id;
-            app.learningQuestionId = item->questions.front().id;
-            app.learningComplete = false;
+      pageTitle("LEARN", "课程", "章节 / 单元 / 课程");
+      for (auto& chapter : app.structure.chapters) {
+        ImGui::Spacing();
+        ImGui::PushFont(nullptr, 20.0f);
+        ImGui::TextUnformatted(chapter.name.c_str());
+        ImGui::PopFont();
+        for (auto& unit : chapter.units) {
+          ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 12);
+          ImGui::TextDisabled("%s", unit.name.c_str());
+          for (auto& item : unit.courses) {
+            bool unlocked = app.unlockedCourseIds.count(item.id) > 0;
+            bool completed = app.completedCourseIds.count(item.id) > 0;
+            ImGui::PushID(item.id.c_str());
+            std::string label = std::string(unlocked ? "" : "🔒 ") + item.name +
+                (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁") +
+                "  ·  " + std::to_string(item.questions.size()) + " 题";
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 24);
+            float rowWidth = ImGui::GetContentRegionAvail().x;
+            if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(rowWidth, 40))) {
+              if (!unlocked) app.showToast("完成上一课程后解锁");
+              else if (!item.questions.empty()) {
+                app.learningShowList = false;
+                app.learningCourseId = item.id;
+                app.learningQuestionId = item.questions.front().id;
+                app.learningComplete = false;
+              }
+            }
+            ImGui::PopID();
           }
         }
-        ImGui::PopID();
       }
       return;
     }

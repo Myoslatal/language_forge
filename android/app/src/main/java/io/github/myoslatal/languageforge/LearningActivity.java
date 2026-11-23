@@ -235,24 +235,33 @@ public class LearningActivity extends ForgeActivity {
         content.removeAllViews();
         List<ProjectStructure.Course> courses = allCourses();
         progress.normalize(courses);
-        for (ProjectStructure.Course item : courses) {
-            boolean unlocked = progress.isUnlocked(item);
-            boolean completed = progress.isCompleted(item);
-            Button row = new Button(this);
-            row.setAllCaps(false);
-            row.setText((unlocked ? "" : "🔒 ") + item.name
-                    + (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁")
-                    + "\n" + item.questions.size() + " 道题目");
-            row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            row.setOnClickListener(v -> {
-                if (!progress.isUnlocked(item)) {
-                    toast("完成上一课程后解锁");
-                    return;
+        for (ProjectStructure.Chapter chapter : structure.chapters) {
+            content.addView(text(chapter.name, 20, R.color.forge_text));
+            for (ProjectStructure.Unit unit : chapter.units) {
+                TextView unitHeader = text(unit.name, 14, R.color.forge_muted);
+                unitHeader.setPadding(dp(12), dp(6), 0, dp(4));
+                content.addView(unitHeader);
+                for (ProjectStructure.Course item : unit.courses) {
+                    boolean unlocked = progress.isUnlocked(item);
+                    boolean completed = progress.isCompleted(item);
+                    Button row = new Button(this);
+                    row.setAllCaps(false);
+                    row.setText((unlocked ? "" : "🔒 ") + item.name
+                            + (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁")
+                            + "\n" + item.questions.size() + " 道题目");
+                    row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                    row.setPadding(dp(24), 0, dp(16), 0);
+                    row.setOnClickListener(v -> {
+                        if (!progress.isUnlocked(item)) {
+                            toast("完成上一课程后解锁");
+                            return;
+                        }
+                        startCourse(item);
+                    });
+                    content.addView(row, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
                 }
-                startCourse(item);
-            });
-            content.addView(row, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
+            }
         }
         if (courses.isEmpty()) content.addView(text("还没有课程", 16, R.color.forge_muted));
     }
@@ -1983,7 +1992,7 @@ public class LearningActivity extends ForgeActivity {
                     .setNegativeButton("继续留下", null)
                     .setPositiveButton("退出", (dialog, which) -> {
                         question = null;
-                        finish();
+                        showCourseList();
                     })
                     .show();
         } else {
