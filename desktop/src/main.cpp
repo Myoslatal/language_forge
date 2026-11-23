@@ -458,8 +458,104 @@ struct App {
   std::vector<int> clozeFilled;
   std::string clozeQuestionId;
   bool learningComplete = false;
+  bool learningShowList = false;
+  bool learningExitConfirm = false;
+  std::set<std::string> unlockedCourseIds;
+  std::set<std::string> completedCourseIds;
+
+  std::vector<Course*> allCoursesFlat() {
+    std::vector<Course*> courses;
+    for (auto& chapter : structure.chapters)
+      for (auto& unit : chapter.units)
+        for (auto& course : unit.courses) courses.push_back(&course);
+    return courses;
+  }
+
+  void loadCourseProgress() {
+    unlockedCourseIds.clear();
+    completedCourseIds.clear();
+    if (folder.empty()) return;
+    std::ifstream in(currentProjectDirectory() / "progress.json");
+    if (in) {
+      try {
+        json data;
+        in >> data;
+        for (const auto& id : data.value("unlockedCourseIds", json::array()))
+          if (id.is_string()) unlockedCourseIds.insert(id.get<std::string>());
+        for (const auto& id : data.value("completedCourseIds", json::array()))
+          if (id.is_string()) completedCourseIds.insert(id.get<std::string>());
+      } catch (...) {
+        unlockedCourseIds.clear();
+        completedCourseIds.clear();
+      }
+    }
+    normalizeCourseProgress();
+  }
+
+  void normalizeCourseProgress() {
+    auto courses = allCoursesFlat();
+    if (!courses.empty()) unlockedCourseIds.insert(courses.front()->id);
+    for (std::size_t i = 0; i < courses.size(); ++i) {
+      Course* course = courses[i];
+      if (completedCourseIds.count(course->id)) unlockedCourseIds.insert(course->id);
+      if (i > 0 && completedCourseIds.count(courses[i - 1]->id)) {
+        unlockedCourseIds.insert(course->id);
+      }
+    }
+  }
+
+  bool allCoursesCompleted() {
+    auto courses = allCoursesFlat();
+    if (courses.empty()) return false;
+    for (Course* course : courses) {
+      if (!completedCourseIds.count(course->id)) return false;
+    }
+    return true;
+  }
+
+  bool saveCourseProgress() {
+    if (folder.empty()) return false;
+    json data;
+    data["version"] = 1;
+    data["unlockedCourseIds"] = unlockedCourseIds;
+    data["completedCourseIds"] = completedCourseIds;
+    fs::path target = currentProjectDirectory() / "progress.json";
+    fs::path temp = target;
+    temp += ".tmp";
+    try {
+      std::ofstream out(temp);
+      out << data.dump();
+      out.close();
+      std::error_code ec;
+      fs::rename(temp, target, ec);
+      return !ec;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  Course* currentCourse() {
+    auto courses = allCoursesFlat();
+    for (Course* course : courses) {
+      if (unlockedCourseIds.count(course->id) && !completedCourseIds.count(course->id)) return course;
+    }
+    return nullptr;
+  }
+
+  void completeCurrentCourse() {
+    auto courses = allCoursesFlat();
+    for (std::size_t i = 0; i < courses.size(); ++i) {
+      if (courses[i]->id != learningCourseId) continue;
+      completedCourseIds.insert(courses[i]->id);
+      unlockedCourseIds.insert(courses[i]->id);
+      if (i + 1 < courses.size()) unlockedCourseIds.insert(courses[i + 1]->id);
+      saveCourseProgress();
+      return;
+    }
+  }
 
   void finishLearning() {
+    completeCurrentCourse();
     learningComplete = true;
     learningQuestionId.clear();
     learningSelected = -1;
@@ -4485,13 +4581,39 @@ void renderLearning(App& app) {
   auto back = [&] {
     app.learningHintId.clear();
     app.stopAudioPlayback();
-    if (!app.learningQuestionId.empty()) app.learningQuestionId.clear();
-    else if (!app.learningCourseId.empty()) app.learningCourseId.clear();
-    else app.screen = App::Screen::Home;
+    if (!app.learningQuestionId.empty()) app.learningExitConfirm = true;
+    else {
+      app.learningCourseId.clear();
+      app.learningQuestionId.clear();
+      app.learningShowList = false;
+      app.learningComplete = false;
+      app.screen = App::Screen::Structure;
+    }
   };
   if (ImGui::Button("←", ImVec2(50, 30))) back();
   ImGui::SameLine();
   ImGui::TextDisabled("学习模式（只读）");
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) back();
+  if (app.learningExitConfirm) {
+    ImGui::OpenPopup("##learning_exit_confirm");
+    app.learningExitConfirm = false;
+  }
+  if (ImGui::BeginPopupModal("##learning_exit_confirm", nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextWrapped("退出将丢失当前课程的题目进度，确定退出？");
+    if (ImGui::Button("继续留下", ImVec2(120, 32))) ImGui::CloseCurrentPopup();
+    ImGui::SameLine();
+    if (ImGui::Button("退出", ImVec2(120, 32))) {
+      app.stopAudioPlayback();
+      app.learningQuestionId.clear();
+      app.learningCourseId.clear();
+      app.learningShowList = false;
+      app.learningComplete = false;
+      app.screen = App::Screen::Structure;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
   ImGui::Spacing();
   Course* course = nullptr;
   if (!app.learningCourseId.empty()) {
@@ -4503,10 +4625,72 @@ void renderLearning(App& app) {
       }
     }
   }
+  if (app.learningQuestionId.empty() && !app.learningComplete) {
+    if (app.learningShowList) {
+      pageTitle("LEARN", "课程", "选择课程");
+      auto courses = app.allCoursesFlat();
+      for (Course* item : courses) {
+        bool unlocked = app.unlockedCourseIds.count(item->id) > 0;
+        bool completed = app.completedCourseIds.count(item->id) > 0;
+        ImGui::PushID(item->id.c_str());
+        std::string label = (unlocked ? "" : "🔒 ") + item->name +
+            (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁") +
+            "  ·  " + std::to_string(item->questions.size()) + " 题";
+        if (ImGui::Button(label.c_str(), ImVec2(-1, 44))) {
+          if (!unlocked) app.showToast("完成上一课程后解锁");
+          else if (!item->questions.empty()) {
+            app.learningShowList = false;
+            app.learningCourseId = item->id;
+            app.learningQuestionId = item->questions.front().id;
+            app.learningComplete = false;
+          }
+        }
+        ImGui::PopID();
+      }
+      return;
+    }
+    app.loadCourseProgress();
+    Course* current = app.currentCourse();
+    if (current == nullptr) {
+      if (!app.allCoursesCompleted()) {
+        app.learningShowList = true;
+        return;
+      }
+      app.learningComplete = true;
+      app.learningCourseId.clear();
+    } else {
+      app.learningCourseId = current->id;
+      course = current;
+      app.learningQuestionId = current->questions.empty() ? "" : current->questions.front().id;
+      app.learningComplete = false;
+    }
+  }
   if (app.learningComplete) {
     pageTitle("LEARN", "本课完成", course ? course->name : "");
     ImGui::TextWrapped("你已完成本课全部题目。");
-    if (ImGui::Button("返回##learning_done_back", ImVec2(-1, 42))) {
+    auto courses = app.allCoursesFlat();
+    for (std::size_t i = 0; i + 1 < courses.size(); ++i) {
+      if (courses[i]->id != app.learningCourseId) continue;
+      Course* next = courses[i + 1];
+      if (app.unlockedCourseIds.count(next->id) && !next->questions.empty()) {
+        if (ImGui::Button(("下一课：" + next->name + "##learning_next_course").c_str(),
+                          ImVec2(-1, 42))) {
+          app.learningComplete = false;
+          app.learningCourseId = next->id;
+          app.learningQuestionId = next->questions.front().id;
+          app.learningAnswered = false;
+          app.learningSelected = -1;
+        }
+      }
+      break;
+    }
+    if (ImGui::Button("课程列表##learning_done_list", ImVec2(-1, 38))) {
+      app.learningComplete = false;
+      app.learningQuestionId.clear();
+      app.learningCourseId.clear();
+      app.learningShowList = true;
+    }
+    if (ImGui::Button("返回##learning_done_back", ImVec2(-1, 38))) {
       app.learningComplete = false;
       app.learningQuestionId.clear();
       app.learningCourseId.clear();
@@ -5805,6 +5989,8 @@ void renderCardDialog(App& app) {
       app.screen = App::Screen::Learning;
       app.learningCourseId.clear();
       app.learningQuestionId.clear();
+      app.learningShowList = false;
+      app.learningComplete = false;
       ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();

@@ -536,4 +536,6 @@ Choice questions also support handwritten vocabulary: sentence segments whose wo
 
 Arrange blocks whose vocabId points at image vocabulary render as image chips in the learning pool and selected row, and the editor shows a block thumbnail; new image blocks store the first code as their text mirror. Type prompts store promptItems (text / vocab) rendered inline (image thumbnail in the prompt and hint), with the same mirror/collapse/drop rules as options; pure-text prompts keep the original TextView.
 
-Learning starts at the first question of a single course, advances in order, and ends on a course-complete page; entering again restarts at question 1.
+Learning starts at the first question of a single course, advances in order, and ends on a course-complete page; entering again restarts at question 1. Courses unlock linearly by stable course id: the first course is always unlocked and completing a course unlocks the next one. Only course-level progress is stored in the project's progress.json (version/unlockedCourseIds/completedCourseIds, atomic temp+rename); entering learning resumes the first unlocked unfinished course at its first question, the course list shows locked/completed states, and leaving mid-question asks before discarding the current course's question progress.
+
+Course progress is stored in progress.json (unlocked/completed course ids); courses unlock linearly and progress resumes at the first unlocked, incomplete course.

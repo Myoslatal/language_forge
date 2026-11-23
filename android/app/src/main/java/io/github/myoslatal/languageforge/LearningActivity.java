@@ -80,6 +80,7 @@ public class LearningActivity extends ForgeActivity {
     private final List<LinearLayout> clozeBlankRows = new ArrayList<>();
     private final List<View> clozeCandidateViews = new ArrayList<>();
     private TextView typeNearView;
+    private CourseProgress progress;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -92,11 +93,15 @@ public class LearningActivity extends ForgeActivity {
             return;
         }
         structure = ProjectStructure.load(projectDirectory);
+        progress = CourseProgress.load(projectDirectory);
         vocabulary = new VocabularyStore(projectDirectory);
         vocabulary.load();
         posStore = new PosStore(projectDirectory);
         handler = new Handler(Looper.getMainLooper());
         setContentView(buildRoot());
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override public void handleOnBackPressed() { goBack(); }
+        });
         applyTopInset(topbarView);
         applyBottomInset(bottomBar);
         showCourses();
@@ -166,6 +171,16 @@ public class LearningActivity extends ForgeActivity {
         return super.dispatchTouchEvent(event);
     }
 
+    private List<ProjectStructure.Course> allCourses() {
+        List<ProjectStructure.Course> courses = new ArrayList<>();
+        for (ProjectStructure.Chapter chapter : structure.chapters) {
+            for (ProjectStructure.Unit unit : chapter.units) {
+                for (ProjectStructure.Course item : unit.courses) courses.add(item);
+            }
+        }
+        return courses;
+    }
+
     private void showCourses() {
         dismissHint();
         course = null;
@@ -173,28 +188,73 @@ public class LearningActivity extends ForgeActivity {
         titleView.setText("学习");
         subtitleView.setText("选择课程");
         content.removeAllViews();
-        List<ProjectStructure.Course> courses = new ArrayList<>();
-        for (ProjectStructure.Chapter chapter : structure.chapters) {
-            for (ProjectStructure.Unit unit : chapter.units) {
-                for (ProjectStructure.Course item : unit.courses) courses.add(item);
-            }
-        }
-        if (courses.size() == 1) {
-            startCourse(courses.get(0));
+        if (progress == null) progress = CourseProgress.load(projectDirectory);
+        List<ProjectStructure.Course> courses = allCourses();
+        progress.normalize(courses);
+        ProjectStructure.Course current = progress.current(courses);
+        if (courses.isEmpty()) {
+            content.addView(text("还没有课程", 16, R.color.forge_muted));
             return;
         }
+        if (current == null) {
+            if (progress.allCompleted(courses)) showAllComplete();
+            else showCourseList();
+            return;
+        }
+        startCourse(current);
+    }
+
+    private void showAllComplete() {
+        course = null;
+        question = null;
+        confirmButton.setVisibility(View.GONE);
+        titleView.setText("学习");
+        subtitleView.setText("全部课程完成");
+        content.removeAllViews();
+        content.addView(text("全部课程完成", 26, R.color.forge_text));
+        content.addView(text("所有课程都已完成。", 16, R.color.forge_muted));
+        Button list = new Button(this);
+        list.setAllCaps(false);
+        list.setText("课程列表");
+        list.setOnClickListener(v -> showCourseList());
+        content.addView(list);
+        Button back = new Button(this);
+        back.setAllCaps(false);
+        back.setText("返回");
+        back.setOnClickListener(v -> finish());
+        content.addView(back);
+    }
+
+    private void showCourseList() {
+        dismissHint();
+        course = null;
+        question = null;
+        confirmButton.setVisibility(View.GONE);
+        titleView.setText("课程");
+        subtitleView.setText("选择课程");
+        content.removeAllViews();
+        List<ProjectStructure.Course> courses = allCourses();
+        progress.normalize(courses);
         for (ProjectStructure.Course item : courses) {
+            boolean unlocked = progress.isUnlocked(item);
+            boolean completed = progress.isCompleted(item);
             Button row = new Button(this);
             row.setAllCaps(false);
-            row.setText(item.name + "\n" + item.questions.size() + " 道题目");
+            row.setText((unlocked ? "" : "🔒 ") + item.name
+                    + (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁")
+                    + "\n" + item.questions.size() + " 道题目");
             row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            row.setOnClickListener(v -> startCourse(item));
+            row.setOnClickListener(v -> {
+                if (!progress.isUnlocked(item)) {
+                    toast("完成上一课程后解锁");
+                    return;
+                }
+                startCourse(item);
+            });
             content.addView(row, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
         }
-        if (content.getChildCount() == 0) {
-            content.addView(text("还没有课程", 16, R.color.forge_muted));
-        }
+        if (courses.isEmpty()) content.addView(text("还没有课程", 16, R.color.forge_muted));
     }
 
     private void startCourse(ProjectStructure.Course selected) {
@@ -218,20 +278,32 @@ public class LearningActivity extends ForgeActivity {
 
     private void showComplete() {
         dismissHint();
+        ProjectStructure.Course finished = course;
         question = null;
         confirmButton.setVisibility(View.GONE);
+        List<ProjectStructure.Course> courses = allCourses();
+        if (finished != null && progress != null && !progress.isCompleted(finished)) {
+            progress.complete(courses, finished);
+            if (!progress.save(projectDirectory)) toast("进度保存失败");
+        }
         titleView.setText("本课完成");
-        subtitleView.setText(course == null ? "" : course.name);
+        subtitleView.setText(finished == null ? "" : finished.name);
         content.removeAllViews();
         content.addView(text("本课完成", 26, R.color.forge_text));
         content.addView(text("你已完成本课全部题目。", 16, R.color.forge_muted));
+        ProjectStructure.Course next = finished == null || progress == null
+                ? null : progress.next(courses, finished);
+        if (next != null && progress.isUnlocked(next)) {
+            Button nextCourse = new Button(this);
+            nextCourse.setAllCaps(false);
+            nextCourse.setText("下一课：" + next.name);
+            nextCourse.setOnClickListener(v -> startCourse(next));
+            content.addView(nextCourse);
+        }
         Button back = new Button(this);
         back.setAllCaps(false);
         back.setText("返回");
-        back.setOnClickListener(v -> {
-            if (structure.chapters.size() > 1 || hasMultipleCourses()) showCourses();
-            else finish();
-        });
+        back.setOnClickListener(v -> showCourseList());
         content.addView(back);
     }
 
@@ -1906,9 +1978,14 @@ public class LearningActivity extends ForgeActivity {
     private void goBack() {
         dismissHint();
         if (question != null) {
-            if (hasMultipleCourses()) showCourses(); else finish();
-        } else if (course != null) {
-            showCourses();
+            new android.app.AlertDialog.Builder(this)
+                    .setMessage("退出将丢失当前课程的题目进度，确定退出？")
+                    .setNegativeButton("继续留下", null)
+                    .setPositiveButton("退出", (dialog, which) -> {
+                        question = null;
+                        finish();
+                    })
+                    .show();
         } else {
             finish();
         }
