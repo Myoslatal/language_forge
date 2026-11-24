@@ -19,7 +19,7 @@ import wave
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HTML = os.path.join(ROOT, "NostongueForge_v1.3.1.html")
 # Course data is intentionally external: the repository and the APK stay empty.
-OUT_DIR = os.environ.get("FORGE_MIGRATION_OUT", "/home/forin/language-forge-imports")
+OUT_DIR = os.environ.get("FORGE_MIGRATION_OUT", "/ai/nortu")
 GEN_DIR = OUT_DIR
 PROJECT_NAME = "Nortu 自由语 · 入门"
 FOLDER = "Nortu-Intro-html"

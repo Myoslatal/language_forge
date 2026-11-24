@@ -12,7 +12,7 @@ APK: `dist/LanguageForge-1.0-release-signed.apk`（CN=kjoremorf，debug/unsigned
 - Android `ProjectStore.initialize()` 不再调用 `seedSamples()`；删除 sample 列表、`.seeded` marker 和未使用的
   seed 辅助方法。首次启动只创建/确认项目根目录，列表为空。
 - 桌面本来没有 seed；外部 .conlang 由用户通过「导入 .conlang」手动选择。
-- 迁移脚本默认输出改为仓库外 `/home/forin/language-forge-imports`（可用 `FORGE_MIGRATION_OUT` 覆盖）。
+- 迁移脚本默认输出改为仓库外 `/ai/nortu`（可用 `FORGE_MIGRATION_OUT` 覆盖）。
 - 仓库内 `migration/` 只保留脚本说明和迁移文档；已删除 `migration/generated/*` 与 `migration/*.conlang`。
 
 ## 实测
@@ -24,12 +24,12 @@ APK: `dist/LanguageForge-1.0-release-signed.apk`（CN=kjoremorf，debug/unsigned
 - **桌面全新数据目录** `/tmp/fresh-empty`：显示「0 个项目 · 置顶优先」「还没有项目」。
   - 截图：`/tmp/fresh-check.png`。
 - 双端 clean build 成功；桌面 smoke 两次 PASS（smoke 从仓库外
-  `/home/forin/language-forge-imports/Nortu-Intro-html.conlang` 读取 TTS 迁移夹具，
+  `/ai/nortu/Nortu-Intro-html.conlang` 读取 TTS 迁移夹具，
   `tts_migration=true`）。
 
 ## 仓库外课程文件（供手动导入）
-- `/home/forin/language-forge-imports/nortu-l1-2.conlang`（3 课 46 题，23 段 WAV，Nozu Sans）
-- `/home/forin/language-forge-imports/Nortu-Intro-html.conlang`（HTML demo 10 题）
+- `/ai/nortu/nortu-l1-2.conlang`（3 课 46 题，23 段 WAV，Nozu Sans）
+- `/ai/nortu/Nortu-Intro-html.conlang`（HTML demo 10 题）
 - 对应生成项目目录：同目录下 `Nortu-L1-2/`、`Nortu-Intro-html/`
 - 这些文件不在 Git 工作区、不会打进 APK；安装后必须手动导入。
 

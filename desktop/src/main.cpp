@@ -7838,7 +7838,7 @@ int runSmoke(App& app, const fs::path& outputDir) {
     if (const char* externalDir = std::getenv("FORGE_MIGRATION_OUT")) {
       conlangCandidates.push_back(fs::path(externalDir) / "Nortu-Intro-html.conlang");
     }
-    conlangCandidates.push_back(fs::path("/home/forin/language-forge-imports") /
+    conlangCandidates.push_back(fs::path("/ai/nortu") /
                                  "Nortu-Intro-html.conlang");
     conlangCandidates.push_back(fs::path("migration") / "Nortu-Intro-html.conlang");
     conlangCandidates.push_back(fs::path("..") / "migration" / "Nortu-Intro-html.conlang");

@@ -22,14 +22,14 @@ remains a physical-device item (RD-07).
 
 A fresh install starts with an empty project list (Android seed samples removed; desktop never
 seeded). Migrated courses are intentionally external: `nortu-l1-2.conlang` and
-`Nortu-Intro-html.conlang` live under `/home/forin/language-forge-imports/` and are never committed
+`Nortu-Intro-html.conlang` live under `/ai/nortu/` and are never committed
 or bundled into the APK. Details and screenshots: [NO_BUNDLED_COURSES.md](NO_BUNDLED_COURSES.md).
 
 ### WorkBuddy share-site course migration (2026-11-25)
 
 The 3-course/46-question Nortu L1-2 pack, 23 embedded recordings, Nozu Sans TTF and 17-entry
 vocabulary are migrated by `tools/migrate_workbuddy_course.py` into
-the external `/home/forin/language-forge-imports/nortu-l1-2.conlang`. Both platforms import it and learn choice/arrange/type/match/listen;
+the external `/ai/nortu/nortu-l1-2.conlang`. Both platforms import it and learn choice/arrange/type/match/listen;
 the new generic non-listen question audio button auto-plays question audio. Details and skipped
 fields: [migration/WORKBUDDY_MIGRATION.md](migration/WORKBUDDY_MIGRATION.md). Headless audio
 verification uses WAV/MediaPlayer/SDL logs; physical audibility remains RD-07.

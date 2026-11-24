@@ -6,8 +6,8 @@
 - 抓取页面：`/tmp/nortu-site.html`（3,159,596 bytes，sha256 `18339ed927378bb4cee4c1676090405eb66ecf2377550206910c20235f6611e4`）
 - 播放器数据：`/tmp/nortu-pack.json`（2,907,501 bytes，schema `clf-pack/2`，sha256 `c85fea85dadd163171f6453be16dca049c77995fb3c2c4750315f1908aa3fba5`）
 - 可复现脚本：`tools/migrate_workbuddy_course.py`
-- 项目目录（仓库外）：`/home/forin/language-forge-imports/Nortu-L1-2/`（34 个 ZIP 条目：7 个 JSON、23 个 WAV、1 个 TTF）
-- 导入包（仓库外）：`/home/forin/language-forge-imports/nortu-l1-2.conlang`（1,129,898 bytes，sha256 `a06a17e7be67ad1f727452f1705e50eb8a68ad7b1a9f837f32c344e6bbc6b7f8`）
+- 项目目录（仓库外）：`/ai/nortu/Nortu-L1-2/`（34 个 ZIP 条目：7 个 JSON、23 个 WAV、1 个 TTF）
+- 导入包（仓库外）：`/ai/nortu/nortu-l1-2.conlang`（1,129,898 bytes，sha256 `a06a17e7be67ad1f727452f1705e50eb8a68ad7b1a9f837f32c344e6bbc6b7f8`）
 - 仓库内不保存本次课程数据；`migration/generated/Nortu-L1-2/` 与 `migration/nortu-l1-2.conlang` 均不存在。
 
 生成结果：1 个 chapter「Nortu 自由语」、3 个 unit（第1关/第2关/第3关）、每个 unit 1 个 course，共 **3 课 46 题**。
@@ -89,8 +89,8 @@ python3 tools/migrate_workbuddy_course.py
 # 可指定输入/输出
 python3 tools/migrate_workbuddy_course.py \
   --pack /tmp/nortu-pack.json --html /tmp/nortu-site.html \
-  --output-dir /home/forin/language-forge-imports/Nortu-L1-2 \
-  --conlang /home/forin/language-forge-imports/nortu-l1-2.conlang
+  --output-dir /ai/nortu/Nortu-L1-2 \
+  --conlang /ai/nortu/nortu-l1-2.conlang
 ```
 
 脚本会先删除并重建输出目录与 `.conlang`；相同输入重复运行，7 个 JSON 与 23 个 WAV 的 sha256 完全一致（已实际 diff 验证），因此幂等。若 `/tmp/nortu-pack.json` 不存在，会从 HTML 的 `const PACK={...}` 提取；HTML 也不存在时才访问 `--url`。字体需从 HTML 或 `--font` 提供。
@@ -100,7 +100,7 @@ python3 tools/migrate_workbuddy_course.py \
 ```bash
 python3 - <<'PY'
 import json, glob
-base = '/home/forin/language-forge-imports/Nortu-L1-2'
+base = '/ai/nortu/Nortu-L1-2'
 st = json.load(open(base + '/structure.json'))
 qs = [q for ch in st['chapters'] for u in ch['units'] for c in u['courses'] for q in c['questions']]
 aud = json.load(open(base + '/audios.json'))['audios']
@@ -116,7 +116,7 @@ PY
 
 ### 桌面（SDL2）
 
-- 用「导入 .conlang」UI 导入仓库外的 `/home/forin/language-forge-imports/nortu-l1-2.conlang`；首页显示 **章 1 · 关 3 · 题 46 · 词 17**。
+- 用「导入 .conlang」UI 导入仓库外的 `/ai/nortu/nortu-l1-2.conlang`；首页显示 **章 1 · 关 3 · 题 46 · 词 17**。
 - 课程列表显示 1 章 3 课；第 1 课完成后第 2 课解锁，`progress.json` 写入 `completedCourseIds/unlockedCourseIds`；为验证第 3 课，将第 2 课完成状态写入同一进度结构后，列表显示 3 课全部可进入，且第 3 课首题正常打开。
 - 逐题实测：choice、arrange（含逐字母拼写）、type、match、listen；非 listen 题的「播放题目音频」按钮和自动播放均走 `FORGE_LEARN questionAudio`，listen 走原有 `listenPlay`/TTS 分支。类型截图与日志来自同一迁移数据；listen 截图来自把该课 listen 题排到首位的派生听力项目（音频/题目内容相同）。
 - 音频证据日志示例：

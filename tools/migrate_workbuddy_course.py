@@ -7,8 +7,8 @@ Inputs:
   the HTML when the JSON file is not available).
 
 Outputs (idempotent, outside the repository by default):
-  /home/forin/language-forge-imports/Nortu-L1-2/        app project directory
-  /home/forin/language-forge-imports/nortu-l1-2.conlang importable ZIP (files at ZIP root)
+  /ai/nortu/Nortu-L1-2/        app project directory
+  /ai/nortu/nortu-l1-2.conlang importable ZIP (files at ZIP root)
 
 Course data is intentionally not written into the repository or bundled into the
 app/APK; use this external .conlang for manual import.
@@ -36,7 +36,7 @@ DEFAULT_PACK = "/tmp/nortu-pack.json"
 DEFAULT_HTML = "/tmp/nortu-site.html"
 COURSE_URL = ("https://nortu-free-language-l1-2.app.workbuddy.host/"
               "?sharecode=TNWRVMOI4N&shareId=b9a912e4a4844f22ac2017fd7985e543")
-EXTERNAL_DIR = os.environ.get("FORGE_MIGRATION_OUT", "/home/forin/language-forge-imports")
+EXTERNAL_DIR = os.environ.get("FORGE_MIGRATION_OUT", "/ai/nortu")
 GEN_DIR = EXTERNAL_DIR
 FOLDER = "Nortu-L1-2"
 PROJECT_NAME = "Nortu 自由语 · L1-2（分享站）"
@@ -466,9 +466,9 @@ def main():
     parser.add_argument("--url", default=COURSE_URL)
     parser.add_argument("--font", default="", help="optional Nozu Sans TTF path")
     parser.add_argument("--output-dir", default=os.path.join(GEN_DIR, FOLDER),
-                        help="external output dir (default: /home/forin/language-forge-imports/Nortu-L1-2)")
+                        help="external output dir (default: /ai/nortu/Nortu-L1-2)")
     parser.add_argument("--conlang", default=CONLANG,
-                        help="external .conlang path (default: /home/forin/language-forge-imports/nortu-l1-2.conlang)")
+                        help="external .conlang path (default: /ai/nortu/nortu-l1-2.conlang)")
     parser.add_argument("--project-name", default=PROJECT_NAME)
     args = parser.parse_args()
 
