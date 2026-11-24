@@ -8,7 +8,7 @@
 - 可复现脚本：`tools/migrate_workbuddy_course.py`
 - 项目目录（仓库外）：`/ai/nortu/Nortu-L1-2/`（34 个 ZIP 条目：7 个 JSON、23 个 WAV、1 个 TTF）
 - 导入包（仓库外）：`/ai/nortu/nortu-l1-2.conlang`（1,129,898 bytes，sha256 `a06a17e7be67ad1f727452f1705e50eb8a68ad7b1a9f837f32c344e6bbc6b7f8`）
-- 仓库内不保存本次课程数据；`migration/generated/Nortu-L1-2/` 与 `migration/nortu-l1-2.conlang` 均不存在。
+- 本次课程数据不写入仓库；仓库只保留迁移脚本与文档。
 
 生成结果：1 个 chapter「Nortu 自由语」、3 个 unit（第1关/第2关/第3关）、每个 unit 1 个 course，共 **3 课 46 题**。
 
