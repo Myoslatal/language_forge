@@ -30,6 +30,7 @@
 #include "lexicon.h"
 #include "audio.h"
 #include "pos.h"
+#include "tts.h"
 #include <SDL_mixer.h>
 #include "nlohmann/json.hpp"
 
@@ -58,6 +59,13 @@ std::string fmt(const char* format, ...) {
   vsnprintf(buffer, sizeof(buffer), format, args);
   va_end(args);
   return buffer;
+}
+
+std::string trimCopy(std::string value) {
+  auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+  value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+  value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+  return value;
 }
 
 std::string formatDuration(int millis) {
@@ -409,6 +417,9 @@ struct App {
   int drawPresetHeight = 512;
   bool drawOpen = false;
   bool focusAudioSection = false;
+  bool ttsGeneratedAudio = false;
+  char ttsTextInput[1024] = {};
+  char ttsLangInput[128] = {};
   bool drawEraser = false;
   float drawWidth = 8.0f;
   int cropDragMode = 0;
@@ -998,6 +1009,7 @@ struct App {
     pendingAudioPath.clear();
     originalAudioPath.clear();
     removedAudioPath.clear();
+    ttsGeneratedAudio = false;
     screen = Screen::VocabularyEditor;
   }
 
@@ -1034,6 +1046,7 @@ struct App {
     pendingAudioPath.clear();
     removedAudioPath.clear();
     originalAudioPath.clear();
+    ttsGeneratedAudio = false;
     if (!editEntry.audio.empty()) {
       fs::path path = audioAbsolute(editEntry.audio);
       if (fs::exists(path)) originalAudioPath = utf8(path);
@@ -1180,9 +1193,37 @@ struct App {
     fs::path currentAudio = audioAbsolute(editEntry.audio);
     if (!originalAudioPath.empty() &&
         (editEntry.audio.empty() || utf8(currentAudio) != originalAudioPath)) {
+      // Drop the registry entry of a replaced TTS-generated file (name is prefixed
+      // with TTS：) so audios.json does not accumulate dead pending_tts_* rows.
+      if (originalAudioPath.find("pending_tts_") != std::string::npos) {
+        ensureAudioLoaded();
+        if (audioStore) {
+          const std::string oldRelative = utf8(fs::path(pathFromUtf8(originalAudioPath))
+                                                   .lexically_relative(currentProjectDirectory()));
+          if (AudioEntry* oldAudio = audioStore->findByFile(oldRelative)) {
+            std::string ignored;
+            audioStore->deleteAudio(oldAudio->id, ignored);
+          }
+        }
+      }
       fs::remove(pathFromUtf8(originalAudioPath), cleanupEc);
     }
     if (!removedAudioPath.empty()) fs::remove(audioAbsolute(removedAudioPath), cleanupEc);
+    if (ttsGeneratedAudio && !editEntry.audio.empty()) {
+      // Generated example audio is a first-class project resource: register it in
+      // audios.json once the vocabulary entry has been saved successfully.
+      ensureAudioLoaded();
+      fs::path generated = audioAbsolute(editEntry.audio);
+      if (audioStore && fs::exists(generated) && !audioStore->findByFile(editEntry.audio)) {
+        if (AudioEntry* registered = audioStore->registerFile(generated)) {
+          registered->name = "TTS：" + ttsPhoneticText(editEntry);
+          audioStore->save();
+          std::fprintf(stderr, "FORGE_TTS registered audio id=%s file=%s\n",
+                       registered->id.c_str(), editEntry.audio.c_str());
+        }
+      }
+    }
+    ttsGeneratedAudio = false;
     pendingImagePath.clear();
     originalImagePath.clear();
     removedImagePath.clear();
@@ -1382,6 +1423,8 @@ struct App {
                   editQuestion.prompt.c_str());
     std::snprintf(readingPassageInput, sizeof(readingPassageInput), "%s", editQuestion.passage.c_str());
     std::snprintf(explainInput, sizeof(explainInput), "%s", editQuestion.explain.c_str());
+    std::snprintf(ttsTextInput, sizeof(ttsTextInput), "%s", editQuestion.tts.c_str());
+    std::snprintf(ttsLangInput, sizeof(ttsLangInput), "%s", editQuestion.ttsLang.c_str());
     std::snprintf(readingPromptInput, sizeof(readingPromptInput), "%s", editQuestion.prompt.c_str());
     readingMode = editQuestion.answerMode == "type" ? 1 : 0;
     std::snprintf(arrangePromptInput, sizeof(arrangePromptInput), "%s",
@@ -1404,6 +1447,10 @@ struct App {
 
   void saveQuestion() {
     editQuestion.explain = explainInput;
+    // tts/ttsLang are stored for every type (HTML keeps them on all questions);
+    // only the listen editor exposes inputs, but open/save round-trips the rest.
+    editQuestion.tts = trimCopy(ttsTextInput);
+    editQuestion.ttsLang = trimCopy(ttsLangInput);
     Course* course = selectedCourse();
     if (!course) return;
     auto trim = [](std::string value) {
@@ -1473,9 +1520,19 @@ struct App {
     }
     if (editQuestion.type == "listen") {
       editQuestion.prompt = trim(arrangePromptInput);
-      if (editQuestion.audio.empty()) { showToast("请先选择或录制音频"); return; }
-      if (!fs::exists(currentProjectDirectory() / pathFromUtf8(editQuestion.audio))) {
-        showToast("音频文件不存在，请重新选择"); return;
+      if (editQuestion.audio.empty() && editQuestion.tts.empty()) {
+        showToast("请先选择或录制音频，或填写朗读文本（TTS）");
+        return;
+      }
+      if (!editQuestion.audio.empty() &&
+          !fs::exists(currentProjectDirectory() / pathFromUtf8(editQuestion.audio))) {
+        showToast("音频文件不存在，请重新选择或移除后改用 TTS");
+        return;
+      }
+      if (editQuestion.audio.empty()) {
+        editQuestion.audioDuration = 0;
+        editQuestion.audioStart = 0;
+        editQuestion.audioEnd = 0;
       }
       for (int i = 0; i < 4; ++i) {
         editQuestion.options.clear();
@@ -2734,6 +2791,7 @@ struct App {
     editEntry.audioEnd = 0.0;
     editEntry.audioDuration = 0;
     editDirty = true;
+    ttsGeneratedAudio = false;
   }
 
   void removeEditorImage() {
@@ -2761,6 +2819,162 @@ struct App {
   fs::path audioAbsolute(const std::string& relative) const {
     if (relative.empty()) return {};
     return (currentProjectDirectory() / pathFromUtf8(relative)).lexically_normal();
+  }
+
+  std::string projectTtsLang() const {
+    return project.ttsLang.empty() ? "en-US" : project.ttsLang;
+  }
+
+  fs::path ttsCachePath(const std::string& text, const std::string& lang) const {
+    const std::string key = normalizeTtsLang(lang) + "\n" + text;
+    std::size_t hash = std::hash<std::string>{}(key);
+    std::error_code ec;
+    fs::path directory = fs::temp_directory_path(ec) / "nostongue-forge-tts";
+    if (ec) directory = fs::path("/tmp") / "nostongue-forge-tts";
+    fs::create_directories(directory, ec);
+    char name[64];
+    std::snprintf(name, sizeof(name), "tts_%016llx.wav",
+                  static_cast<unsigned long long>(hash));
+    return directory / name;
+  }
+
+  struct ListenPlayResult {
+    bool playing = false;
+    bool synthesized = false;
+    bool usedTts = false;
+    std::string text;
+    std::string lang;
+    std::string file;
+    std::string error;
+  };
+
+  // Synthesizes one short phrase to the local TTS cache and plays it through the
+  // existing SDL_mixer path. Used by learning, the listen editor preview and the
+  // vocabulary phonetic preview.
+  bool playTtsText(const std::string& text, const std::string& lang,
+                   std::string* chosenFile = nullptr, std::string* error = nullptr,
+                   bool* fromCache = nullptr) {
+    const std::string trimmed = trimCopy(text);
+    const std::string effectiveLang = normalizeTtsLang(lang);
+    if (trimmed.empty()) {
+      if (error) *error = "没有可朗读的文本";
+      showToast("没有可朗读的文本");
+      return false;
+    }
+    fs::path file = ttsCachePath(trimmed, effectiveLang);
+    bool cached = fs::exists(file) && fs::file_size(file) > 64;
+    if (fromCache) *fromCache = cached;
+    if (!cached) {
+      TtsSynthesisResult synth = synthesizeTts(trimmed, effectiveLang, 0.85, file);
+      if (!synth.ok) {
+        if (error) *error = synth.error;
+        showToast("TTS 朗读失败：" + synth.error);
+        return false;
+      }
+    }
+    int duration = wavDurationMs(file);
+    if (duration <= 0) {
+      int detected = 0;
+      loadAudioDuration(file, detected);
+      duration = detected;
+    }
+    if (chosenFile) *chosenFile = utf8(file);
+    playAudioPath(file, "tts://" + file.filename().string(), 0, duration > 0 ? duration : 60000);
+    if (!audioPlaying) {
+      if (error) *error = "TTS 音频已生成，但播放失败（无可用音频设备）";
+      showToast("TTS 音频已生成，但播放失败（无可用音频设备）");
+      return false;
+    }
+    return true;
+  }
+
+  ListenPlayResult playListenAudio(const Question& question) {
+    ListenPlayResult result;
+    const fs::path audioPath = audioAbsolute(question.audio);
+    const bool audioExists = !question.audio.empty() && fs::exists(audioPath);
+    if (audioExists) {
+      result.usedTts = false;
+      result.text = question.tts;
+      result.lang = resolveTtsLang(question.ttsLang, projectTtsLang());
+      result.file = question.audio;
+      std::fprintf(stderr, "FORGE_LEARN listenPlay %s %lld..%lld\n",
+                   question.audio.c_str(),
+                   static_cast<long long>(question.audioStart),
+                   static_cast<long long>(question.audioEnd));
+      playAudioFile(question.audio, static_cast<int>(question.audioStart),
+                    static_cast<int>(question.audioEnd));
+      result.playing = audioPlaying;
+      if (!result.playing) result.error = "音频播放失败（无可用音频设备）";
+      return result;
+    }
+    std::string text = trimCopy(question.tts);
+    if (text.empty()) text = trimCopy(question.prompt);
+    const std::string lang = resolveTtsLang(question.ttsLang, projectTtsLang());
+    result.usedTts = true;
+    result.text = text;
+    result.lang = lang;
+    if (text.empty()) {
+      result.error = "本题缺少音频，且没有可用的 TTS 朗读文本";
+      std::fprintf(stderr, "FORGE_LEARN listenTts unavailable question=%s reason=no-text\n",
+                   question.id.c_str());
+      showToast(result.error);
+      return result;
+    }
+    std::string file;
+    std::string error;
+    result.playing = playTtsText(text, lang, &file, &error);
+    result.file = file;
+    result.error = error;
+    result.synthesized = !file.empty() && fs::exists(pathFromUtf8(file));
+    std::fprintf(stderr,
+                 "FORGE_LEARN listenTts question=%s text=%s lang=%s file=%s playing=%d error=%s\n",
+                 question.id.c_str(), text.c_str(), lang.c_str(), file.c_str(),
+                 result.playing ? 1 : 0, error.c_str());
+    return result;
+  }
+
+  std::string ttsPhoneticText(const VocabEntry& entry) const {
+    for (const auto& phonetic : entry.phonetics) {
+      const std::string value = trimCopy(phonetic);
+      if (!value.empty()) return value;
+    }
+    const std::string phonetic = trimCopy(entry.phonetic);
+    if (!phonetic.empty()) return phonetic;
+    const std::string text = trimCopy(entry.text);
+    if (!text.empty()) return text;
+    if (vocabulary) return displayName(entry, vocabulary->entries);
+    return {};
+  }
+
+  bool generateTtsExampleAudio() {
+    const std::string text = ttsPhoneticText(editEntry);
+    if (text.empty()) {
+      showToast("请先填写音标或文本");
+      return false;
+    }
+    const std::string lang = projectTtsLang();
+    std::error_code ec;
+    fs::path directory = currentProjectDirectory() / "resources" / "audio";
+    fs::create_directories(directory, ec);
+    std::string id = Store::newUuid();
+    id.erase(std::remove(id.begin(), id.end(), '-'), id.end());
+    fs::path target = directory / ("pending_tts_" + id + ".wav");
+    TtsSynthesisResult synth = synthesizeTts(text, lang, 0.85, target);
+    if (!synth.ok) {
+      showToast("生成示例音频失败：" + synth.error);
+      return false;
+    }
+    std::string relative = "resources/audio/" + utf8(target.filename());
+    if (!pendingAudioPath.empty()) deletePendingAudio();
+    pendingAudioPath = utf8(target);
+    editEntry.audio = relative;
+    editEntry.audioDuration = synth.durationMs;
+    editEntry.audioStart = 0.0;
+    editEntry.audioEnd = static_cast<double>(synth.durationMs);
+    editDirty = true;
+    ttsGeneratedAudio = true;
+    showToast("已生成 TTS 示例音频（待保存）");
+    return true;
   }
 
   void deletePendingAudio() {
@@ -2810,6 +3024,7 @@ struct App {
     editEntry.audioStart = 0.0;
     editEntry.audioEnd = static_cast<double>(duration);
     editDirty = true;
+    ttsGeneratedAudio = false;
     showToast("已导入音频（待保存）");
   }
 
@@ -2825,9 +3040,8 @@ struct App {
     audioPlayDeadline = 0.0;
   }
 
-  void playAudioFile(const std::string& relative, int startMs, int endMs) {
+  void playAudioPath(const fs::path& path, const std::string& label, int startMs, int endMs) {
     stopAudioPlayback();
-    fs::path path = audioAbsolute(relative);
     if (path.empty() || !fs::exists(path)) {
       showToast("音频文件不存在");
       return;
@@ -2845,8 +3059,14 @@ struct App {
     if (startMs > 0) Mix_SetMusicPosition(startMs / 1000.0);
     currentMusic = music;
     audioPlaying = true;
-    playingAudioFile = relative;
+    playingAudioFile = label;
     audioPlayDeadline = ImGui::GetTime() + std::max(0.1, (endMs - startMs) / 1000.0);
+    std::fprintf(stderr, "FORGE_AUDIO play %s label=%s %d..%d\n", utf8(path).c_str(),
+                 label.c_str(), startMs, endMs);
+  }
+
+  void playAudioFile(const std::string& relative, int startMs, int endMs) {
+    playAudioPath(audioAbsolute(relative), relative, startMs, endMs);
   }
 
   void startRecording() {
@@ -2917,6 +3137,7 @@ struct App {
     editEntry.audioStart = 0.0;
     editEntry.audioEnd = static_cast<double>(editEntry.audioDuration);
     editDirty = true;
+    ttsGeneratedAudio = false;
     showToast("录音完成（待保存）");
   }
 
@@ -3984,6 +4205,28 @@ void renderQuestionEditor(App& app) {
                                  app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
       app.questionDirty = true;
     }
+    ImGui::Separator();
+    ImGui::TextUnformatted("朗读文本（TTS；音频缺失时使用，留空则用题干）");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputTextWithHint("##listen_tts", "例如：et",
+                                 app.ttsTextInput, sizeof(app.ttsTextInput))) {
+      app.questionDirty = true;
+    }
+    ImGui::TextUnformatted("朗读语言（BCP-47，留空用项目设置）");
+    ImGui::SetNextItemWidth(-260);
+    if (ImGui::InputTextWithHint("##listen_tts_lang", "例如：en-US",
+                                 app.ttsLangInput, sizeof(app.ttsLangInput))) {
+      app.questionDirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("TTS 试听##listen_tts_preview", ImVec2(120, 28))) {
+      std::string text = trimCopy(app.ttsTextInput);
+      if (text.empty()) text = trimCopy(app.arrangePromptInput);
+      app.playTtsText(text, resolveTtsLang(app.ttsLangInput, app.projectTtsLang()));
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("项目默认 %s · rate 0.85", app.projectTtsLang().c_str());
+    ImGui::Separator();
     ImGui::Text("音频：%s  %lld..%lld", app.editQuestion.audio.c_str(),
                 static_cast<long long>(app.editQuestion.audioStart),
                 static_cast<long long>(app.editQuestion.audioEnd));
@@ -5372,33 +5615,49 @@ void renderLearning(App& app) {
       app.listenAutoId = question->id;
       app.listenSel = -1;
       app.learningAnswered = false;
-      if (!question->audio.empty()) {
-        std::fprintf(stderr, "FORGE_LEARN listenPlay %s %lld..%lld\n", question->audio.c_str(),
-                     static_cast<long long>(question->audioStart),
-                     static_cast<long long>(question->audioEnd));
-        app.playAudioFile(question->audio, static_cast<int>(question->audioStart),
-                          static_cast<int>(question->audioEnd));
-      }
+      // Audio wins; a valid file plays exactly as before. When it is absent or
+      // missing on disk the same button/auto-play path synthesizes the TTS text.
+      app.playListenAudio(*question);
     }
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "听音选择 · " + course->name);
-    bool listenFileExists = !question->audio.empty() &&
+    const bool listenFileExists = !question->audio.empty() &&
         fs::exists(app.currentProjectDirectory() / pathFromUtf8(question->audio));
-    bool listenIsPlaying = app.audioPlaying && app.playingAudioFile == question->audio;
+    const std::string ttsText = trimCopy(question->tts).empty()
+                                    ? trimCopy(question->prompt) : trimCopy(question->tts);
+    const bool listenPlayable = listenFileExists || !ttsText.empty();
+    const std::string ttsLang = resolveTtsLang(question->ttsLang, app.projectTtsLang());
+    const std::string expectedKey = listenFileExists
+        ? question->audio
+        : "tts://" + app.ttsCachePath(ttsText, ttsLang).filename().string();
+    const bool listenIsPlaying = app.audioPlaying && app.playingAudioFile == expectedKey;
     if (!listenFileExists) {
-      ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "本题缺少音频");
+      const bool ttsEngineReady = detectTtsEngine().available;
+      if (!ttsText.empty()) {
+        ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1),
+                           "本题缺少音频，将使用 TTS 朗读：%s · %s", ttsText.c_str(),
+                           ttsLang.c_str());
+        if (!ttsEngineReady) {
+          ImGui::TextColored(ImVec4(0.8f, 0.25f, 0.2f, 1), "系统 TTS 不可用：%s",
+                             detectTtsEngine().error.c_str());
+        }
+      } else {
+        ImGui::TextColored(ImVec4(0.8f, 0.25f, 0.2f, 1),
+                           "本题缺少音频，且没有可朗读的文本（TTS）");
+      }
     }
     std::string playLabel = listenIsPlaying ? "播放中…##listen_play"
         : (app.listenAutoId == question->id ? "重新播放##listen_play" : "播放音频##listen_play");
-    if (!listenFileExists) ImGui::BeginDisabled();
-    if (ImGui::Button(playLabel.c_str(), ImVec2(140, 32)) && listenFileExists) {
-      std::fprintf(stderr, "FORGE_LEARN listenPlay %s %lld..%lld\n", question->audio.c_str(),
-                   static_cast<long long>(question->audioStart),
-                   static_cast<long long>(question->audioEnd));
-      app.playAudioFile(question->audio, static_cast<int>(question->audioStart),
-                        static_cast<int>(question->audioEnd));
+    if (!listenPlayable) ImGui::BeginDisabled();
+    if (ImGui::Button(playLabel.c_str(), ImVec2(140, 32)) && listenPlayable) {
+      if (listenFileExists) {
+        std::fprintf(stderr, "FORGE_LEARN listenPlay %s %lld..%lld\n", question->audio.c_str(),
+                     static_cast<long long>(question->audioStart),
+                     static_cast<long long>(question->audioEnd));
+      }
+      app.playListenAudio(*question);
     }
-    if (!listenFileExists) ImGui::EndDisabled();
+    if (!listenPlayable) ImGui::EndDisabled();
 
     for (int i = 0; i < static_cast<int>(question->options.size()); ++i) {
       bool selected = app.listenSel == i;
@@ -5408,13 +5667,13 @@ void renderLearning(App& app) {
       ImGui::PushID(i);
       if (structured) {
         if (app.drawStructuredOptionRow(question->optionItems[i], i, selected, correct) &&
-            !app.learningAnswered && listenFileExists) {
+            !app.learningAnswered && listenPlayable) {
           app.listenSel = i;
         }
       } else {
         if (correct) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.94f, 0.82f, 1));
         else if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.91f, 1, 1));
-        if (ImGui::Button(question->options[i].c_str(), ImVec2(-1, 42)) && !app.learningAnswered && listenFileExists) {
+        if (ImGui::Button(question->options[i].c_str(), ImVec2(-1, 42)) && !app.learningAnswered && listenPlayable) {
           app.listenSel = i;
         }
         if (correct || selected) ImGui::PopStyleColor();
@@ -5422,7 +5681,7 @@ void renderLearning(App& app) {
       ImGui::PopID();
     }
     if (!app.learningAnswered && app.listenSel >= 0) {
-      if (ImGui::Button("确认答案##listen_confirm", ImVec2(-1, 42)) && listenFileExists) {
+      if (ImGui::Button("确认答案##listen_confirm", ImVec2(-1, 42)) && listenPlayable) {
         app.stopAudioPlayback();
         if (app.listenSel == question->correctIndex) {
           app.learningAnswered = true;
@@ -7354,6 +7613,314 @@ int runSmoke(App& app, const fs::path& outputDir) {
     ok = saveScreenshot(app, outputDir / "audio-question-ref.png") && ok;
     app.screen = App::Screen::Course;
   }
+  // ---- TTS: listen fallback, audio priority, vocabulary phonetic audio, migration ----
+  bool ttsEngineOk = false;
+  bool ttsSynthOk = false;
+  bool ttsListenEditorOk = false;
+  bool ttsListenFallbackOk = false;
+  bool ttsAudioPriorityOk = false;
+  bool ttsVocabOk = false;
+  bool ttsMigrationOk = false;
+  std::string ttsListenText;
+  std::string ttsListenLang;
+  std::string ttsListenGeneratedFile;
+  int ttsListenGeneratedDuration = 0;
+  std::string ttsVocabAudio;
+  long long ttsVocabDuration = 0;
+  std::string ttsMigratedText;
+  std::string ttsMigratedLang;
+  {
+    const TtsEngineInfo engineInfo = detectTtsEngine();
+    ttsEngineOk = engineInfo.available;
+    TtsSynthesisResult probe = synthesizeTts("et", "en-US", 0.85,
+                                              outputDir / "tts-probe.wav");
+    ttsSynthOk = probe.ok && probe.durationMs > 100 && fs::exists(probe.file);
+    std::fprintf(stderr, "FORGE_SMOKE tts engine=%s available=%d synth=%d duration=%d\n",
+                 engineInfo.engine.c_str(), ttsEngineOk ? 1 : 0, ttsSynthOk ? 1 : 0,
+                 probe.durationMs);
+  }
+  if (Course* ttsCourse = app.selectedCourse()) {
+    Question* existingListen = nullptr;
+    for (auto& question : ttsCourse->questions) {
+      if (question.type == "listen" && question.tts == "et") existingListen = &question;
+    }
+    app.openQuestionEditor(existingListen ? existingListen->id : "");
+    app.editQuestion.type = "listen";
+    std::snprintf(app.arrangePromptInput, sizeof(app.arrangePromptInput), "%s",
+                  "听到的词是什么意思？");
+    std::snprintf(app.ttsTextInput, sizeof(app.ttsTextInput), "%s", "et");
+    std::snprintf(app.ttsLangInput, sizeof(app.ttsLangInput), "%s", "en-US");
+    app.editQuestion.audio.clear();
+    app.editQuestion.audioDuration = 0;
+    app.editQuestion.audioStart = 0;
+    app.editQuestion.audioEnd = 0;
+    app.questionCorrectIndex = 0;
+    std::snprintf(app.questionOptions[0], sizeof(app.questionOptions[0]), "%s", "你好");
+    std::snprintf(app.questionOptions[1], sizeof(app.questionOptions[1]), "%s", "狗");
+    std::snprintf(app.questionOptions[2], sizeof(app.questionOptions[2]), "%s", "谢谢");
+    std::snprintf(app.questionOptions[3], sizeof(app.questionOptions[3]), "%s", "是");
+    app.saveQuestion();
+    Question* listenQuestion = nullptr;
+    for (auto& question : ttsCourse->questions) {
+      if (question.type == "listen" && question.tts == "et") listenQuestion = &question;
+    }
+    if (listenQuestion) {
+      const std::string listenId = listenQuestion->id;
+      app.openQuestionEditor(listenId);
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "tts-listen-editor.png") && ok;
+      ttsListenEditorOk = std::string(app.ttsTextInput) == "et" &&
+                          std::string(app.ttsLangInput) == "en-US" &&
+                          app.editQuestion.audio.empty();
+      std::ifstream ttsJsonInput(app.currentProjectDirectory() / "structure.json");
+      json ttsJson;
+      ttsJsonInput >> ttsJson;
+      bool jsonListenOk = false;
+      for (const auto& chapter : ttsJson.value("chapters", json::array())) {
+        for (const auto& unit : chapter.value("units", json::array())) {
+          for (const auto& courseValue : unit.value("courses", json::array())) {
+            for (const auto& questionValue : courseValue.value("questions", json::array())) {
+              if (questionValue.value("type", "") == "listen" &&
+                  questionValue.value("tts", "") == "et") {
+                jsonListenOk = questionValue.value("ttsLang", "") == "en-US" &&
+                               questionValue.value("audio", "").empty();
+              }
+            }
+          }
+        }
+      }
+      ttsListenEditorOk = ttsListenEditorOk && jsonListenOk;
+
+      app.screen = App::Screen::Learning;
+      app.learningCourseId = ttsCourse->id;
+      app.learningQuestionId = listenId;
+      app.listenAutoId.clear();
+      app.learningAnswered = false;
+      app.learningSelected = -1;
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "tts-listen-learn.png") && ok;
+      App::ListenPlayResult result = app.playListenAudio(*listenQuestion);
+      ttsListenText = result.text;
+      ttsListenLang = result.lang;
+      ttsListenGeneratedFile = result.file;
+      ttsListenGeneratedDuration = result.file.empty() ? 0 : wavDurationMs(pathFromUtf8(result.file));
+      ttsListenFallbackOk = result.usedTts && result.synthesized && result.text == "et" &&
+                            result.lang == "en-US" && !result.file.empty() &&
+                            fs::exists(pathFromUtf8(result.file)) &&
+                            ttsListenGeneratedDuration > 100;
+      if (ttsListenFallbackOk) {
+        std::error_code copyEc;
+        fs::copy_file(pathFromUtf8(result.file), outputDir / "tts-listen.wav",
+                      fs::copy_options::overwrite_existing, copyEc);
+      }
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "tts-listen-playing.png") && ok;
+
+      const std::string originalAudio = listenQuestion->audio;
+      const long long originalDuration = listenQuestion->audioDuration;
+      const long long originalStart = listenQuestion->audioStart;
+      const long long originalEnd = listenQuestion->audioEnd;
+      listenQuestion->audio = "resources/audio/question_smoke_audio.wav";
+      listenQuestion->audioDuration = 1000;
+      listenQuestion->audioStart = 200;
+      listenQuestion->audioEnd = 800;
+      App::ListenPlayResult priority = app.playListenAudio(*listenQuestion);
+      ttsAudioPriorityOk = !priority.usedTts &&
+                           app.playingAudioFile == "resources/audio/question_smoke_audio.wav";
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "tts-audio-priority.png") && ok;
+      listenQuestion->audio = originalAudio;
+      listenQuestion->audioDuration = originalDuration;
+      listenQuestion->audioStart = originalStart;
+      listenQuestion->audioEnd = originalEnd;
+      app.persist();
+      app.stopAudioPlayback();
+      app.screen = App::Screen::Course;
+    }
+  }
+
+  if (app.vocabulary) {
+    VocabEntry* ttsVocabEntry = nullptr;
+    for (auto& entry : app.vocabulary->entries) {
+      if (entry.text == "banana") ttsVocabEntry = &entry;
+    }
+    if (ttsVocabEntry) {
+      const std::string ttsVocabId = ttsVocabEntry->id;
+      app.editVocabulary(ttsVocabId);
+      app.focusAudioSection = true;
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-tts-editor.png") && ok;
+      const std::string ttsText = app.ttsPhoneticText(app.editEntry);
+      const std::string ttsLang = app.projectTtsLang();
+      app.playTtsText(ttsText, ttsLang);
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-tts-preview.png") && ok;
+      const bool previewSynthesized =
+          !ttsText.empty() && fs::exists(app.ttsCachePath(ttsText, ttsLang));
+      const bool generated = app.generateTtsExampleAudio();
+      renderFrame(app);
+      ok = saveScreenshot(app, outputDir / "vocab-tts-generated.png") && ok;
+      const bool pendingOk = generated && !app.editEntry.audio.empty() &&
+                             fs::exists(app.audioAbsolute(app.editEntry.audio)) &&
+                             app.editEntry.audioDuration > 100;
+      if (generated) {
+        app.saveEditedVocabulary();
+        app.loadVocabularyData();
+        VocabEntry* saved = app.vocabulary ? app.vocabulary->find(ttsVocabId) : nullptr;
+        if (saved) {
+          ttsVocabAudio = saved->audio;
+          ttsVocabDuration = static_cast<long long>(saved->audioDuration);
+          app.editVocabulary(ttsVocabId);
+          app.focusAudioSection = true;
+          renderFrame(app);
+          ok = saveScreenshot(app, outputDir / "vocab-tts-reopen.png") && ok;
+          const bool reopenOk = !saved->audio.empty() && saved->audioDuration > 100 &&
+                                fs::exists(app.audioAbsolute(saved->audio)) &&
+                                app.editEntry.audio == saved->audio;
+          ttsVocabOk = previewSynthesized && pendingOk && reopenOk;
+        }
+      }
+      app.focusAudioSection = false;
+      app.screen = App::Screen::Vocabulary;
+    }
+  }
+
+  {
+    std::vector<fs::path> conlangCandidates = {
+        fs::path("migration") / "Nortu-Intro-html.conlang",
+        fs::path("..") / "migration" / "Nortu-Intro-html.conlang",
+        fs::current_path() / "migration" / "Nortu-Intro-html.conlang",
+    };
+    fs::path conlang;
+    for (const auto& candidate : conlangCandidates) {
+      if (fs::exists(candidate)) { conlang = candidate; break; }
+    }
+    ProjectSummary migrated;
+    std::string migrateError;
+    if (!conlang.empty() && app.store->importConlang(conlang, migrated, migrateError)) {
+      ProjectSummary migratedProject;
+      Structure migratedStructure;
+      app.store->loadProject(migrated.folder, migratedProject, migratedStructure);
+      int questionCount = 0;
+      Question* migratedListen = nullptr;
+      for (auto& chapter : migratedStructure.chapters) {
+        for (auto& unit : chapter.units) {
+          for (auto& course : unit.courses) {
+            for (auto& question : course.questions) {
+              ++questionCount;
+              if (question.type == "listen" && question.tts == "et") migratedListen = &question;
+            }
+          }
+        }
+      }
+      const bool migratedDataOk = migratedProject.ttsLang == "en-US" && questionCount == 10 &&
+                                  migratedListen != nullptr &&
+                                  migratedListen->ttsLang == "en-US";
+      if (migratedDataOk && migratedListen) {
+        ttsMigratedText = migratedListen->tts;
+        ttsMigratedLang = migratedListen->ttsLang;
+        // Prove the migrated listen card uses TTS when its generated audio is
+        // temporarily unavailable, then restore the file and keep audio priority.
+        const std::string savedFolder = app.folder;
+        ProjectSummary savedProject = app.project;
+        Structure savedStructure = app.structure;
+        const std::string savedChapter = app.chapterId;
+        const std::string savedUnit = app.unitId;
+        const std::string savedCourse = app.courseId;
+        const std::string savedLearningCourse = app.learningCourseId;
+        const std::string savedLearningQuestion = app.learningQuestionId;
+        app.folder = migrated.folder;
+        app.project = migratedProject;
+        app.structure = migratedStructure;
+        app.chapterId = app.structure.chapters.empty() ? "" : app.structure.chapters[0].id;
+        app.unitId = app.structure.chapters.empty() || app.structure.chapters[0].units.empty()
+                         ? "" : app.structure.chapters[0].units[0].id;
+        app.courseId = app.structure.chapters.empty() || app.structure.chapters[0].units.empty() ||
+                               app.structure.chapters[0].units[0].courses.empty()
+                           ? "" : app.structure.chapters[0].units[0].courses[0].id;
+        if (Course* migratedCourse = app.selectedCourse()) {
+          Question* listen = nullptr;
+          for (auto& question : migratedCourse->questions) {
+            if (question.type == "listen" && question.tts == "et") listen = &question;
+          }
+          if (listen) {
+            const std::string audio = listen->audio;
+            const long long duration = listen->audioDuration;
+            const long long start = listen->audioStart;
+            const long long end = listen->audioEnd;
+            listen->audio.clear();
+            listen->audioDuration = 0;
+            listen->audioStart = 0;
+            listen->audioEnd = 0;
+            app.screen = App::Screen::Learning;
+            app.learningCourseId = migratedCourse->id;
+            app.learningQuestionId = listen->id;
+            app.listenAutoId.clear();
+            app.learningAnswered = false;
+            app.learningSelected = -1;
+            renderFrame(app);
+            ok = saveScreenshot(app, outputDir / "tts-migration-learn.png") && ok;
+            App::ListenPlayResult result = app.playListenAudio(*listen);
+            ttsMigrationOk = migratedDataOk && result.usedTts && result.synthesized &&
+                             result.text == "et" && result.lang == "en-US" &&
+                             fs::exists(pathFromUtf8(result.file));
+            if (ttsMigrationOk) {
+              std::error_code copyEc;
+              fs::copy_file(pathFromUtf8(result.file), outputDir / "tts-migration.wav",
+                            fs::copy_options::overwrite_existing, copyEc);
+            }
+            listen->audio = audio;
+            listen->audioDuration = duration;
+            listen->audioStart = start;
+            listen->audioEnd = end;
+            App::ListenPlayResult restored = app.playListenAudio(*listen);
+            ttsMigrationOk = ttsMigrationOk && !restored.usedTts;
+            app.stopAudioPlayback();
+          }
+        }
+        app.folder = savedFolder;
+        app.project = savedProject;
+        app.structure = savedStructure;
+        app.chapterId = savedChapter;
+        app.unitId = savedUnit;
+        app.courseId = savedCourse;
+        app.learningCourseId = savedLearningCourse;
+        app.learningQuestionId = savedLearningQuestion;
+        app.screen = App::Screen::Course;
+      }
+      app.store->deleteProject(migrated.folder);
+      std::fprintf(stderr,
+                   "FORGE_SMOKE tts_migration data=%d tts=%d text=%s lang=%s err=%s\n",
+                   migratedDataOk ? 1 : 0, ttsMigrationOk ? 1 : 0,
+                   ttsMigratedText.c_str(), ttsMigratedLang.c_str(), migrateError.c_str());
+    } else {
+      std::fprintf(stderr, "FORGE_SMOKE tts_migration import_failed path=%s err=%s\n",
+                   conlang.string().c_str(), migrateError.c_str());
+    }
+  }
+
+  {
+    std::ofstream evidence(outputDir / "tts-evidence.json");
+    json value;
+    value["engine"] = detectTtsEngine().engine;
+    value["engine_available"] = ttsEngineOk;
+    value["probe_duration_ms"] = ttsSynthOk ? wavDurationMs(outputDir / "tts-probe.wav") : 0;
+    value["listen_editor"] = ttsListenEditorOk;
+    value["listen_fallback"] = ttsListenFallbackOk;
+    value["listen_text"] = ttsListenText;
+    value["listen_lang"] = ttsListenLang;
+    value["listen_audio_file"] = ttsListenGeneratedFile;
+    value["listen_audio_duration_ms"] = ttsListenGeneratedDuration;
+    value["audio_priority"] = ttsAudioPriorityOk;
+    value["vocab_tts"] = ttsVocabOk;
+    value["vocab_audio"] = ttsVocabAudio;
+    value["vocab_audio_duration_ms"] = ttsVocabDuration;
+    value["migration_tts"] = ttsMigrationOk;
+    value["migration_text"] = ttsMigratedText;
+    value["migration_lang"] = ttsMigratedLang;
+    evidence << value.dump(2) << std::endl;
+  }
+
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
   const bool exported = app.store->exportProject(app.folder, exportPath, error);
@@ -7470,7 +8037,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
                           lexiconOk && lexiconMergeOk && lexiconDuplicateOk &&
                           lexiconBadLineOk && lexiconId9Ok && lexiconOverwriteOk &&
                           pickerCrossPageOk && lexiconPromptOk && lexiconUnicodeOk &&
-                          questionOk
+                          questionOk && ttsEngineOk && ttsSynthOk && ttsListenEditorOk &&
+                          ttsListenFallbackOk && ttsAudioPriorityOk && ttsVocabOk &&
+                          ttsMigrationOk
                               ? "PASS" : "FAIL") << std::endl;
   report << "created=" << (created ? "true" : "false") << "\n";
   report << "folder=" << app.folder << "\n";
@@ -7541,7 +8110,14 @@ int runSmoke(App& app, const fs::path& outputDir) {
          << " lexicon_perword=" << (lexiconPerwordOk ? "true" : "false")
          << " lexicon_unicode=" << (lexiconUnicodeOk ? "true" : "false")
          << " question=" << (questionOk ? "true" : "false")
-         << " learning=" << (learningOk ? "true" : "false") << std::endl;
+         << " learning=" << (learningOk ? "true" : "false")
+         << " tts_engine=" << (ttsEngineOk ? "true" : "false")
+         << " tts_synth=" << (ttsSynthOk ? "true" : "false")
+         << " tts_editor=" << (ttsListenEditorOk ? "true" : "false")
+         << " tts_listen=" << (ttsListenFallbackOk ? "true" : "false")
+         << " tts_audio_priority=" << (ttsAudioPriorityOk ? "true" : "false")
+         << " tts_vocab=" << (ttsVocabOk ? "true" : "false")
+         << " tts_migration=" << (ttsMigrationOk ? "true" : "false") << std::endl;
   report.close();
   SDL_Log("smoke report: %s", utf8(outputDir / "smoke-report.txt").c_str());
   const bool pass = ok && exported && zipOk && importedOk && importStatsOk && invalidRejected &&
@@ -7555,7 +8131,9 @@ int runSmoke(App& app, const fs::path& outputDir) {
                     audioRecordGraceful && invalidAudioRejected && invalidAudioNoResidue &&
                     audioPendingCleanup && unregisteredAudioListed && audioVocabSave &&
                     posOk && posDeleteOk && questionOk && learningOk && lexiconPromptOk &&
-                    lexiconPerwordOk && lexiconUnicodeOk;
+                    lexiconPerwordOk && lexiconUnicodeOk && ttsEngineOk && ttsSynthOk &&
+                    ttsListenEditorOk && ttsListenFallbackOk && ttsAudioPriorityOk &&
+                    ttsVocabOk && ttsMigrationOk;
   SDL_Log("SMOKE %s", pass ? "PASS" : "FAIL");
   return pass ? 0 : 2;
 }
@@ -7797,6 +8375,24 @@ void renderVocabularyEditor(App& app) {
   }
   ImGui::Separator();
   ImGui::TextUnformatted("示例发音");
+  {
+    const std::string ttsText = app.ttsPhoneticText(app.editEntry);
+    ImGui::TextDisabled("TTS 朗读音标：%s · %s · rate 0.85",
+                        ttsText.empty() ? "（先填写音标或文本）" : ttsText.c_str(),
+                        app.projectTtsLang().c_str());
+    if (ImGui::Button("TTS 朗读音标##audio_tts_preview", ImVec2(140, 30))) {
+      if (ttsText.empty()) app.showToast("请先填写音标或文本");
+      else app.playTtsText(ttsText, app.projectTtsLang());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("生成示例音频##audio_tts_generate", ImVec2(160, 30))) {
+      app.generateTtsExampleAudio();
+    }
+    if (!ttsText.empty()) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("将保存为词条 audio + 时长/裁剪");
+    }
+  }
   if (app.editEntry.audio.empty()) {
     ImGui::TextDisabled("尚未设置示例发音（可选）。");
     if (ImGui::Button("导入音频", ImVec2(120, 30))) {

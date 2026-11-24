@@ -103,6 +103,8 @@ struct Question {
   bool ignoreSpace = true;
   bool near = true;
   std::string audioSource;
+  std::string tts;
+  std::string ttsLang;
   std::vector<std::string> alt;
   int correctIndex = -1;
 };
@@ -139,6 +141,7 @@ struct ProjectSummary {
   std::int64_t createdAt = 0;
   std::int64_t updated = 0;
   bool pinned = false;
+  std::string ttsLang = "en-US";
   Stats stats;
 };
 

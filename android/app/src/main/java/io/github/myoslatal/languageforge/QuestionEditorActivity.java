@@ -126,6 +126,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private String audioRelative = "";
     private String audioSource = "";
     private EditText listenPrompt;
+    private EditText listenTts;
+    private EditText listenTtsLang;
     private EditText[] listenOptions = new EditText[4];
     private android.widget.RadioGroup listenCorrect;
     private TextView listenAudioLabel;
@@ -360,6 +362,16 @@ public class QuestionEditorActivity extends ForgeActivity {
         listenPrompt = new EditText(this);
         listenPrompt.setHint("题干/说明（可选）");
         listenSection.addView(listenPrompt);
+        listenSection.addView(text("朗读文本（TTS；音频缺失时使用，留空则用题干）",
+                12, R.color.forge_muted));
+        listenTts = new EditText(this);
+        listenTts.setHint("例如：et");
+        listenSection.addView(listenTts);
+        listenSection.addView(text("朗读语言（BCP-47，留空用项目设置）",
+                12, R.color.forge_muted));
+        listenTtsLang = new EditText(this);
+        listenTtsLang.setHint("例如：en-US");
+        listenSection.addView(listenTtsLang);
         listenAudioLabel = new TextView(this);
         listenSection.addView(listenAudioLabel);
         ForgeButton pickAudio = new ForgeButton(this);
@@ -585,6 +597,8 @@ public class QuestionEditorActivity extends ForgeActivity {
         cardDef.setText(question.card.def); cardDetail.setText(question.card.detail);
         editExamples.addAll(question.card.examples); renderCardExamples(); renderCardWordPreview();
         listenPrompt.setText(question.prompt == null ? "" : question.prompt);
+        listenTts.setText(question.tts == null ? "" : question.tts);
+        listenTtsLang.setText(question.ttsLang == null ? "" : question.ttsLang);
         for (int i = 0; i < 4; i++) {
             List<ProjectStructure.Question.OptionItem> items = new ArrayList<>();
             if (i < question.optionItems.size()) items.addAll(question.optionItems.get(i));
@@ -1995,21 +2009,31 @@ public class QuestionEditorActivity extends ForgeActivity {
 
     private void saveListen() {
         String prompt = listenPrompt.getText() == null ? "" : listenPrompt.getText().toString().trim();
+        String tts = listenTts == null ? "" : listenTts.getText().toString().trim();
+        String ttsLang = listenTtsLang == null ? "" : listenTtsLang.getText().toString().trim();
         String path = audioRemoved ? "" : existingAudio;
+        long duration = pendingAudio != null ? pendingDuration : existingDuration;
         if (pendingAudio != null) {
             try {
                 java.io.File copied = MediaFiles.copyAudioToProject(projectDirectory,
                         new java.io.File(pendingAudio), question.id);
                 path = MediaFiles.relativePath(projectDirectory, copied);
+                duration = MediaFiles.audioDuration(copied);
                 audioSource = "recording";
             } catch (Exception ex) {
                 toast("保存录音失败");
                 return;
             }
         }
-        if (path.isEmpty()) { toast("请先选择或录制音频"); return; }
-        java.io.File audioFile = MediaFiles.resolveProjectFile(projectDirectory, path);
-        if (!audioFile.exists()) { toast("音频文件不存在，请重新选择"); return; }
+        if (path.isEmpty() && tts.isEmpty()) {
+            toast("请先选择或录制音频，或填写朗读文本（TTS）");
+            return;
+        }
+        if (!path.isEmpty()) {
+            java.io.File audioFile = MediaFiles.resolveProjectFile(projectDirectory, path);
+            if (!audioFile.exists()) { toast("音频文件不存在，请重新选择或移除后改用 TTS"); return; }
+            if (duration <= 0) duration = MediaFiles.audioDuration(audioFile);
+        }
         List<String> options = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             String value = listenOptions[i].getText().toString().trim();
@@ -2022,11 +2046,13 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (correct < 0) { toast("请选择一个正确答案"); return; }
         question.type = ProjectStructure.Question.TYPE_LISTEN;
         question.prompt = prompt;
+        question.tts = tts;
+        question.ttsLang = ttsLang;
         question.audio = path;
-        question.audioDuration = pendingAudio != null ? pendingDuration : existingDuration;
-        question.audioStart = Math.max(0, audioStart);
-        question.audioEnd = Math.max(question.audioStart, audioEnd);
-        question.audioSource = audioSource;
+        question.audioDuration = path.isEmpty() ? 0 : Math.max(0, duration);
+        question.audioStart = path.isEmpty() ? 0 : Math.max(0, audioStart);
+        question.audioEnd = path.isEmpty() ? 0 : Math.max(question.audioStart, audioEnd);
+        question.audioSource = path.isEmpty() ? "tts" : audioSource;
         question.options.clear();
         question.options.addAll(options);
         question.optionItems.clear();
@@ -2055,6 +2081,14 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        String previousAudio = originalAudio == null ? "" : originalAudio;
+        if (!previousAudio.isEmpty() && !previousAudio.equals(path)) {
+            MediaFiles.deleteQuietly(MediaFiles.resolveProjectFile(projectDirectory, previousAudio));
+        }
+        if (pendingAudio != null) {
+            MediaFiles.deleteQuietly(new File(pendingAudio));
+            pendingAudio = null;
+        }
         saved = true;
         toast("已保存听音题");
         finish();

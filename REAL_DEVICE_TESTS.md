@@ -14,6 +14,7 @@ Baseline: commit `14d46f4` (learning mode) / reports [TESTING.md](TESTING.md) an
 | RD-04 | Real microphone capture, audio quality, save/reopen | Desktop (Linux/Windows) | LEARNING_TESTING N/A "physical microphone" | P0 | [ ] |
 | RD-05 | Speaker/headphone audibility, trim boundaries, learning auto-play | Desktop (Linux/Windows) | LEARNING_TESTING N/A "audio audibility" | P0 | [ ] |
 | RD-06 | Windows build + runtime (not N/A, environment-limited) | Windows | Environment limit noted in final reply | P1 | [ ] |
+| RD-07 | Real speaker/headphone audibility of system TTS fallback (listen + generated vocabulary audio) | Android physical device + Linux/Windows desktop | TTS_TESTING.md “无法确认实际可听声音” | P0 | [ ] |
 
 Traceability: the 3 N/A rows in the two reports expand to RD-01..RD-05; RD-06 is an additional environment-limited check. Xvfb itself is only a headless display, not a functional N/A.
 
@@ -113,6 +114,24 @@ Expected:
 - Windows executable starts, data root is `%USERPROFILE%/Documents/Nostongue Forge/projects`.
 - Chinese UI and project paths render/load; audio/record works or degrades gracefully.
 - No missing-DLL or font-crash.
+
+## RD-07 Real TTS audibility
+
+Automated evidence (TTS_TESTING.md) proves espeak-ng/Google TTS were invoked, WAVs were produced,
+UI/JSON were correct, and the listen TTS fallback/audio-first switch worked. Headless Xvfb and the
+emulator cannot prove the user actually hears speech.
+
+1. Import `migration/Nortu-Intro-html.conlang` on a real desktop and Android device.
+2. Desktop: open the listen question with its audio temporarily removed/emptied; press 播放 and verify
+   `et` is spoken in English (rate 0.85). Restore audio and verify the WAV is used instead.
+3. Android: same with a TTS-only listen question; verify language/voice, toast on unsupported language,
+   and no crash when the TTS engine is disabled.
+4. Vocabulary editor: use 生成示例音频 with a phonetic, save, reopen, play and trim. Listen to the
+   generated file and confirm the stored duration matches.
+5. Capture screenshots/logs plus a short screen recording with sound.
+
+Expected: audible speech, correct text/language, audio-first behavior, no orphan/crash. Do not mark
+PASS based only on logs.
 
 ## Recording results
 

@@ -76,6 +76,8 @@
                   "sentence": "et",
                   "warn": [],
                   "explain": "et 是常用问候语，可单独使用。",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q2",
                   "type": "translation_choice"
                 },
@@ -147,6 +149,8 @@
                   "sentence": "",
                   "warn": [],
                   "explain": "no's 是「我」作主语（no + 主语标记 's）；句末的 be 动词省略，所以 no's uzoz = 我是 AI。若是「我的 AI」，要说 no uzoz。",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q3",
                   "type": "arrange"
                 },
@@ -246,6 +250,8 @@
                   "sentence": "",
                   "warn": [],
                   "explain": "",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q4",
                   "type": "match"
                 },
@@ -288,6 +294,8 @@
                     }
                   ],
                   "explain": "",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q5",
                   "type": "type"
                 },
@@ -339,6 +347,8 @@
                     ]
                   },
                   "explain": "",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q6",
                   "type": "card"
                 },
@@ -398,6 +408,8 @@
                   "sentence": "",
                   "warn": [],
                   "explain": "",
+                  "tts": "et",
+                  "ttsLang": "en-US",
                   "id": "html-q7",
                   "type": "listen"
                 },
@@ -460,6 +472,8 @@
                     }
                   ],
                   "explain": "对方在打招呼并问你，回答「你好，我是 AI」最自然。",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q8",
                   "type": "dialog"
                 },
@@ -514,6 +528,8 @@
                   "passage": "et, no's uzoz.\nno zıon et orst.",
                   "answerMode": "choice",
                   "explain": "zıon 是猫，orst 是狗。",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q9",
                   "type": "reading"
                 },
@@ -590,6 +606,8 @@
                     ]
                   ],
                   "explain": "这里是主语，要用 no's；如果想说「我的 AI」，才用 no uzoz。",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q10",
                   "type": "cloze"
                 },
@@ -638,6 +656,8 @@
                   "customBody": "下面这句话的意思是「你好，我的猫」。\n\net, no zıon",
                   "customMode": "choice",
                   "explain": "zıon = 猫；no 作定语表示「我的」（no zıon = 我的猫）；et = 你好。",
+                  "tts": "",
+                  "ttsLang": "",
                   "id": "html-q11",
                   "type": "custom"
                 }

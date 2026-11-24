@@ -153,6 +153,12 @@ final class ProjectStructure {
                                         question.ignoreSpace = questionObject.optBoolean("ignoreSpace", true);
                                         question.near = questionObject.optBoolean("near", true);
                                         question.audioSource = questionObject.optString("audioSource", "");
+                                        question.tts = questionObject.optString("tts", "");
+                                        if (question.tts.isEmpty()) {
+                                            // Compatibility with early builds that used ttsText.
+                                            question.tts = questionObject.optString("ttsText", "");
+                                        }
+                                        question.ttsLang = questionObject.optString("ttsLang", "");
                                         question.explain = questionObject.optString("explain", "");
                                         question.customLabel = questionObject.optString("customLabel", "");
                                         question.customBody = questionObject.optString("customBody", "");
@@ -393,6 +399,8 @@ final class ProjectStructure {
                             questionObject.put("sentence", question.sentence);
                             questionObject.put("audio", question.audio);
                             questionObject.put("audioDuration", question.audioDuration);
+                            questionObject.put("tts", question.tts == null ? "" : question.tts);
+                            questionObject.put("ttsLang", question.ttsLang == null ? "" : question.ttsLang);
                             JSONArray options = new JSONArray();
                             for (String option : question.options) options.put(option);
                             questionObject.put("options", options);
@@ -836,6 +844,8 @@ final class ProjectStructure {
         boolean ignoreSpace = true;
         boolean near = true;
         String audioSource = "";
+        String tts = "";
+        String ttsLang = "";
         final List<String> alt = new ArrayList<>();
         String prompt = "";
         int correctIndex = -1;

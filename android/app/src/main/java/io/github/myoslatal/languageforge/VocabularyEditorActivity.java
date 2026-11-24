@@ -115,6 +115,12 @@ public class VocabularyEditorActivity extends ForgeActivity {
     private ForgeButton audioPlayButton;
     private ForgeButton audioRecordButton;
     private ForgeButton audioPreviewButton;
+    private ForgeButton ttsPreviewButton;
+    private ForgeButton ttsGenerateButton;
+    private TextView audioTtsHint;
+    private TtsSupport tts;
+    private boolean ttsGenerateBusy;
+    private boolean ttsGeneratedAudio;
     private String pendingAudioPath;
     private long pendingAudioStart;
     private long pendingAudioEnd;
@@ -184,6 +190,8 @@ public class VocabularyEditorActivity extends ForgeActivity {
         findViewById(R.id.btn_play_audio).setOnClickListener(v -> togglePlayback());
         findViewById(R.id.btn_preview_audio).setOnClickListener(v -> previewTrim());
         findViewById(R.id.btn_remove_audio).setOnClickListener(v -> removeAudio());
+        findViewById(R.id.btn_tts_phonetic).setOnClickListener(v -> previewPhoneticWithTts());
+        findViewById(R.id.btn_tts_generate).setOnClickListener(v -> generateTtsAudio());
         audioStartSeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -209,6 +217,17 @@ public class VocabularyEditorActivity extends ForgeActivity {
                     }
                 });
 
+        tts = new TtsSupport(this, new TtsSupport.StatusListener() {
+            @Override public void onTtsReady() {
+                runOnUiThread(VocabularyEditorActivity.this::updateTtsHint);
+            }
+            @Override public void onTtsFailed(String message) {
+                runOnUiThread(() -> {
+                    updateTtsHint();
+                    toast(message);
+                });
+            }
+        });
         setupType();
         populate();
         updateTypeVisibility();
@@ -250,6 +269,9 @@ public class VocabularyEditorActivity extends ForgeActivity {
         audioPlayButton = findViewById(R.id.btn_play_audio);
         audioRecordButton = findViewById(R.id.btn_record_audio);
         audioPreviewButton = findViewById(R.id.btn_preview_audio);
+        ttsPreviewButton = findViewById(R.id.btn_tts_phonetic);
+        ttsGenerateButton = findViewById(R.id.btn_tts_generate);
+        audioTtsHint = findViewById(R.id.audio_tts_hint);
         unicodePreview = findViewById(R.id.unicode_preview);
         comboPreview = findViewById(R.id.combo_preview);
     }
@@ -594,6 +616,20 @@ public class VocabularyEditorActivity extends ForgeActivity {
         field.setLabel("音标");
         field.setHint("例如：/ˈæp.əl/");
         field.setText(value);
+        field.getEditText().addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateTtsHint();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
         row.addView(field, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         ForgeButton remove = removeButton("删除音标");
@@ -970,6 +1006,10 @@ public class VocabularyEditorActivity extends ForgeActivity {
     @Override
     protected void onDestroy() {
         stopPlayback();
+        if (tts != null) {
+            tts.shutdown();
+            tts = null;
+        }
         abortRecording();
         if (isFinishing()) {
             cleanupPendingMedia();
@@ -1010,7 +1050,129 @@ public class VocabularyEditorActivity extends ForgeActivity {
         deleteCropSource();
     }
 
+    private String ttsPhoneticText() {
+        for (ForgeTextField field : phoneticFields) {
+            String value = textOf(field).trim();
+            if (!value.isEmpty()) return value;
+        }
+        if (existing != null) {
+            for (String value : existing.phonetics) {
+                if (value != null && !value.trim().isEmpty()) return value.trim();
+            }
+            if (existing.phonetic != null && !existing.phonetic.trim().isEmpty()) {
+                return existing.phonetic.trim();
+            }
+        }
+        String text = textField == null ? "" : textOf(textField).trim();
+        if (!text.isEmpty()) return text;
+        if (existing != null) return store.displayName(existing);
+        return "";
+    }
+
+    private String currentTtsLang() {
+        return TtsSupport.readProjectTtsLang(projectDirectory);
+    }
+
+    private void updateTtsHint() {
+        if (audioTtsHint == null) return;
+        String text = ttsPhoneticText();
+        StringBuilder hint = new StringBuilder("TTS 文本：")
+                .append(text.isEmpty() ? "（先填写音标或文本）" : text)
+                .append(" · ").append(currentTtsLang());
+        if (tts != null && !tts.isReady()) {
+            hint.append(" · ").append(tts.getStatusText());
+        }
+        audioTtsHint.setText(hint.toString());
+    }
+
+    private void previewPhoneticWithTts() {
+        String text = ttsPhoneticText();
+        if (text.isEmpty()) {
+            toast("请先填写音标或文本");
+            return;
+        }
+        updateTtsHint();
+        String result = tts == null ? "系统 TTS 未初始化"
+                : tts.speak(text, currentTtsLang(), 0.85f);
+        if (result != null) toast(result);
+    }
+
+    private void generateTtsAudio() {
+        if (ttsGenerateBusy) return;
+        final String text = ttsPhoneticText();
+        if (text.isEmpty()) {
+            toast("请先填写音标或文本");
+            return;
+        }
+        File output = MediaFiles.cacheAudioFile(this, ".wav");
+        if (output == null) {
+            toast("无法创建 TTS 音频缓存");
+            return;
+        }
+        ttsGenerateBusy = true;
+        if (ttsGenerateButton != null) {
+            ttsGenerateButton.setEnabled(false);
+            ttsGenerateButton.setText("生成中…");
+        }
+        final String lang = currentTtsLang();
+        if (tts == null) {
+            ttsGenerateBusy = false;
+            resetTtsGenerateButton();
+            toast("系统 TTS 未初始化");
+            return;
+        }
+        tts.synthesizeToFile(text, lang, 0.85f, output, new TtsSupport.SynthCallback() {
+            @Override
+            public void onDone(File file) {
+                runOnUiThread(() -> {
+                    long duration = MediaFiles.audioDuration(file);
+                    ttsGenerateBusy = false;
+                    resetTtsGenerateButton();
+                    if (duration <= 0) {
+                        MediaFiles.deleteQuietly(file);
+                        toast("TTS 生成的音频时长无效");
+                        return;
+                    }
+                    applyGeneratedTtsAudio(file, duration);
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUiThread(() -> {
+                    MediaFiles.deleteQuietly(output);
+                    ttsGenerateBusy = false;
+                    resetTtsGenerateButton();
+                    toast(message == null || message.isEmpty() ? "TTS 生成音频失败" : message);
+                });
+            }
+        });
+    }
+
+    private void resetTtsGenerateButton() {
+        if (ttsGenerateButton != null) {
+            ttsGenerateButton.setEnabled(true);
+            ttsGenerateButton.setText("生成示例音频");
+        }
+        updateTtsHint();
+    }
+
+    private void applyGeneratedTtsAudio(File file, long duration) {
+        if (pendingAudioPath != null) {
+            MediaFiles.deleteQuietly(new File(pendingAudioPath));
+        }
+        pendingAudioPath = file.getAbsolutePath();
+        pendingAudioStart = 0L;
+        pendingAudioEnd = duration;
+        pendingAudioDuration = duration;
+        audioRemoved = false;
+        ttsGeneratedAudio = true;
+        updateAudioUi();
+        toast("已生成 TTS 示例音频，可裁剪后保存");
+    }
+
     private void updateAudioUi() {
+        updateTtsHint();
         if (audioEmptyActions == null) {
             return;
         }
@@ -1146,6 +1308,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         pendingAudioEnd = duration;
         pendingAudioDuration = duration;
         audioRemoved = false;
+        ttsGeneratedAudio = false;
         updateAudioUi();
         toast("音频已就绪，可裁剪后保存");
     }
@@ -1249,6 +1412,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
         pendingAudioEnd = duration;
         pendingAudioDuration = duration;
         audioRemoved = false;
+        ttsGeneratedAudio = false;
         updateAudioUi();
         toast("录音完成，可裁剪后保存");
     }
@@ -1273,6 +1437,7 @@ public class VocabularyEditorActivity extends ForgeActivity {
             pendingAudioPath = null;
         }
         audioRemoved = true;
+        ttsGeneratedAudio = false;
         updateAudioUi();
         toast("已移除；保存后生效");
     }
@@ -1678,6 +1843,15 @@ public class VocabularyEditorActivity extends ForgeActivity {
             toast("保存词汇失败，请重试");
             return;
         }
+        if (ttsGeneratedAudio && newProjectAudio != null && newProjectAudio.isFile()) {
+            AudioStore ttsAudioStore = new AudioStore(projectDirectory);
+            ProjectAudio registered = ttsAudioStore.registerFile(newProjectAudio);
+            if (registered != null) {
+                registered.name = "TTS：" + ttsPhoneticText();
+                ttsAudioStore.save();
+            }
+        }
+        ttsGeneratedAudio = false;
 
         if (previousImage != null && !previousImage.isEmpty()
                 && !previousImage.equals(finalImage)) {
@@ -1686,6 +1860,12 @@ public class VocabularyEditorActivity extends ForgeActivity {
         }
         if (previousAudio != null && !previousAudio.isEmpty()
                 && !previousAudio.equals(finalAudio)) {
+            AudioStore previousAudioStore = new AudioStore(projectDirectory);
+            ProjectAudio previousEntry = previousAudioStore.findByFile(previousAudio);
+            if (previousEntry != null && previousEntry.name != null
+                    && previousEntry.name.startsWith("TTS：")) {
+                previousAudioStore.deleteAudio(previousEntry);
+            }
             MediaFiles.deleteQuietly(
                     MediaFiles.resolveProjectFile(projectDirectory, previousAudio));
         }

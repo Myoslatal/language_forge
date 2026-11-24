@@ -10,6 +10,14 @@ HTML: NostongueForge_v1.3.1.html unchanged (git diff exit 0)
 ## Summary
 PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 
+### TTS follow-up (2026-11-24)
+
+The system-TTS work (HTML-compatible `tts`/`ttsLang`, listen audio-first/TTS-fallback, vocabulary
+phonetic preview and generated example audio) is reported separately in
+[TTS_TESTING.md](TTS_TESTING.md). Desktop clean build + smoke ×2 PASS with TTS flags; Android
+clean debug/release build and API36 engine/synthesis/fallback checks PASS. Real audible output
+remains a physical-device item (RD-07).
+
 ## Build / smoke
 
 - The desktop smoke needs `/tmp/lexicon-sample.jsonl` (5312 unique words + duplicated `e`/`u` + `_meta` type table). If it is missing, regenerate it from any project's stores:

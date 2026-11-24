@@ -87,7 +87,8 @@ structure.json
 ```
 
 `project.json` fields are compatible with Android:
-`schema, name, courseLine, lessons, questions, words, updated, createdAt, pinned`.
+`schema, name, courseLine, lessons, questions, words, updated, createdAt, pinned, ttsLang`
+(`ttsLang` defaults to `en-US`; old files without it read as `en-US`).
 `structure.json` is `{"schema":1,"chapters":[{"id":"uuid","name":"...","units":[{"id":"uuid","name":"...","courses":[{"id":"uuid","name":"...","questions":[{"id":"uuid","name":"..."}]}]}]}]}`
 with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated as empty.
 
@@ -256,6 +257,35 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   sample, checks merge/duplicate/overwrite, multi-phonetic data, page/slider and picker state,
   and captures vocab-merge.png, vocab-multi-phonetic.png, vocab-page-slider.png and
   vocab-picker-page.png.
+
+## TTS (system speech synthesis)
+
+- `question.tts` and `question.ttsLang` mirror the HTML Web Speech data and are read/written for
+  every question type; `project.json` now has a project-level `ttsLang` (default `en-US`, legacy
+  projects read as `en-US`). At playback the order is `question.ttsLang` → project `ttsLang` →
+  `en-US`; the engine rate is `0.85`, matching the HTML `speak()` helper.
+- Desktop speech uses a system command to synthesize a WAV and then reuses the existing
+  SDL_mixer playback path: Linux `espeak-ng` (falls back to `espeak`), Windows PowerShell
+  `System.Speech`, macOS `say`. The spoken text is written to a temp UTF-8 file, so no shell
+  escaping of the text is needed; output goes to a local TTS cache. If no engine is found the UI
+  shows a clear toast instead of failing silently.
+- Learning → listen keeps audio-first behavior: a valid `audio` file plays (with trim) exactly as
+  before; when it is empty/missing the same auto-play/button path synthesizes `tts` (or `prompt`)
+  and logs `FORGE_TTS synth` / `FORGE_LEARN listenTts`; the page shows “本题缺少音频，将使用 TTS
+  朗读：…”. When audio is restored/valid, `FORGE_LEARN listenPlay` and the audio file win again.
+- The listen editor adds **朗读文本 (TTS)** and **朗读语言** inputs plus a **TTS 试听** button;
+  saving a listen question now accepts TTS-only content (no audio) as long as one of audio/tts is
+  present, and removes the old audio file when switching to TTS-only.
+- Vocabulary → 示例发音 adds **TTS 朗读音标** (preview, no mutation) and **生成示例音频**: the
+  text is `phonetics[0]` → `phonetic` → `text` → display name, language is the project `ttsLang`.
+  Generation writes `resources/audio/pending_tts_<id>.wav`, sets `audio/audioStart/audioEnd/
+  audioDuration (rate 0.85)`, plays through the normal path, and saving registers a `TTS：…` row in
+  `audios.json`; reopening the editor shows the trimmed duration and existing playback/trim controls
+  still work.
+- Smoke covers TTS engine detection/synthesis, listen editor save/reopen JSON, TTS fallback in
+  learning, audio priority, vocabulary preview/generation/save/reopen, and import of the migrated
+  HTML project with `tts="et"` / `ttsLang="en-US"`; screenshots are written as `tts-*.png` and
+  `vocab-tts-*.png` plus `tts-evidence.json`.
 
 ## Notes
 

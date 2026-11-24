@@ -38,6 +38,7 @@ add_executable(nostongue-forge
   src/images.cpp
   src/audio.cpp
   src/pos.cpp
+  src/tts.cpp
   ${IMGUI_DIR}/imgui.cpp
   ${IMGUI_DIR}/imgui_draw.cpp
   ${IMGUI_DIR}/imgui_tables.cpp

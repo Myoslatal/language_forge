@@ -91,7 +91,8 @@ empty list. The whole project directory is already archived by `.conlang` export
 * One folder per project: readable sanitized name + a short random suffix, e.g.
   `Nortu 自由语 · 入门-a1b2c3`. Each folder contains `project.json` (UTF-8):
   `schema` (1), `name`, `courseLine`, `lessons`, `questions`, `words`, `updated`,
-  `createdAt` (epoch millis), `pinned`.
+  `createdAt` (epoch millis), `pinned`, `ttsLang`. `ttsLang` is the project-level speech fallback
+  (default `en-US`; old projects without it read as `en-US`).
 * On the first run (no `.seeded` marker) five sample folders are written and the hidden
   `.seeded` marker is created. Deleting all projects keeps the marker, so the next launch
   stays empty; clearing app data / reinstalling seeds again.
@@ -99,8 +100,8 @@ empty list. The whole project directory is already archived by `.conlang` export
   first, then `createdAt` descending.
 * Delete recursively removes the project folder only after canonical-path validation against
   the projects root. Pin updates are written back to `project.json`.
-* `structure.json` stores the chapter/unit/course tree and question names/order (see
-  below). Actual question content/media are **not** persisted yet.
+* `structure.json` stores the chapter/unit/course tree and question content/media (see below),
+  including the optional `tts`/`ttsLang` fields.
 
 ## Project structure
 
@@ -290,6 +291,32 @@ Every vocabulary type has an optional **示例发音** section; audio is project
   and image files.
 * `.conlang` export/import archives the whole project directory, so
   `resources/audio/` is included automatically. No storage permission is used.
+
+## TTS (system speech synthesis)
+
+- `structure.json` questions now read/write `tts` and `ttsLang` (empty by default, kept for all
+  types as in the HTML schema; legacy `ttsText` is accepted as a read fallback). The listen editor
+  exposes **朗读文本（TTS）** and **朗读语言** and accepts a TTS-only listen question when audio
+  is empty/missing; switching to TTS-only removes the replaced audio file.
+- `TtsSupport` wraps `android.speech.tts.TextToSpeech`: asynchronous initialization (8 s timeout),
+  BCP-47 `setLanguage` with an unsupported-language fallback + toast, `QUEUE_FLUSH`, rate `0.85`,
+  `synthesizeToFile` for generated audio, and explicit engine-missing/unavailable messages. The
+  Android 11+ manifest declares the `TTS_SERVICE` package-visibility intent.
+- Learning → listen is audio-first: an existing `audio` file (with `audioStart/audioEnd`) plays via
+  `MediaPlayer` as before; when it is empty/missing the screen shows “本题缺少音频，将使用 TTS
+  朗读：<text> · <lang>” and the auto-play/button path calls the system TTS with `question.tts`
+  (or `prompt`), `question.ttsLang` → project `ttsLang` → `en-US`. If the engine is missing or the
+  language unsupported, a toast plus an on-screen explanation is shown and nothing crashes.
+- Vocabulary → 示例发音 has **TTS 朗读音标** and **生成示例音频** next to import/record. The text is
+  `phonetics[0]` → `phonetic` → `text` → display name, language is the project `ttsLang`.
+  Generation uses `synthesizeToFile` into the cache, shows duration, and saving copies it to
+  `resources/audio/vocab_<entryId>_<timestamp>.wav`, writes `audio/audioStart/audioEnd/
+  audioDuration`, and registers a `TTS：…` row in `audios.json`; reopening plays and shows the trim.
+- Verified on EnvCheck_API36 (Google TTS present): TTS listen playback reaches `onStart`, and
+  synthesizeToFile produced a 31,964-byte WAV that was saved as vocabulary audio (665 ms). With
+  `com.google.android.tts` temporarily disabled, the listen page showed “系统 TTS 不可用：未安装
+  语音合成引擎” with a toast and no crash; the engine was re-enabled afterwards. Emulator audio is
+  not audible in this headless environment, so audibility itself is still a real-device check.
 
 ## Font management
 

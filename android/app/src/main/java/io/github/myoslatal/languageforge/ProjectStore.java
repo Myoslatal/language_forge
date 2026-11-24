@@ -178,6 +178,7 @@ final class ProjectStore {
         }
         Project project = new Project(directory, directory.getName(), name, courseLine,
                 lessons, questions, words, updated, createdAt, pinned);
+        project.ttsLang = "en-US";
         if (!writeProject(project)) {
             deleteRecursively(directory);
             return null;
@@ -224,13 +225,16 @@ final class ProjectStore {
             courseLine = "—";
         }
         long createdAt = object.optLong("createdAt", directory.lastModified());
-        return new Project(directory, directory.getName(), name, courseLine,
+        Project project = new Project(directory, directory.getName(), name, courseLine,
                 Math.max(0, object.optInt("lessons", 0)),
                 Math.max(0, object.optInt("questions", 0)),
                 Math.max(0, object.optInt("words", 0)),
                 object.optString("updated", ""),
                 createdAt,
                 object.optBoolean("pinned", false));
+        String ttsLang = object.optString("ttsLang", "en-US").trim();
+        project.ttsLang = ttsLang.isEmpty() ? "en-US" : ttsLang;
+        return project;
     }
 
     private boolean writeProject(Project project) {
@@ -239,6 +243,8 @@ final class ProjectStore {
             object.put("schema", SCHEMA);
             object.put("name", project.name);
             object.put("courseLine", project.courseLine);
+            object.put("ttsLang", project.ttsLang == null || project.ttsLang.trim().isEmpty()
+                    ? "en-US" : project.ttsLang.trim());
             object.put("lessons", project.lessons);
             object.put("questions", project.questions);
             object.put("words", project.words);

@@ -162,6 +162,7 @@ std::string projectJsonString(const ProjectSummary& project) {
       {"updated", project.updated},
       {"createdAt", project.createdAt},
       {"pinned", project.pinned},
+      {"ttsLang", project.ttsLang.empty() ? "en-US" : project.ttsLang},
   };
   return value.dump(2);
 }
@@ -239,6 +240,8 @@ json structureToJson(const Structure& structure) {
                                {"ignoreSpace", question.ignoreSpace},
                                {"near", question.near},
                                {"audioSource", question.audioSource},
+                               {"tts", question.tts},
+                               {"ttsLang", question.ttsLang},
                                {"alt", question.alt},
                                {"correctIndex", question.correctIndex}};
           if (!question.explain.empty()) questionJson["explain"] = question.explain;
@@ -350,6 +353,12 @@ Structure structureFromJson(const json& value) {
                 question.ignoreSpace = questionValue.value("ignoreSpace", true);
                 question.near = questionValue.value("near", true);
                 question.audioSource = questionValue.value("audioSource", "");
+                question.tts = questionValue.value("tts", "");
+                if (question.tts.empty()) {
+                  // Compatibility with early builds that used the ttsText key.
+                  question.tts = questionValue.value("ttsText", "");
+                }
+                question.ttsLang = questionValue.value("ttsLang", "");
                 question.explain = questionValue.value("explain", "");
                 question.customLabel = questionValue.value("customLabel", "");
                 question.customBody = questionValue.value("customBody", "");
@@ -509,6 +518,8 @@ ProjectSummary projectFromJson(const fs::path& dir, const json& value) {
   project.createdAt = value.value("createdAt", nowMillis());
   project.updated = value.value("updated", project.createdAt);
   project.pinned = value.value("pinned", false);
+  project.ttsLang = value.value("ttsLang", "en-US");
+  if (project.ttsLang.empty()) project.ttsLang = "en-US";
   if (project.name.empty()) project.name = "未命名项目";
   return project;
 }

@@ -14,6 +14,7 @@ final class Project {
     final String updated;
     final long createdAt;
     boolean pinned;
+    String ttsLang = "en-US";
 
     Project(File directory, String folderName, String name, String courseLine,
             int lessons, int questions, int words, String updated,

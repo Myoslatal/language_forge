@@ -428,6 +428,40 @@
                     android:text="可选；导入音频或现场录制，播放与裁剪会遵守区间。" />
 
                 <LinearLayout
+                    android:id="@+id/audio_tts_actions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:id="@+id/btn_tts_phonetic"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TTS 朗读音标"
+                        android:textSize="11sp"
+                        app:forgeVariant="default" />
+
+                    <io.github.myoslatal.languageforge.uikit.ForgeButton
+                        android:id="@+id/btn_tts_generate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="生成示例音频"
+                        android:textSize="11sp"
+                        app:forgeVariant="default" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/audio_tts_hint"
+                    style="@style/Forge.Text.Tiny"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="TTS 文本：（先填写音标或文本）" />
+
+                <LinearLayout
                     android:id="@+id/audio_empty_actions"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

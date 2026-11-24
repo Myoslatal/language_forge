@@ -78,6 +78,8 @@ public class LearningActivity extends ForgeActivity {
     private String listenAutoId = "";
     private ForgeButton listenPlayButton;
     private boolean listenPlaying;
+    private String listenTtsError = "";
+    private TtsSupport tts;
     private final List<Integer> clozeFilled = new ArrayList<>();
     private final List<LinearLayout> clozeBlankRows = new ArrayList<>();
     private final List<View> clozeCandidateViews = new ArrayList<>();
@@ -100,6 +102,32 @@ public class LearningActivity extends ForgeActivity {
         vocabulary.load();
         posStore = new PosStore(projectDirectory);
         handler = new Handler(Looper.getMainLooper());
+        tts = new TtsSupport(this, new TtsSupport.StatusListener() {
+            @Override public void onTtsReady() {
+                android.util.Log.d("FORGE_TTS", "listener ready " + tts.getEngineName());
+            }
+            @Override public void onTtsFailed(String message) {
+                listenTtsError = message;
+                toast("系统 TTS 不可用：" + message);
+                if (question != null && ProjectStructure.Question.TYPE_LISTEN.equals(question.type)) {
+                    renderListenQuestion(question);
+                }
+            }
+        });
+        tts.setPlaybackListener(new TtsSupport.PlaybackListener() {
+            @Override public void onTtsDone() {
+                listenPlaying = false;
+                if (listenPlayButton != null) listenPlayButton.setText("重新播放");
+            }
+            @Override public void onTtsError(String message) {
+                listenPlaying = false;
+                listenTtsError = message;
+                toast(message);
+                if (question != null && ProjectStructure.Question.TYPE_LISTEN.equals(question.type)) {
+                    renderListenQuestion(question);
+                }
+            }
+        });
         setContentView(buildRoot());
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() { goBack(); }
@@ -1034,20 +1062,36 @@ public class LearningActivity extends ForgeActivity {
         if (!item.prompt.isEmpty()) content.addView(text(item.prompt, 20, R.color.forge_text));
         java.io.File audioFile = item.audio == null || item.audio.isEmpty()
                 ? null : MediaFiles.resolveProjectFile(projectDirectory, item.audio);
-        boolean missingAudio = audioFile == null || !audioFile.exists();
-        if (missingAudio) content.addView(text("本题缺少音频", 16, R.color.forge_warn));
+        final boolean audioExists = audioFile != null && audioFile.exists();
+        final String ttsText = TtsSupport.ttsText(item);
+        final String ttsLang = TtsSupport.resolveLang(item.ttsLang,
+                TtsSupport.readProjectTtsLang(projectDirectory));
+        final boolean playable = audioExists || !ttsText.isEmpty();
+        if (!audioExists) {
+            if (!ttsText.isEmpty()) {
+                content.addView(text("本题缺少音频，将使用 TTS 朗读：" + ttsText + " · " + ttsLang,
+                        14, R.color.forge_warn));
+                String unavailable = tts == null ? "系统 TTS 未初始化" : tts.getUnavailableMessage();
+                if (unavailable != null) {
+                    content.addView(text("系统 TTS 不可用：" + unavailable, 13, R.color.forge_warn));
+                }
+            } else {
+                content.addView(text("本题缺少音频，且没有可朗读的文本（TTS）",
+                        16, R.color.forge_warn));
+            }
+        }
+        if (!audioExists && listenTtsError != null && !listenTtsError.isEmpty()) {
+            String unavailable = tts == null ? null : tts.getUnavailableMessage();
+            if (unavailable == null || !unavailable.equals(listenTtsError)) {
+                content.addView(text(listenTtsError, 13, R.color.forge_warn));
+            }
+        }
         listenPlayButton = new ForgeButton(this);
         listenPlayButton.setAllCaps(false);
         listenPlayButton.setText(listenPlaying ? "播放中…"
                 : (listenAutoId.equals(item.id) ? "重新播放" : "播放音频"));
-        listenPlayButton.setEnabled(!missingAudio);
-        listenPlayButton.setOnClickListener(v -> {
-            if (missingAudio) return;
-            android.util.Log.d("FORGE_LEARN", "listenPlay " + item.audio + " " + item.audioStart + ".." + item.audioEnd);
-            play(item.audio, item.audioStart, item.audioEnd);
-            listenPlaying = true;
-            renderListenQuestion(item);
-        });
+        listenPlayButton.setEnabled(playable);
+        listenPlayButton.setOnClickListener(v -> playListen(item));
         content.addView(listenPlayButton);
         for (int i = 0; i < item.options.size(); i++) {
             final int index = i;
@@ -1087,7 +1131,7 @@ public class LearningActivity extends ForgeActivity {
                 }
                 styleMatchRow(row, answered && index == item.correctIndex, listenSelected == index);
                 row.setOnClickListener(v -> {
-                    if (answered || missingAudio) return;
+                    if (answered || !playable) return;
                     listenSelected = index;
                     confirmButton.setVisibility(View.VISIBLE);
                     renderListenQuestion(item);
@@ -1099,27 +1143,58 @@ public class LearningActivity extends ForgeActivity {
                 option.setAllCaps(false);
                 option.setText((i + 1) + ". " + item.options.get(i));
                 option.setOnClickListener(v -> {
-                    if (answered || missingAudio) return;
+                    if (answered || !playable) return;
                     listenSelected = index;
                     confirmButton.setVisibility(View.VISIBLE);
                     renderListenQuestion(item);
                 });
-                option.setEnabled(!answered && !missingAudio);
-                option.setAlpha(answered || !missingAudio ? 1f : 0.55f);
+                option.setEnabled(!answered && playable);
+                option.setAlpha(answered || playable ? 1f : 0.55f);
                 styleMatch(option, answered && index == item.correctIndex, listenSelected == index);
                 content.addView(option, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
             }
         }
-        if (missingAudio) confirmButton.setVisibility(View.GONE);
+        if (!playable) confirmButton.setVisibility(View.GONE);
         if (!answered && listenSelected < 0) confirmButton.setVisibility(View.GONE);
-        if (!listenAutoId.equals(item.id) && !missingAudio) {
+        if (!listenAutoId.equals(item.id) && playable) {
             listenAutoId = item.id;
-            android.util.Log.d("FORGE_LEARN", "listenPlay " + item.audio + " " + item.audioStart + ".." + item.audioEnd);
+            listenTtsError = "";
+            playListen(item);
+        }
+    }
+
+    private void playListen(ProjectStructure.Question item) {
+        java.io.File audioFile = item.audio == null || item.audio.isEmpty()
+                ? null : MediaFiles.resolveProjectFile(projectDirectory, item.audio);
+        if (audioFile != null && audioFile.exists()) {
+            android.util.Log.d("FORGE_LEARN", "listenPlay " + item.audio + " "
+                    + item.audioStart + ".." + item.audioEnd);
             play(item.audio, item.audioStart, item.audioEnd);
             listenPlaying = true;
-            listenPlayButton.setText("播放中…");
+            if (listenPlayButton != null) listenPlayButton.setText("播放中…");
+            return;
         }
+        String text = TtsSupport.ttsText(item);
+        if (text.isEmpty()) {
+            toast("本题缺少音频，且没有可朗读的文本（TTS）");
+            return;
+        }
+        String lang = TtsSupport.resolveLang(item.ttsLang,
+                TtsSupport.readProjectTtsLang(projectDirectory));
+        android.util.Log.d("FORGE_LEARN", "listenTts " + text + " " + lang);
+        String result = tts == null ? "系统 TTS 未初始化" : tts.speak(text, lang, 0.85f);
+        if (result != null) {
+            listenTtsError = result;
+            toast(result);
+            if (!result.contains("已改用默认语言")) {
+                listenPlaying = false;
+                if (listenPlayButton != null) listenPlayButton.setText("重新播放");
+                return;
+            }
+        }
+        listenPlaying = true;
+        if (listenPlayButton != null) listenPlayButton.setText("播放中…");
     }
 
     private void renderTypeQuestion(ProjectStructure.Question item) {
@@ -2002,6 +2077,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void stopAudio() {
         android.util.Log.d("FORGE_LEARN", "stopAudio");
+        if (tts != null) tts.stop();
         listenPlaying = false;
         if (listenPlayButton != null) listenPlayButton.setText("重新播放");
         if (player != null) {
@@ -2043,6 +2119,10 @@ public class LearningActivity extends ForgeActivity {
     @Override protected void onDestroy() {
         super.onDestroy();
         stopAudio();
+        if (tts != null) {
+            tts.shutdown();
+            tts = null;
+        }
     }
 
     private TextView text(CharSequence value, int size, int color) {

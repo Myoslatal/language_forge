@@ -203,6 +203,8 @@ def main():
     project = run_fresh_project(source)
     unit = project["units"][0]
     questions = unit["questions"]
+    course = project.get("course") or {}
+    course_tts_lang = (course.get("ttsLang") or "en-US").strip() or "en-US"
 
     kp_ids = []
     for q in questions:
@@ -308,7 +310,7 @@ def main():
         "card": None, "lines": None, "passage": None, "answerMode": None,
         "clozeText": None, "clozeOrder": None, "clozeItems": None,
         "customLabel": None, "customBody": None, "customMode": None,
-        "explain": "",
+        "explain": "", "tts": "", "ttsLang": "",
     }
 
     def option_texts(options):
@@ -326,6 +328,11 @@ def main():
         item["name"] = q.get("prompt", "") or item["type"]
         item["prompt"] = q.get("prompt", "")
         item["explain"] = q.get("explain", "") or ""
+        # HTML stores per-question tts/ttsLang on every question type; the course
+        # ttsLang is the fallback. Keep empty values so all 10 migrated questions
+        # carry the keys, and resolve listen explicitly because it needs speech.
+        item["tts"] = q.get("tts", "") or ""
+        item["ttsLang"] = q.get("ttsLang", "") or ""
         if q["type"] == "choice":
             texts, items, correct = option_texts(q.get("options", []))
             item["options"], item["optionItems"], item["correctIndex"] = texts, items, correct
@@ -372,6 +379,8 @@ def main():
             item["audioStart"] = 0
             item["audioEnd"] = duration
             item["audioSource"] = "tts"
+            if item["tts"] and not item["ttsLang"]:
+                item["ttsLang"] = course_tts_lang
         elif q["type"] == "dialog":
             item["lines"] = [{"who": line.get("who", ""), "text": line.get("text", "")}
                              for line in q.get("lines", [])]
@@ -407,6 +416,7 @@ def main():
     project_json = {
         "schema": 1, "name": PROJECT_NAME, "courseLine": project["course"].get("langName", "Nortu 自由语"),
         "lessons": 1, "questions": len(mapped), "words": len(vocab), "pinned": False,
+        "ttsLang": course_tts_lang,
         "createdAt": now, "updated": now,
     }
     write_json = lambda name, value: open(os.path.join(project_dir, name), "w", encoding="utf-8").write(
