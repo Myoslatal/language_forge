@@ -121,7 +121,7 @@ Automated evidence (TTS_TESTING.md) proves espeak-ng/Google TTS were invoked, WA
 UI/JSON were correct, and the listen TTS fallback/audio-first switch worked. Headless Xvfb and the
 emulator cannot prove the user actually hears speech.
 
-1. Import `migration/Nortu-Intro-html.conlang` on a real desktop and Android device.
+1. Import `/home/forin/language-forge-imports/Nortu-Intro-html.conlang` on a real desktop and Android device.
 2. Desktop: open the listen question with its audio temporarily removed/emptied; press 播放 and verify
    `et` is spoken in English (rate 0.85). Restore audio and verify the WAV is used instead.
 3. Android: same with a TTS-only listen question; verify language/voice, toast on unsupported language,
@@ -132,6 +132,22 @@ emulator cannot prove the user actually hears speech.
 
 Expected: audible speech, correct text/language, audio-first behavior, no orphan/crash. Do not mark
 PASS based only on logs.
+
+## RD-08 WorkBuddy course audio and font on real hardware
+
+Automated evidence in migration/WORKBUDDY_MIGRATION.md proves 23 WAVs, 38 question-audio
+references, non-listen auto-play/button logs, listen playback, and both platforms importing the
+project. Headless/emulator audio still does not prove real audibility.
+
+1. Import `/home/forin/language-forge-imports/nortu-l1-2.conlang` on a real desktop and Android device.
+2. Play a choice question (e.g. `et`) and an arrange question (e.g. 你好，自由语！) via the generic
+   question-audio button; confirm the recording matches the text and trim.
+3. Play both listen questions; confirm audio-first behavior and no TTS when audio exists.
+4. Confirm the Nozu Sans font renders the title/body and the project has no fallback-font glitch.
+5. Verify 3-course progression with normal answers; capture screenshots and a sound recording.
+
+Expected: audible Wave/Opus-derived WAVs with correct trim, no TTS substitution, stable UI/font,
+and normal unlock progression. Do not mark PASS based only on logs.
 
 ## Recording results
 

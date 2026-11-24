@@ -282,6 +282,7 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   audioDuration (rate 0.85)`, plays through the normal path, and saving registers a `TTS：…` row in
   `audios.json`; reopening the editor shows the trimmed duration and existing playback/trim controls
   still work.
+- Learning also has a generic question-audio control: any non-listen question with a non-empty `audio` gets a **播放题目音频** button and one auto-play per question (trim respected, logs `FORGE_LEARN questionAudio`). Listen keeps its existing audio-first/TTS-fallback behavior.
 - Smoke covers TTS engine detection/synthesis, listen editor save/reopen JSON, TTS fallback in
   learning, audio priority, vocabulary preview/generation/save/reopen, and import of the migrated
   HTML project with `tts="et"` / `ttsLang="en-US"`; screenshots are written as `tts-*.png` and

@@ -36,7 +36,7 @@ HTML 在「检查」后显示反馈块：✓正确/再看看 + 正确答案 + q.
 - 编辑器解析字段/保存：/tmp/android-exp-editor2.png；JSON 见上文。
 
 ## 迁移数据
-- tools/migrate_html_project.py 写入 explain；重新生成 migration/Nortu-Intro-html.conlang 与 generated 项目。
+- tools/migrate_html_project.py 写入 explain；重新生成 /home/forin/language-forge-imports/Nortu-Intro-html.conlang 与 generated 项目。
 - 10 题中 6 题带 HTML explain：choice/arrange/dialog/reading/cloze/custom；其余为空（不显示）。
 - migration/HTML_MIGRATION.md 已将 explain 从未迁移改为已迁移。
 

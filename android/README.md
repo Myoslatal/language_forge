@@ -48,16 +48,17 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 `ProjectListActivity` is the launcher:
 
-* five seeded projects (two pinned) on first run, light/dark theme, status-bar and
-  bottom-safe-area insets;
+* **no bundled or seeded courses**: a fresh install shows an empty project list (0 projects)
+  until the user creates a project or imports an external .conlang; light/dark theme,
+  status-bar and bottom-safe-area insets;
 * project cards with pin/overflow menus, stat pills and updated time;
 * new project via `ForgeDialog`, pin/unpin reorders sections immediately, delete confirmation and
   an empty state when the last project is removed;
 * overflow → **组件目录（开发）** opens `CatalogActivity`; **关于** opens an about dialog;
 * tapping a project card opens a 学习/编辑 dialog; **学习** is a placeholder toast and
   **编辑** opens `ProjectStructureActivity`;
-* the list is loaded from the on-disk project folders, so create/delete/pin survive a cold
-  start; deleting the last project keeps an empty state (no reseeding);
+* the list is loaded only from the on-disk project folders, so create/delete/pin survive a cold
+  start; deleting the last project keeps an empty state and there is no reseeding at startup;
 * the bottom note and About dialog show the actual data directory.
 
 ## Parts of speech (POS)
@@ -317,6 +318,12 @@ Every vocabulary type has an optional **示例发音** section; audio is project
   `com.google.android.tts` temporarily disabled, the listen page showed “系统 TTS 不可用：未安装
   语音合成引擎” with a toast and no crash; the engine was re-enabled afterwards. Emulator audio is
   not audible in this headless environment, so audibility itself is still a real-device check.
+
+## Generic question audio
+
+Learning also has a generic question-audio control: any non-listen question with a non-empty
+`audio` gets a **播放题目音频** button and one auto-play per question (trim respected, logs
+`FORGE_LEARN questionAudio`). Listen keeps its existing audio-first/TTS-fallback behavior.
 
 ## Font management
 

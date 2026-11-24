@@ -78,6 +78,8 @@ public class LearningActivity extends ForgeActivity {
     private String listenAutoId = "";
     private ForgeButton listenPlayButton;
     private boolean listenPlaying;
+    private ForgeButton questionAudioButton;
+    private String questionAudioAutoId = "";
     private String listenTtsError = "";
     private TtsSupport tts;
     private final List<Integer> clozeFilled = new ArrayList<>();
@@ -383,6 +385,8 @@ public class LearningActivity extends ForgeActivity {
         listenAutoId = "";
         listenPlaying = false;
         listenPlayButton = null;
+        questionAudioButton = null;
+        questionAudioAutoId = "";
         confirmButton.setVisibility(View.GONE);
         confirmButton.setText("确认答案");
         if (explainView != null) explainView.setVisibility(View.GONE);
@@ -462,18 +466,38 @@ public class LearningActivity extends ForgeActivity {
         content.addView(text(item.hintsEnabled ? "点击带下划线的词查看提示" : "本题未启用学习提示",
                 12, R.color.forge_muted));
 
-        if (!item.audio.isEmpty()) {
-            Button playQuestion = new Button(this);
-            playQuestion.setAllCaps(false);
-            playQuestion.setText("播放整句音频");
-            playQuestion.setOnClickListener(v -> play(item.audio, item.audioStart, item.audioEnd));
-            content.addView(playQuestion);
-        }
-
         renderChoiceOptions(item);
     }
 
+    private void addQuestionAudio(ProjectStructure.Question item) {
+        if (item.audio == null || item.audio.isEmpty()) return;
+        File file = MediaFiles.resolveProjectFile(projectDirectory, item.audio);
+        if (file == null || !file.isFile()) {
+            content.addView(text("题目音频文件缺失：" + item.audio, 13, R.color.forge_warn));
+            return;
+        }
+        questionAudioButton = new ForgeButton(this);
+        questionAudioButton.setAllCaps(false);
+        questionAudioButton.setText("播放题目音频");
+        questionAudioButton.setOnClickListener(v -> {
+            android.util.Log.d("FORGE_LEARN", "questionAudio " + item.audio + " "
+                    + item.audioStart + ".." + item.audioEnd);
+            play(item.audio, item.audioStart, item.audioEnd);
+            questionAudioButton.setText("播放中…");
+        });
+        content.addView(questionAudioButton);
+        content.addView(text("题目音频（非 listen 通用，音频优先）", 12, R.color.forge_muted));
+        if (!questionAudioAutoId.equals(item.id)) {
+            questionAudioAutoId = item.id;
+            android.util.Log.d("FORGE_LEARN", "questionAudio " + item.audio + " "
+                    + item.audioStart + ".." + item.audioEnd);
+            play(item.audio, item.audioStart, item.audioEnd);
+            questionAudioButton.setText("播放中…");
+        }
+    }
+
     private void renderChoiceOptions(ProjectStructure.Question item) {
+        addQuestionAudio(item);
         content.addView(text("选项（选择后确认）", 14, R.color.forge_muted));
         for (int i = 0; i < item.options.size(); i++) {
             final int index = i;
@@ -574,6 +598,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void renderClozeQuestion(ProjectStructure.Question item) {
         content.removeAllViews();
+        addQuestionAudio(item);
         clozeFilled.clear();
         clozeBlankRows.clear();
         for (int i = 0; i < 9; i++) clozeFilled.add(-1);
@@ -861,6 +886,7 @@ public class LearningActivity extends ForgeActivity {
         }
         String mode = item.customMode == null || item.customMode.isEmpty()
                 ? "choice" : item.customMode;
+        if (!"choice".equals(mode)) addQuestionAudio(item);
         if ("none".equals(mode)) {
             confirmButton.setText(answered ? (isLastQuestion() ? "完成" : "下一题") : "继续");
             confirmButton.setVisibility(View.VISIBLE);
@@ -947,6 +973,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void renderReadingQuestion(ProjectStructure.Question item) {
         content.removeAllViews();
+        addQuestionAudio(item);
         SpannableString passage = styledVocabText(item.passage, item.hintsEnabled);
         TextView passageView = text(passage, 16, R.color.forge_text);
         passageView.setLineSpacing(dp(4), 1f);
@@ -1027,6 +1054,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void renderCardQuestion(ProjectStructure.Question item) {
         content.removeAllViews();
+        addQuestionAudio(item);
         content.addView(text("新知卡片", 14, R.color.forge_muted));
         VocabularyEntry entry = item.card.wordVocabId.isEmpty() ? null : findEntry(item.card.wordVocabId);
         if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
@@ -1198,6 +1226,8 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void renderTypeQuestion(ProjectStructure.Question item) {
+        content.removeAllViews();
+        addQuestionAudio(item);
         boolean structured = false;
         for (ProjectStructure.Question.OptionItem value : item.promptItems) {
             if ("vocab".equals(value.kind)) structured = true;
@@ -1287,6 +1317,7 @@ public class LearningActivity extends ForgeActivity {
             Collections.shuffle(matchRightOrder, new Random());
         }
         content.removeAllViews();
+        addQuestionAudio(item);
         if (!item.prompt.isEmpty()) content.addView(text(item.prompt, 20, R.color.forge_text));
         content.addView(text("已配对 " + matchMatched.size() + " / " + item.pairs.size(),
                 12, R.color.forge_muted));
@@ -1467,6 +1498,7 @@ public class LearningActivity extends ForgeActivity {
             Collections.shuffle(arrangePool);
         }
         content.removeAllViews();
+        addQuestionAudio(item);
         content.addView(text(item.prompt == null || item.prompt.isEmpty()
                 ? "词块组句" : item.prompt, 20, R.color.forge_text));
         content.addView(text("按正确顺序点击词块", 12, R.color.forge_muted));
@@ -2080,6 +2112,7 @@ public class LearningActivity extends ForgeActivity {
         if (tts != null) tts.stop();
         listenPlaying = false;
         if (listenPlayButton != null) listenPlayButton.setText("重新播放");
+        if (questionAudioButton != null) questionAudioButton.setText("播放题目音频");
         if (player != null) {
             try { player.stop(); } catch (Exception ignored) { }
             player.release();

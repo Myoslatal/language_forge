@@ -4,8 +4,8 @@ Source: `NostongueForge_v1.3.1.html` (unchanged).
 Generator: `tools/migrate_html_project.py` (reads the HTML, idempotent).
 Outputs:
 
-- `migration/Nortu-Intro-html.conlang` — importable ZIP (project files at ZIP root).
-- `migration/generated/Nortu-Intro-html/` — generated project directory used for verification.
+- `/home/forin/language-forge-imports/Nortu-Intro-html.conlang` — importable ZIP (project files at ZIP root; external, not in the repository).
+- `/home/forin/language-forge-imports/Nortu-Intro-html/` — generated project directory used for verification.
 
 ## What was migrated
 
@@ -51,7 +51,7 @@ python3 tools/migrate_html_project.py
 
 ## Verification (this session)
 
-- Desktop: imported `migration/Nortu-Intro-html.conlang` via 项目库 → 导入 .conlang; project showed
+- Desktop: imported `/home/forin/language-forge-imports/Nortu-Intro-html.conlang` via 项目库 → 导入 .conlang; project showed
   `1 章 · 1 关 · 10 题 · 7 词`; learning opened question 1 directly and rendered all ten types in order
   (choice, arrange, match, type, card, listen with working audio, dialog, reading with token hints,
   cloze, custom) and reached the course-complete page.
@@ -62,7 +62,7 @@ python3 tools/migrate_html_project.py
 - Android: imported the same `.conlang` from Downloads; project list shows the imported project and
   learning opens question 1 with the vocabulary hint underline and options.
   Screenshot: `/tmp/android-imp-list.png`, `/tmp/android-imp-learning.png`.
-- Counts cross-check: `migration/generated/Nortu-Intro-html/project.json` (`questions=10`, `words=7`,
+- Counts cross-check: `/home/forin/language-forge-imports/Nortu-Intro-html/project.json` (`questions=10`, `words=7`,
   `ttsLang="en-US"`), `structure.json` has 1 course with 10 questions (all with `tts`/`ttsLang`;
   listen has `tts="et"`, `ttsLang="en-US"`), `audios.json`/`fonts.json` each have one entry.
 - TTS follow-up (2026-11-24): desktop smoke imports this `.conlang`, verifies the migrated listen

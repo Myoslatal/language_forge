@@ -596,6 +596,8 @@ struct App {
   int questionCorrectIndex = -1;
   std::string learningCourseId;
   std::string learningQuestionId;
+  std::string learningQuestionRenderedId;
+  std::string questionAudioAutoId;
   std::string learningHintId;
   ImVec2 learningHintPos{0, 0};
   bool learningHintJustOpened = false;
@@ -2888,6 +2890,38 @@ struct App {
     return true;
   }
 
+  void drawLearningQuestionAudio(const Question& question) {
+    if (question.audio.empty()) return;
+    const fs::path path = audioAbsolute(question.audio);
+    const bool exists = fs::exists(path);
+    if (!exists) {
+      ImGui::TextColored(ImVec4(0.8f, 0.25f, 0.2f, 1), "题目音频文件缺失：%s",
+                         question.audio.c_str());
+      return;
+    }
+    if (questionAudioAutoId != question.id) {
+      questionAudioAutoId = question.id;
+      std::fprintf(stderr, "FORGE_LEARN questionAudio %s %lld..%lld\n",
+                   question.audio.c_str(), static_cast<long long>(question.audioStart),
+                   static_cast<long long>(question.audioEnd));
+      playAudioFile(question.audio, static_cast<int>(question.audioStart),
+                    static_cast<int>(question.audioEnd));
+    }
+    const bool playing = audioPlaying && playingAudioFile == question.audio;
+    ImGui::PushID(("##question_audio" + question.id).c_str());
+    if (ImGui::Button((playing ? "播放中…##question_audio_btn"
+                              : "播放题目音频##question_audio_btn"), ImVec2(160, 30))) {
+      std::fprintf(stderr, "FORGE_LEARN questionAudio %s %lld..%lld\n",
+                   question.audio.c_str(), static_cast<long long>(question.audioStart),
+                   static_cast<long long>(question.audioEnd));
+      playAudioFile(question.audio, static_cast<int>(question.audioStart),
+                    static_cast<int>(question.audioEnd));
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("题目音频（非 listen 通用，音频优先）");
+    ImGui::PopID();
+  }
+
   ListenPlayResult playListenAudio(const Question& question) {
     ListenPlayResult result;
     const fs::path audioPath = audioAbsolute(question.audio);
@@ -5008,6 +5042,11 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (app.learningQuestionRenderedId != question->id) {
+    app.learningQuestionRenderedId = question->id;
+    app.questionAudioAutoId.clear();
+    app.stopAudioPlayback();
+  }
   if (app.explainQuestionId != question->id) {
     app.explainQuestionId = question->id;
     app.learningWrongExplain = false;
@@ -5034,6 +5073,7 @@ void renderLearning(App& app) {
     }
     const std::string kind = question->customLabel.empty() ? "自定义题型" : question->customLabel;
     pageTitle("LEARN", kind, "自定义题型 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     if (!question->customBody.empty()) {
       ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.96f, 0.97f, 0.99f, 1));
       ImGui::BeginChild("##custom_body", ImVec2(-1, 120), true);
@@ -5259,6 +5299,7 @@ void renderLearning(App& app) {
       app.learningAnswered = false;
     }
     pageTitle("LEARN", question->name, "选词填空 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     app.ensureVocabularyLoaded();
     bool promptStructured = false;
     for (const auto& item : question->promptItems) {
@@ -5427,6 +5468,7 @@ void renderLearning(App& app) {
       app.typeLearnInput[0] = 0;
     }
     pageTitle("LEARN", question->name, "阅读短文 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     if (!question->passage.empty()) {
       ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.96f, 0.97f, 0.99f, 1));
       ImGui::BeginChild("##reading_passage", ImVec2(-1, 140), true);
@@ -5542,6 +5584,7 @@ void renderLearning(App& app) {
   if (question->type == "card") {
     app.ensureVocabularyLoaded();
     pageTitle("LEARN", "新知卡片", "新知卡片 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     bool hasImage = false;
     if (!question->card.wordVocabId.empty() && app.vocabulary) {
       for (const auto& entry : app.vocabulary->entries) {
@@ -5593,6 +5636,7 @@ void renderLearning(App& app) {
     app.ensureVocabularyLoaded();
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "选择对话 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     for (std::size_t i = 0; i < question->lines.size(); ++i) {
       const auto& line = question->lines[i];
       if (line.who.empty() && line.text.empty()) continue;
@@ -5754,6 +5798,7 @@ void renderLearning(App& app) {
       return prev[b.size()];
     };
     pageTitle("LEARN", question->prompt, "输入翻译 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     bool promptStructured = false;
     for (const auto& item : question->promptItems) if (item.kind == "vocab") promptStructured = true;
     if (promptStructured) {
@@ -5862,6 +5907,7 @@ void renderLearning(App& app) {
     }
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "配对 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     ImGui::TextDisabled("已配对 %zu / %zu", app.matchMatched.size(), question->pairs.size());
     ImGui::BeginChild("##match_left", ImVec2(ImGui::GetWindowWidth() / 2 - 8, 260), true);
     for (int index : app.matchLeftOrder) {
@@ -5986,6 +6032,7 @@ void renderLearning(App& app) {
     }
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "词块组句 · " + course->name);
+    app.drawLearningQuestionAudio(*question);
     auto answerText = [](const std::vector<QuestionBlock>& blocks) {
       std::string value;
       for (const auto& block : blocks) {
@@ -6098,6 +6145,7 @@ void renderLearning(App& app) {
     return;
   }
   pageTitle("LEARN", question->name, "选择正确翻译 · " + course->name);
+  app.drawLearningQuestionAudio(*question);
   app.ensureVocabularyLoaded();
   PosStore posStore(app.currentProjectDirectory());
   bool wordClickedThisFrame = false;
@@ -7786,11 +7834,15 @@ int runSmoke(App& app, const fs::path& outputDir) {
   }
 
   {
-    std::vector<fs::path> conlangCandidates = {
-        fs::path("migration") / "Nortu-Intro-html.conlang",
-        fs::path("..") / "migration" / "Nortu-Intro-html.conlang",
-        fs::current_path() / "migration" / "Nortu-Intro-html.conlang",
-    };
+    std::vector<fs::path> conlangCandidates;
+    if (const char* externalDir = std::getenv("FORGE_MIGRATION_OUT")) {
+      conlangCandidates.push_back(fs::path(externalDir) / "Nortu-Intro-html.conlang");
+    }
+    conlangCandidates.push_back(fs::path("/home/forin/language-forge-imports") /
+                                 "Nortu-Intro-html.conlang");
+    conlangCandidates.push_back(fs::path("migration") / "Nortu-Intro-html.conlang");
+    conlangCandidates.push_back(fs::path("..") / "migration" / "Nortu-Intro-html.conlang");
+    conlangCandidates.push_back(fs::current_path() / "migration" / "Nortu-Intro-html.conlang");
     fs::path conlang;
     for (const auto& candidate : conlangCandidates) {
       if (fs::exists(candidate)) { conlang = candidate; break; }

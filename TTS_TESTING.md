@@ -15,7 +15,7 @@ HTML 参考：NostongueForge_v1.3.1.html（未修改，sha256
 - 学习 listen 的解析顺序：`question.ttsLang` → 项目 `ttsLang` → `en-US`；
   朗读文本：`question.tts`（空则 `prompt`）。rate = 0.85（桌面 espeak-ng 换算 149 wpm）。
 - 迁移脚本把 HTML 的 `q.tts`、`q.ttsLang` 和 `course.ttsLang` 写入迁移项目；重新生成的
-  `migration/Nortu-Intro-html.conlang` 中 10 道题均带 `tts`/`ttsLang` 键，listen 题为
+  `/home/forin/language-forge-imports/Nortu-Intro-html.conlang` 中 10 道题均带 `tts`/`ttsLang` 键，listen 题为
   `tts="et"`、`ttsLang="en-US"`，项目 `ttsLang="en-US"`；原有 `listen_et.wav` 保留。
 
 ### 桌面（SDL2 + ImGui + espeak-ng）
@@ -293,5 +293,5 @@ synthesizeToFile 成功 / speak 的 onStart 被回调 / UI 与 JSON 正确”，
 - Android TTS：`android/.../TtsSupport.java`、`LearningActivity.java`、
   `QuestionEditorActivity.java`、`VocabularyEditorActivity.java`、
   `res/layout/activity_vocabulary_editor.xml`、`AndroidManifest.xml`。
-- 迁移：`tools/migrate_html_project.py`、`migration/generated/Nortu-Intro-html/`、
-  `migration/Nortu-Intro-html.conlang`、`migration/HTML_MIGRATION.md`。
+- 迁移：`tools/migrate_html_project.py`、`/home/forin/language-forge-imports/Nortu-Intro-html/`、
+  `/home/forin/language-forge-imports/Nortu-Intro-html.conlang`、`migration/HTML_MIGRATION.md`。

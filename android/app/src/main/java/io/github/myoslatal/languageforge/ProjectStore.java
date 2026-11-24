@@ -25,7 +25,6 @@ final class ProjectStore {
     private static final String TAG = "ProjectStore";
     private static final String ROOT_NAME = "projects";
     private static final String JSON_NAME = "project.json";
-    private static final String SEEDED_MARKER = ".seeded";
     private static final int SCHEMA = 1;
 
     private final File root;
@@ -128,45 +127,9 @@ final class ProjectStore {
         if (!root.isDirectory()) {
             return false;
         }
-        File marker = new File(root, SEEDED_MARKER);
-        if (marker.exists()) {
-            return true;
-        }
-        if (hasProjectFolders()) {
-            markSeeded(marker);
-            return true;
-        }
-        boolean seeded = seedSamples();
-        if (seeded || hasProjectFolders()) {
-            markSeeded(marker);
-        }
+        // No bundled sample courses: a fresh install starts with an empty project list.
+        // Projects only appear after the user creates one or imports a .conlang file.
         return true;
-    }
-
-    private boolean seedSamples() {
-        long now = System.currentTimeMillis();
-        Sample[] samples = {
-                new Sample("Nortu 自由语 · 入门", "Nortu 自由语 · art-nortu",
-                        10, 86, 5314, "2 小时前", true),
-                new Sample("Nortu 自由语 · 日常会话", "Nortu 自由语 · art-nortu",
-                        8, 64, 0, "2 天前", true),
-                new Sample("Lektio 古典语 · 语法篇", "Lektio 古典语 · lek-classic",
-                        12, 90, 0, "3 天前", false),
-                new Sample("Nortu 词汇实验", "Nortu 自由语 · art-nortu",
-                        4, 28, 0, "上周", false),
-                new Sample("未命名项目", "—", 0, 0, 0, "8 月 30 日", false)
-        };
-        boolean all = true;
-        for (int i = 0; i < samples.length; i++) {
-            Sample sample = samples[i];
-            Project project = createProjectInternal(sample.name, sample.courseLine,
-                    sample.lessons, sample.questions, sample.words, sample.updated,
-                    now - i * 60_000L, sample.pinned);
-            if (project == null) {
-                all = false;
-            }
-        }
-        return all;
     }
 
     private Project createProjectInternal(String name, String courseLine, int lessons,
@@ -265,27 +228,6 @@ final class ProjectStore {
         }
     }
 
-    private boolean hasProjectFolders() {
-        File[] children = root.listFiles();
-        if (children == null) {
-            return false;
-        }
-        for (File child : children) {
-            if (child.isDirectory() && new File(child, JSON_NAME).isFile()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void markSeeded(File marker) {
-        try (FileOutputStream ignored = new FileOutputStream(marker)) {
-            // Marker content is intentionally empty.
-        } catch (IOException e) {
-            Log.w(TAG, "Could not write " + marker, e);
-        }
-    }
-
     private boolean isProjectDirectory(File directory) {
         if (root == null || directory == null || !directory.isDirectory()) {
             return false;
@@ -341,24 +283,4 @@ final class ProjectStore {
         }
     }
 
-    private static final class Sample {
-        final String name;
-        final String courseLine;
-        final int lessons;
-        final int questions;
-        final int words;
-        final String updated;
-        final boolean pinned;
-
-        Sample(String name, String courseLine, int lessons, int questions, int words,
-               String updated, boolean pinned) {
-            this.name = name;
-            this.courseLine = courseLine;
-            this.lessons = lessons;
-            this.questions = questions;
-            this.words = words;
-            this.updated = updated;
-            this.pinned = pinned;
-        }
-    }
 }
