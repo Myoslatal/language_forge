@@ -19,6 +19,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
@@ -411,38 +412,47 @@ public class LearningActivity extends ForgeActivity {
         content.removeAllViews();
         if (ProjectStructure.Question.TYPE_CLOZE.equals(item.type)) {
             renderClozeQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_CUSTOM.equals(item.type)) {
             renderCustomQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_READING.equals(item.type)) {
             renderReadingQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_CARD.equals(item.type)) {
             renderCardQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_LISTEN.equals(item.type)) {
             renderListenQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_TYPE.equals(item.type)) {
             renderTypeQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_MATCH.equals(item.type)) {
             renderMatchQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_ARRANGE.equals(item.type)) {
             renderArrangeQuestion(item);
+            addQuestionImage(item);
             return;
         }
         if (ProjectStructure.Question.TYPE_DIALOG.equals(item.type)) {
             renderDialogQuestion(item);
+            addQuestionImage(item);
             return;
         }
 
@@ -467,6 +477,30 @@ public class LearningActivity extends ForgeActivity {
                 12, R.color.forge_muted));
 
         renderChoiceOptions(item);
+        addQuestionImage(item);
+    }
+
+    private void addQuestionImage(ProjectStructure.Question item) {
+        if (item.image == null || item.image.isEmpty() || content == null) return;
+        LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setGravity(Gravity.CENTER_HORIZONTAL);
+        holder.setPadding(0, dp(4), 0, dp(8));
+        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, item.image);
+        if (bitmap == null) {
+            holder.addView(text("〔题目图片缺失〕", 13, R.color.forge_warn));
+        } else {
+            float scale = Math.min(1f, (float) dp(330) / Math.max(1, bitmap.getHeight()));
+            int h = Math.max(1, Math.round(bitmap.getHeight() * scale));
+            int maxWidth = Math.max(dp(60), getResources().getDisplayMetrics().widthPixels - dp(64));
+            int w = Math.min(maxWidth, Math.max(1, Math.round(bitmap.getWidth() * scale)));
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(bitmap);
+            image.setAdjustViewBounds(true);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            holder.addView(image, new LinearLayout.LayoutParams(w, h));
+        }
+        content.addView(holder, 0);
     }
 
     private void addQuestionAudio(ProjectStructure.Question item) {

@@ -73,6 +73,28 @@
             android:paddingEnd="16dp"
             android:paddingBottom="32dp">
 
+            <LinearLayout
+                android:id="@+id/question_image_section"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Forge.Text.SectionTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="题目图片" />
+
+                <LinearLayout
+                    android:id="@+id/question_image_bar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </LinearLayout>
+
             <TextView
                 style="@style/Forge.Text.SectionTitle"
                 android:layout_width="wrap_content"

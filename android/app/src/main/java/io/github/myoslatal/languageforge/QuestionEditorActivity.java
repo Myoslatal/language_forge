@@ -144,6 +144,8 @@ public class QuestionEditorActivity extends ForgeActivity {
     private int choiceOptionPickIndex = -1;
     private int pendingOptionImageIndex = -1;
     private boolean pendingOptionImageListen;
+    private String questionImage = "";
+    private ImageControl questionImageControl;
 
     private static final class ImageControl {
         LinearLayout bar;
@@ -258,6 +260,8 @@ public class QuestionEditorActivity extends ForgeActivity {
                 : ProjectStructure.Question.TYPE_CLOZE.equals(question.type) ? 8
                 : ProjectStructure.Question.TYPE_CUSTOM.equals(question.type) ? 9 : 0);
         scrollContent.addView(typeSpinner, 0);
+        questionImage = question.image == null ? "" : question.image;
+        setupQuestionImageControl();
         arrangeSection = new LinearLayout(this);
         arrangeSection.setOrientation(LinearLayout.VERTICAL);
         arrangeSection.setVisibility(View.GONE);
@@ -1996,6 +2000,113 @@ public class QuestionEditorActivity extends ForgeActivity {
                 choiceOptionPickIndex = -1;
             });
 
+    private void setupQuestionImageControl() {
+        LinearLayout bar = findViewById(R.id.question_image_bar);
+        if (bar == null) return;
+        bar.removeAllViews();
+        ImageControl control = new ImageControl();
+        ForgeButton choose = new ForgeButton(this);
+        choose.setAllCaps(false);
+        choose.setOnClickListener(v -> openQuestionImagePicker());
+        bar.addView(choose);
+        ImageView thumb = new ImageView(this);
+        thumb.setAdjustViewBounds(true);
+        thumb.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(dp(96), dp(64));
+        thumbLp.setMargins(dp(6), 0, dp(6), 0);
+        bar.addView(thumb, thumbLp);
+        TextView missing = new TextView(this);
+        missing.setText("〔题目图片缺失〕");
+        missing.setTextColor(getColor(R.color.forge_warn));
+        missing.setTextSize(12f);
+        bar.addView(missing);
+        ForgeButton remove = new ForgeButton(this);
+        remove.setAllCaps(false);
+        remove.setText("移除图");
+        remove.setOnClickListener(v -> {
+            questionImage = "";
+            renderQuestionImageControl();
+            dirty = true;
+        });
+        bar.addView(remove);
+        control.bar = bar;
+        control.choose = choose;
+        control.thumb = thumb;
+        control.missing = missing;
+        control.remove = remove;
+        questionImageControl = control;
+        renderQuestionImageControl();
+    }
+
+    private void renderQuestionImageControl() {
+        ImageControl control = questionImageControl;
+        if (control == null) return;
+        boolean has = questionImage != null && !questionImage.isEmpty();
+        control.choose.setText(has ? "更换图" : "附图");
+        control.thumb.setVisibility(has ? View.VISIBLE : View.GONE);
+        control.remove.setVisibility(has ? View.VISIBLE : View.GONE);
+        control.thumb.setImageDrawable(null);
+        if (!has) {
+            control.missing.setVisibility(View.GONE);
+            return;
+        }
+        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, questionImage);
+        if (bitmap == null) {
+            control.missing.setVisibility(View.VISIBLE);
+        } else {
+            control.missing.setVisibility(View.GONE);
+            control.thumb.setImageBitmap(bitmap);
+        }
+    }
+
+    private void openQuestionImagePicker() {
+        Intent intent = new Intent(this, ImageManagementActivity.class);
+        intent.putExtra(ImageManagementActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(ImageManagementActivity.EXTRA_COURSE_ID, courseId);
+        intent.putExtra(ImageManagementActivity.EXTRA_COURSE_NAME, course.name);
+        intent.putExtra(ImageManagementActivity.EXTRA_SELECT_MODE, true);
+        questionImageLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> questionImageLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                String path = result.getData().getStringExtra(
+                        ImageManagementActivity.EXTRA_SELECTED_IMAGE);
+                if (path == null || path.isEmpty()) return;
+                if (!CourseResourcePaths.isCourseImagePath(projectDirectory, courseId, path)) {
+                    toast("只能选择本课程题目图片");
+                    return;
+                }
+                questionImage = path;
+                renderQuestionImageControl();
+                dirty = true;
+            });
+
+    private void ensureQuestionImageScoped() {
+        if (questionImage == null || questionImage.isEmpty()) return;
+        ImageStore store = new ImageStore(projectDirectory, courseId);
+        if (CourseResourcePaths.isCourseImagePath(projectDirectory, courseId, questionImage)) {
+            File existing = MediaFiles.resolveProjectFile(projectDirectory, questionImage);
+            if (existing != null && existing.isFile()) store.registerFile(existing);
+            return;
+        }
+        File source = MediaFiles.resolveProjectFile(projectDirectory, questionImage);
+        if (source == null || !source.isFile()) return;
+        try {
+            File copied = CourseResourcePaths.copyImageToCourse(projectDirectory, courseId,
+                    source, question.id);
+            String scoped = MediaFiles.relativePath(projectDirectory, copied);
+            if (scoped != null) {
+                questionImage = scoped;
+                store.registerFile(copied);
+            }
+        } catch (Exception e) {
+            toast("无法复制到课程图片目录");
+        }
+    }
+
     private void openOptionImagePicker(int index, boolean listen) {
         if (index < 0 || index >= 4) return;
         pendingOptionImageIndex = index;
@@ -2693,14 +2804,18 @@ public class QuestionEditorActivity extends ForgeActivity {
 
     private void saveReading() {
         String passage = readingPassage.getText() == null ? "" : readingPassage.getText().toString().trim();
-        if (passage.isEmpty()) { toast("请填写短文正文"); return; }
+        if (passage.isEmpty() && (questionImage == null || questionImage.isEmpty())) {
+            toast("请填写短文正文，或添加题目图片");
+            return;
+        }
         String prompt = readingPrompt.getText() == null ? "" : readingPrompt.getText().toString().trim();
         question.type = ProjectStructure.Question.TYPE_READING;
         question.passage = passage;
         question.answerMode = readingMode.getSelectedItemPosition() == 1 ? "type" : "choice";
         question.prompt = prompt;
         question.name = prompt.isEmpty()
-                ? (passage.length() > 40 ? passage.substring(0, 40) : passage) : prompt;
+                ? (passage.isEmpty() ? "题目图片"
+                : (passage.length() > 40 ? passage.substring(0, 40) : passage)) : prompt;
         question.hintsEnabled = true;
         question.optionItems.clear();
         if ("type".equals(question.answerMode)) {
@@ -2767,7 +2882,10 @@ public class QuestionEditorActivity extends ForgeActivity {
             lines.add(value);
             if (!text.isEmpty()) hasLineText = true;
         }
-        if (!hasLineText) { toast("对话里至少需要一句台词"); return; }
+        if (!hasLineText && (questionImage == null || questionImage.isEmpty())) {
+            toast("对话里至少需要一句台词，或添加题目图片");
+            return;
+        }
         List<String> options = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             ForgeTextField field = optionFields[i];
@@ -2828,7 +2946,11 @@ public class QuestionEditorActivity extends ForgeActivity {
     private void saveCard() {
         String word = cardWord.getText().toString().trim();
         String def = cardDef.getText().toString().trim();
-        if (word.isEmpty() && def.isEmpty()) { toast("词形或释义至少填写一个"); return; }
+        if (word.isEmpty() && def.isEmpty()
+                && (questionImage == null || questionImage.isEmpty())) {
+            toast("词形、释义或题目图片至少填写一个");
+            return;
+        }
         question.type = ProjectStructure.Question.TYPE_CARD;
         VocabularyEntry wordEntry = question.card.wordVocabId.isEmpty()
                 ? null : findEntry(question.card.wordVocabId);
@@ -2841,7 +2963,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.card.def = def; question.card.detail = cardDetail.getText().toString();
         question.card.examples.clear();
         for (ProjectStructure.Question.CardExample ex : editExamples) question.card.examples.add(ex);
-        question.name = word + " · " + def;
+        question.name = word.isEmpty() && def.isEmpty() ? "题目图片" : word + " · " + def;
         question.hintsEnabled = false;
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
@@ -3162,7 +3284,9 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        question.image = questionImage == null ? "" : questionImage;
         ensureOptionImagesScoped();
+        ensureQuestionImageScoped();
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 6) {
             saveDialog();
             return;
@@ -3213,8 +3337,8 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
             options.add(value);
         }
-        if (parts.isEmpty()) {
-            toast("请至少选择一个词汇组成句子");
+        if (parts.isEmpty() && (questionImage == null || questionImage.isEmpty())) {
+            toast("请至少选择一个词汇组成句子，或添加题目图片");
             return;
         }
         int correct = -1;

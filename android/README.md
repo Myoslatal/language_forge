@@ -173,7 +173,10 @@ the global vocabulary-image card. The course audio screen uses
 protection all stay inside the course directory. Question recordings/TTS/selected vocabulary
 audio are copied into the course scope on save.
 
-Choice-like questions (choice, listen, dialog, reading-choice and custom-choice) can attach a
+Every question can attach a course question image (`Question.image`), shown above the other
+content for all types and bounded to roughly 330dp. The editor offers choose/import/remove and
+reuses the same course image pool (and delete protection) as option images. Choice-like
+questions (choice, listen, dialog, reading-choice and custom-choice) can additionally attach a
 course question image to each option (`optionItems[i][0].image`). The editor opens a course
 image picker with "导入新图片"; the selected image is shown above the option text and an
 image-only option is valid. Cloze has no image entry or image rendering. Legacy image paths

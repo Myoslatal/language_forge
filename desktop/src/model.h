@@ -75,6 +75,7 @@ struct Question {
   std::vector<std::string> parts;
   std::vector<QuestionSegment> segments;
   std::string sentence;
+  std::string image;
   std::string audio;
   long long audioDuration = 0;
   long long audioStart = 0;

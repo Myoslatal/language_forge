@@ -168,6 +168,9 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   global, each question audio/image moves to its course (with a copy when a vocabulary shares
   the file), updates the manifests and is idempotent. See
   [RESOURCE_SCOPE_TESTING.md](../RESOURCE_SCOPE_TESTING.md).
+- Every question can carry a course question image (`Question.image`), rendered above all
+  other content (max ~330px) for every type; the editor can choose/import/remove it from the
+  same course image pool as option images.
 - Choice-like questions (choice, listen, dialog, reading-choice, custom-choice) can attach a
   course question image to an option. The editor's "附图" opens a course-only picker with
   "导入新图片"; image-only options are valid and the image renders above the option text.

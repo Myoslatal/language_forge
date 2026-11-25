@@ -95,6 +95,7 @@ final class ProjectStructure {
                                         String type = questionObject.optString("type", "").trim();
                                         if (!type.isEmpty()) question.type = type;
                                         question.sentence = questionObject.optString("sentence", "");
+                                        question.image = questionObject.optString("image", "");
                                         question.audio = questionObject.optString("audio", "");
                                         question.audioDuration =
                                                 Math.max(0, questionObject.optLong("audioDuration", 0));
@@ -403,6 +404,7 @@ final class ProjectStructure {
                             for (String part : question.parts) parts.put(part);
                             questionObject.put("parts", parts);
                             questionObject.put("sentence", question.sentence);
+                            questionObject.put("image", question.image == null ? "" : question.image);
                             questionObject.put("audio", question.audio);
                             questionObject.put("audioDuration", question.audioDuration);
                             questionObject.put("tts", question.tts == null ? "" : question.tts);
@@ -737,6 +739,8 @@ final class ProjectStructure {
         static final String TYPE_CLOZE = "cloze";
         static final String TYPE_CUSTOM = "custom";
         static final String TYPE_DIALOG = "dialog";
+
+        String image = "";
 
         static final class CardExample {
             String l = "";

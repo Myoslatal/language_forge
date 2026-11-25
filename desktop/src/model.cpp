@@ -235,6 +235,7 @@ json structureToJson(const Structure& structure) {
                                {"parts", question.parts},
                                {"segments", segmentsToJson(question.segments)},
                                {"sentence", question.sentence},
+                               {"image", question.image},
                                {"audio", question.audio},
                                {"audioDuration", question.audioDuration},
                                {"audioStart", question.audioStart},
@@ -327,6 +328,7 @@ Structure structureFromJson(const json& value) {
                 question.name = questionValue.value("name", "未命名题目");
                 question.type = questionValue.value("type", "translation_choice");
                 question.sentence = questionValue.value("sentence", "");
+                question.image = questionValue.value("image", "");
                 question.audio = questionValue.value("audio", "");
                 question.audioDuration = questionValue.value("audioDuration", 0LL);
                 question.audioStart = questionValue.value("audioStart", 0LL);

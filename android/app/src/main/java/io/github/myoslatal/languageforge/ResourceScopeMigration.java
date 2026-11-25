@@ -119,13 +119,9 @@ final class ResourceScopeMigration {
             Map<String, String> sourceTargets = new HashMap<>();
             for (int qi = 0; qi < course.questions.length(); qi++) {
                 JSONObject question = course.questions.optJSONObject(qi);
-                if (question == null) {
-                    continue;
-                }
+                if (question == null) continue;
                 String oldPath = clean(question.optString("audio", ""));
-                if (oldPath.isEmpty()) {
-                    continue;
-                }
+                if (oldPath.isEmpty()) continue;
                 questionSources.add(oldPath);
                 File source = MediaFiles.resolveProjectFile(projectDirectory, oldPath);
                 if (source == null || !source.isFile()) {
@@ -133,47 +129,48 @@ final class ResourceScopeMigration {
                     Log.w(TAG, "missing question audio: " + oldPath);
                     continue;
                 }
-                String targetPath = sourceTargets.get(oldPath);
-                if (targetPath == null) {
-                    if (CourseResourcePaths.isCourseAudioPath(projectDirectory, course.id,
-                            oldPath)) {
-                        targetPath = oldPath;
+                String target = sourceTargets.get(oldPath);
+                if (target == null) {
+                    if (CourseResourcePaths.isCourseAudioPath(projectDirectory, course.id, oldPath)) {
+                        target = oldPath;
                     } else {
-                        targetPath = copyQuestionAudio(projectDirectory, course.id, oldPath,
-                                source, result);
+                        target = copyQuestionAudio(projectDirectory, course.id, oldPath, source,
+                                result);
                     }
-                    if (targetPath == null) {
+                    if (target == null) {
                         result.missingFiles++;
                         continue;
                     }
-                    sourceTargets.put(oldPath, targetPath);
+                    sourceTargets.put(oldPath, target);
                 }
-                targetPaths.add(targetPath);
-                if (!oldPath.equals(targetPath)) {
+                targetPaths.add(target);
+                if (!oldPath.equals(target)) {
                     try {
-                        question.put("audio", targetPath);
+                        question.put("audio", target);
+                        structureChanged = true;
+                        result.movedQuestions++;
                     } catch (org.json.JSONException e) {
                         Log.w(TAG, "could not rewrite question audio", e);
                         continue;
                     }
-                    structureChanged = true;
-                    result.movedQuestions++;
                 }
-                JSONObject globalEntry = globalAudioByFile.get(oldPath);
-                if (manifestByFile.get(targetPath) == null) {
-                    JSONObject entry = makeCourseEntry(course.id, targetPath, globalEntry);
-                    manifestArray.put(entry);
-                    manifestByFile.put(targetPath, entry);
-                    courseChanged = true;
+                if (manifestByFile.get(target) == null) {
+                    JSONObject entry = makeCourseEntry(course.id, target,
+                            globalAudioByFile.get(oldPath));
+                    if (entry != null) {
+                        manifestArray.put(entry);
+                        manifestByFile.put(target, entry);
+                        courseChanged = true;
+                    }
                 }
             }
-            if (courseChanged || manifestArray.length() > 0) {
+            if (courseChanged) {
                 JSONObject root = new JSONObject();
                 try {
                     root.put("schema", SCHEMA);
                     root.put("audios", manifestArray);
                 } catch (org.json.JSONException e) {
-                    Log.w(TAG, "could not build course manifest", e);
+                    Log.w(TAG, "could not build course audio manifest", e);
                     continue;
                 }
                 if (!writeObjectAtomic(manifestFile, root)) {
@@ -192,57 +189,64 @@ final class ResourceScopeMigration {
             for (int qi = 0; qi < course.questions.length(); qi++) {
                 JSONObject question = course.questions.optJSONObject(qi);
                 if (question == null) continue;
+                List<JSONObject> imageOwners = new ArrayList<>();
+                if (!clean(question.optString("image", "")).isEmpty()) {
+                    imageOwners.add(question);
+                }
                 JSONArray optionItems = question.optJSONArray("optionItems");
-                if (optionItems == null) continue;
-                for (int oi = 0; oi < optionItems.length(); oi++) {
-                    JSONArray group = optionItems.optJSONArray(oi);
-                    if (group == null) continue;
-                    for (int ii = 0; ii < group.length(); ii++) {
-                        JSONObject item = group.optJSONObject(ii);
-                        if (item == null) continue;
-                        String oldImage = clean(item.optString("image", ""));
-                        if (oldImage.isEmpty()) continue;
-                        questionImageSources.add(oldImage);
-                        File source = MediaFiles.resolveProjectFile(projectDirectory, oldImage);
-                        if (source == null || !source.isFile()) {
+                if (optionItems != null) {
+                    for (int oi = 0; oi < optionItems.length(); oi++) {
+                        JSONArray group = optionItems.optJSONArray(oi);
+                        if (group == null) continue;
+                        for (int ii = 0; ii < group.length(); ii++) {
+                            JSONObject item = group.optJSONObject(ii);
+                            if (item != null) imageOwners.add(item);
+                        }
+                    }
+                }
+                for (JSONObject owner : imageOwners) {
+                    String oldImage = clean(owner.optString("image", ""));
+                    if (oldImage.isEmpty()) continue;
+                    questionImageSources.add(oldImage);
+                    File source = MediaFiles.resolveProjectFile(projectDirectory, oldImage);
+                    if (source == null || !source.isFile()) {
+                        result.missingFiles++;
+                        Log.w(TAG, "missing question image: " + oldImage);
+                        continue;
+                    }
+                    String targetImage = imageSourceTargets.get(oldImage);
+                    if (targetImage == null) {
+                        if (CourseResourcePaths.isCourseImagePath(projectDirectory,
+                                course.id, oldImage)) {
+                            targetImage = oldImage;
+                        } else {
+                            targetImage = copyQuestionImage(projectDirectory, course.id,
+                                    oldImage, source, result);
+                        }
+                        if (targetImage == null) {
                             result.missingFiles++;
-                            Log.w(TAG, "missing question image: " + oldImage);
                             continue;
                         }
-                        String targetImage = imageSourceTargets.get(oldImage);
-                        if (targetImage == null) {
-                            if (CourseResourcePaths.isCourseImagePath(projectDirectory,
-                                    course.id, oldImage)) {
-                                targetImage = oldImage;
-                            } else {
-                                targetImage = copyQuestionImage(projectDirectory, course.id,
-                                        oldImage, source, result);
-                            }
-                            if (targetImage == null) {
-                                result.missingFiles++;
-                                continue;
-                            }
-                            imageSourceTargets.put(oldImage, targetImage);
+                        imageSourceTargets.put(oldImage, targetImage);
+                    }
+                    imageTargetPaths.add(targetImage);
+                    if (!oldImage.equals(targetImage)) {
+                        try {
+                            owner.put("image", targetImage);
+                            structureChanged = true;
+                            result.movedImages++;
+                        } catch (org.json.JSONException e) {
+                            Log.w(TAG, "could not rewrite question image", e);
+                            continue;
                         }
-                        imageTargetPaths.add(targetImage);
-                        if (!oldImage.equals(targetImage)) {
-                            try {
-                                item.put("image", targetImage);
-                                structureChanged = true;
-                                result.movedImages++;
-                            } catch (org.json.JSONException e) {
-                                Log.w(TAG, "could not rewrite option image", e);
-                                continue;
-                            }
-                        }
-                        if (imageManifestByFile.get(targetImage) == null) {
-                            JSONObject entry = makeCourseImageEntry(course.id, targetImage,
-                                    globalImageByFile.get(oldImage), projectDirectory);
-                            if (entry != null) {
-                                imageManifestArray.put(entry);
-                                imageManifestByFile.put(targetImage, entry);
-                                courseImagesChanged = true;
-                            }
+                    }
+                    if (imageManifestByFile.get(targetImage) == null) {
+                        JSONObject entry = makeCourseImageEntry(course.id, targetImage,
+                                globalImageByFile.get(oldImage), projectDirectory);
+                        if (entry != null) {
+                            imageManifestArray.put(entry);
+                            imageManifestByFile.put(targetImage, entry);
+                            courseImagesChanged = true;
                         }
                     }
                 }
@@ -616,6 +620,8 @@ final class ResourceScopeMigration {
             for (int i = 0; i < course.questions.length(); i++) {
                 JSONObject question = course.questions.optJSONObject(i);
                 if (question == null) continue;
+                String questionImage = clean(question.optString("image", ""));
+                if (!questionImage.isEmpty()) paths.add(questionImage);
                 JSONArray optionItems = question.optJSONArray("optionItems");
                 if (optionItems == null) continue;
                 for (int oi = 0; oi < optionItems.length(); oi++) {

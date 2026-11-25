@@ -378,6 +378,7 @@ struct App {
   bool optionImagePickerOpen = false;
   int optionImagePickerIndex = -1;
   bool optionImagePickerListen = false;
+  bool optionImagePickerForQuestion = false;
   bool optionImageImportPending = false;
   std::map<std::string, SDL_Texture*> imageTextures;
   std::unique_ptr<AudioStore> audioStore;
@@ -1503,6 +1504,7 @@ struct App {
     Course* course = selectedCourse();
     if (!course) return;
     ensureQuestionAudioScoped();
+    ensureQuestionImageScoped();
     ensureOptionImagesScoped();
     auto trim = [](std::string value) {
       auto notSpace = [](unsigned char c) { return !std::isspace(c); };
@@ -1521,7 +1523,9 @@ struct App {
         lines.push_back(line);
         if (!line.text.empty()) hasLineText = true;
       }
-      if (!hasLineText) { showToast("对话里至少需要一句台词"); return; }
+      if (!hasLineText && editQuestion.image.empty()) {
+        showToast("对话里至少需要一句台词，或添加题目图片"); return;
+      }
       editQuestion.lines = lines;
       editQuestion.options.clear();
       for (int i = 0; i < 4; ++i) {
@@ -1781,11 +1785,14 @@ struct App {
     }
     if (editQuestion.type == "reading") {
       editQuestion.passage = trim(readingPassageInput);
-      if (editQuestion.passage.empty()) { showToast("请填写短文正文"); return; }
+      if (editQuestion.passage.empty() && editQuestion.image.empty()) {
+        showToast("请填写短文正文，或添加题目图片"); return;
+      }
       editQuestion.answerMode = readingMode == 1 ? "type" : "choice";
       editQuestion.prompt = trim(readingPromptInput);
       editQuestion.name = editQuestion.prompt.empty()
-          ? editQuestion.passage.substr(0, 40) : editQuestion.prompt;
+          ? (editQuestion.passage.empty() ? "题目图片"
+             : editQuestion.passage.substr(0, 40)) : editQuestion.prompt;
       editQuestion.hintsEnabled = true;
       if (editQuestion.answerMode == "choice") {
         editQuestion.options.clear();
@@ -1853,10 +1860,12 @@ struct App {
           editQuestion.card.wordVocabId.clear();
         }
       }
-      if (editQuestion.card.word.empty() && editQuestion.card.def.empty()) {
-        showToast("词形或释义至少填写一个"); return;
+      if (editQuestion.card.word.empty() && editQuestion.card.def.empty()
+          && editQuestion.image.empty()) {
+        showToast("词形、释义或题目图片至少填写一个"); return;
       }
-      editQuestion.name = editQuestion.card.word + " · " + editQuestion.card.def;
+      editQuestion.name = editQuestion.card.word.empty() && editQuestion.card.def.empty()
+          ? "题目图片" : editQuestion.card.word + " · " + editQuestion.card.def;
       editQuestion.hintsEnabled = false;
       if (questionIsNew) { course->questions.push_back(editQuestion); questionIsNew = false; }
       else {
@@ -1995,7 +2004,9 @@ struct App {
       screen = Screen::Course;
       return;
     }
-    if (editQuestion.parts.empty()) { showToast("请至少选择一个词汇"); return; }
+    if (editQuestion.parts.empty() && editQuestion.image.empty()) {
+      showToast("请至少选择一个词汇，或添加题目图片"); return;
+    }
     for (int i = 0; i < 4; ++i) {
       if (!optionFilled(i, questionOptions[i])) {
         showToast("每个选项至少填写文字或附图");
@@ -2550,6 +2561,83 @@ struct App {
     }
   }
 
+  void drawQuestionImage(const Question& question) {
+    if (question.image.empty()) return;
+    SDL_Texture* texture = textureForImage(
+        renderer, imageAbsolute(question.image), imageTextures);
+    if (!texture) {
+      ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔题目图片缺失〕");
+      ImGui::Spacing();
+      return;
+    }
+    int width = 0;
+    int height = 0;
+    if (SDL_QueryTexture(texture, nullptr, nullptr, &width, &height) != 0 ||
+        width <= 0 || height <= 0) {
+      ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔题目图片缺失〕");
+      ImGui::Spacing();
+      return;
+    }
+    const float maxH = 330.0f;
+    const float maxW = std::max(80.0f, ImGui::GetWindowWidth() - 32.0f);
+    float scale = std::min(1.0f, std::min(maxH / height, maxW / width));
+    ImVec2 size(width * scale, height * scale);
+    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - size.x) * 0.5f);
+    ImGui::Image(reinterpret_cast<ImTextureID>(texture), size);
+    ImGui::Spacing();
+  }
+
+  void drawQuestionImageEditor() {
+    ImGui::TextUnformatted("题目图片（全题型）");
+    const std::string path = editQuestion.image;
+    if (!path.empty()) {
+      SDL_Texture* texture = textureForImage(renderer, imageAbsolute(path), imageTextures);
+      if (texture) {
+        ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(120, 78));
+        ImGui::SameLine();
+      } else {
+        ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔题目图片缺失〕");
+        ImGui::SameLine();
+      }
+    }
+    if (ImGui::Button(path.empty() ? "附图##question_image" : "更换图##question_image",
+                      ImVec2(90, 28))) {
+      openQuestionImagePicker();
+    }
+    if (!path.empty()) {
+      ImGui::SameLine();
+      if (ImGui::Button("移除图##question_image_clear", ImVec2(90, 28))) {
+        clearQuestionImage();
+      }
+    }
+  }
+
+  void setQuestionImage(const std::string& path) {
+    editQuestion.image = path;
+    questionDirty = true;
+  }
+
+  void clearQuestionImage() {
+    editQuestion.image.clear();
+    questionDirty = true;
+  }
+
+  void openQuestionImagePicker() {
+    ensureCourseImagesLoaded();
+    optionImagePickerForQuestion = true;
+    optionImagePickerIndex = -1;
+    optionImagePickerOpen = true;
+  }
+
+  void applyPickedImage(const std::string& file) {
+    if (optionImagePickerForQuestion) setQuestionImage(file);
+    else setOptionImage(optionImagePickerIndex, file);
+    optionImagePickerOpen = false;
+    optionImagePickerIndex = -1;
+    optionImagePickerForQuestion = false;
+    optionImageImportPending = false;
+  }
+
   void drawOptionImagePicker() {
     if (!optionImagePickerOpen) return;
     ensureCourseImagesLoaded();
@@ -2591,10 +2679,7 @@ struct App {
         ImGui::SameLine();
         ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 110);
         if (ImGui::Button("选择##option_image_select", ImVec2(90, 28))) {
-          setOptionImage(optionImagePickerIndex, image.file);
-          optionImagePickerOpen = false;
-          optionImagePickerIndex = -1;
-          optionImageImportPending = false;
+          applyPickedImage(image.file);
         }
         ImGui::Separator();
         ImGui::PopID();
@@ -2613,10 +2698,7 @@ struct App {
         ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 110);
         if (ImGui::Button("登记并选择##option_image_select_unregistered", ImVec2(120, 28))) {
           if (ImageEntry* registered = courseImageStore->registerFile(file)) {
-            setOptionImage(optionImagePickerIndex, registered->file);
-            optionImagePickerOpen = false;
-            optionImagePickerIndex = -1;
-            optionImageImportPending = false;
+            applyPickedImage(registered->file);
           }
         }
         ImGui::Separator();
@@ -2628,12 +2710,14 @@ struct App {
     if (ImGui::Button("关闭##option_image_close", ImVec2(90, 30))) {
       optionImagePickerOpen = false;
       optionImagePickerIndex = -1;
+      optionImagePickerForQuestion = false;
       optionImageImportPending = false;
       open = false;
     }
     ImGui::End();
     if (!open) {
       optionImagePickerOpen = false;
+      optionImagePickerForQuestion = false;
       optionImageImportPending = false;
     }
   }
@@ -2942,7 +3026,31 @@ struct App {
     if (index < 0 || index >= 4) return;
     ensureCourseImagesLoaded();
     optionImagePickerIndex = index;
+    optionImagePickerForQuestion = false;
     optionImagePickerOpen = true;
+  }
+
+  void ensureQuestionImageScoped() {
+    ensureCourseImagesLoaded();
+    if (!courseImageStore || editQuestion.image.empty()) return;
+    if (isCourseImagePath(currentProjectDirectory(), courseId, editQuestion.image)) {
+      const fs::path existing = imageAbsolute(editQuestion.image);
+      if (fs::is_regular_file(existing)) courseImageStore->registerFile(existing);
+      return;
+    }
+    const fs::path source = imageAbsolute(editQuestion.image);
+    if (!fs::is_regular_file(source)) return;
+    fs::path copied;
+    std::string error;
+    if (!copyImageToCourse(currentProjectDirectory(), courseId, source, editQuestion.id,
+                           copied, error)) {
+      showToast("无法复制到课程图片目录：" + error);
+      return;
+    }
+    const fs::path relative = copied.lexically_relative(currentProjectDirectory());
+    if (relative.empty()) return;
+    editQuestion.image = relative.generic_string();
+    courseImageStore->registerFile(copied);
   }
 
   void ensureOptionImagesScoped() {
@@ -3748,10 +3856,8 @@ struct App {
           browserError = error;
           return;
         }
-        setOptionImage(optionImagePickerIndex, imported.file);
-        optionImagePickerOpen = false;
-        optionImagePickerIndex = -1;
-        showToast("已导入并附到选项：" + imported.name);
+        applyPickedImage(imported.file);
+        showToast("已导入并附到题目/选项：" + imported.name);
         return;
       }
       ImageStore* store = activeImageStore();
@@ -4343,6 +4449,7 @@ void renderQuestionEditor(App& app) {
       app.editQuestion.blocks.push_back({Store::newUuid(), "", false, ""});
     }
   }
+  app.drawQuestionImageEditor();
   ImGui::TextUnformatted("解析（答完后显示）");
   if (ImGui::InputTextMultiline("##question_explain", app.explainInput,
                                 sizeof(app.explainInput), ImVec2(-1, 70))) {
@@ -5458,6 +5565,7 @@ void renderLearning(App& app) {
     }
     const std::string kind = question->customLabel.empty() ? "自定义题型" : question->customLabel;
     pageTitle("LEARN", kind, "自定义题型 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     if (!question->customBody.empty()) {
       ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.96f, 0.97f, 0.99f, 1));
@@ -5684,6 +5792,7 @@ void renderLearning(App& app) {
       app.learningAnswered = false;
     }
     pageTitle("LEARN", question->name, "选词填空 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     app.ensureVocabularyLoaded();
     bool promptStructured = false;
@@ -5853,6 +5962,7 @@ void renderLearning(App& app) {
       app.typeLearnInput[0] = 0;
     }
     pageTitle("LEARN", question->name, "阅读短文 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     if (!question->passage.empty()) {
       ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.96f, 0.97f, 0.99f, 1));
@@ -5969,6 +6079,7 @@ void renderLearning(App& app) {
   if (question->type == "card") {
     app.ensureVocabularyLoaded();
     pageTitle("LEARN", "新知卡片", "新知卡片 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     bool hasImage = false;
     if (!question->card.wordVocabId.empty() && app.vocabulary) {
@@ -6021,6 +6132,7 @@ void renderLearning(App& app) {
     app.ensureVocabularyLoaded();
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "选择对话 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     for (std::size_t i = 0; i < question->lines.size(); ++i) {
       const auto& line = question->lines[i];
@@ -6050,6 +6162,7 @@ void renderLearning(App& app) {
     }
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "听音选择 · " + course->name);
+    app.drawQuestionImage(*question);
     const bool listenFileExists = !question->audio.empty() &&
         fs::exists(app.currentProjectDirectory() / pathFromUtf8(question->audio));
     const std::string ttsText = trimCopy(question->tts).empty()
@@ -6185,6 +6298,7 @@ void renderLearning(App& app) {
       return prev[b.size()];
     };
     pageTitle("LEARN", question->prompt, "输入翻译 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     bool promptStructured = false;
     for (const auto& item : question->promptItems) if (item.kind == "vocab") promptStructured = true;
@@ -6294,6 +6408,7 @@ void renderLearning(App& app) {
     }
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "配对 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     ImGui::TextDisabled("已配对 %zu / %zu", app.matchMatched.size(), question->pairs.size());
     ImGui::BeginChild("##match_left", ImVec2(ImGui::GetWindowWidth() / 2 - 8, 260), true);
@@ -6419,6 +6534,7 @@ void renderLearning(App& app) {
     }
     pageTitle("LEARN", question->prompt.empty() ? question->name : question->prompt,
               "词块组句 · " + course->name);
+    app.drawQuestionImage(*question);
     app.drawLearningQuestionAudio(*question);
     auto answerText = [](const std::vector<QuestionBlock>& blocks) {
       std::string value;
@@ -6532,6 +6648,7 @@ void renderLearning(App& app) {
     return;
   }
   pageTitle("LEARN", question->name, "选择正确翻译 · " + course->name);
+    app.drawQuestionImage(*question);
   app.drawLearningQuestionAudio(*question);
   app.ensureVocabularyLoaded();
   PosStore posStore(app.currentProjectDirectory());
@@ -9745,6 +9862,9 @@ void renderImages(App& app) {
   if (app.courseImageScope) {
     if (Course* course = app.selectedCourse()) {
       for (const auto& question : course->questions) {
+        if (!question.image.empty()) {
+          references[question.image].push_back(question.name + " · 题目图");
+        }
         for (const auto& group : question.optionItems) {
           for (const auto& item : group) {
             if (!item.image.empty()) references[item.image].push_back(question.name);

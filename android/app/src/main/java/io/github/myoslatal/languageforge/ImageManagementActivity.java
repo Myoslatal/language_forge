@@ -142,6 +142,12 @@ public class ImageManagementActivity extends ForgeActivity {
                 for (ProjectStructure.Course course : unit.courses) {
                     if (!courseId.equals(course.id)) continue;
                     for (ProjectStructure.Question question : course.questions) {
+                        String questionName = question.name == null || question.name.isEmpty()
+                                ? "未命名题目" : question.name;
+                        if (question.image != null && !question.image.isEmpty()) {
+                            references.computeIfAbsent(question.image, key -> new ArrayList<>())
+                                    .add(questionName + " · 题目图");
+                        }
                         for (List<ProjectStructure.Question.OptionItem> group
                                 : question.optionItems) {
                             for (ProjectStructure.Question.OptionItem item : group) {

@@ -305,9 +305,11 @@ std::string questionPath(const json& question) {
   return question.is_object() ? question.value("audio", "") : "";
 }
 
-void collectOptionImages(const json& question, std::set<std::string>& paths) {
-  if (!question.is_object() || !question.contains("optionItems") ||
-      !question["optionItems"].is_array()) {
+void collectQuestionImages(const json& question, std::set<std::string>& paths) {
+  if (!question.is_object()) return;
+  const std::string questionImage = question.value("image", "");
+  if (!questionImage.empty()) paths.insert(questionImage);
+  if (!question.contains("optionItems") || !question["optionItems"].is_array()) {
     return;
   }
   for (const auto& group : question["optionItems"]) {
@@ -577,41 +579,48 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
           imageManifest["images"] = json::array();
         }
         bool imageManifestChanged = false;
+        auto migrateImage = [&](json& owner) {
+          if (!owner.is_object() || !owner.contains("image") ||
+              !owner["image"].is_string()) {
+            return;
+          }
+          const std::string oldImage = owner.value("image", "");
+          if (oldImage.empty()) return;
+          questionImageSources.insert(oldImage);
+          const fs::path source = resolvePath(projectDirectory, oldImage);
+          if (!fs::is_regular_file(source)) return;
+          std::string target = oldImage;
+          if (!isCourseImagePath(projectDirectory, courseId, oldImage)) {
+            if (!copyQuestionImage(projectDirectory, courseId, oldImage, source, target,
+                                   copiedImages)) {
+              return;
+            }
+            owner["image"] = target;
+            structureChanged = true;
+          }
+          imageTargets.insert(target);
+          if (findFile(imageManifest["images"], target) < 0) {
+            const int globalIndex = findFile(globalImages["images"], oldImage);
+            const json* globalEntry = globalIndex >= 0
+                ? &globalImages["images"][globalIndex] : nullptr;
+            json entry = makeCourseImageEntry(projectDirectory, courseId, target,
+                                              globalEntry);
+            if (entry.is_object()) {
+              imageManifest["images"].push_back(entry);
+              imageManifestChanged = true;
+            }
+          }
+        };
         for (auto& question : course["questions"]) {
-          if (!question.is_object() || !question.contains("optionItems") ||
-              !question["optionItems"].is_array()) {
+          if (!question.is_object()) continue;
+          migrateImage(question);
+          if (!question.contains("optionItems") || !question["optionItems"].is_array()) {
             continue;
           }
           for (auto& group : question["optionItems"]) {
             if (!group.is_array()) continue;
             for (auto& item : group) {
-              if (!item.is_object()) continue;
-              const std::string oldImage = item.value("image", "");
-              if (oldImage.empty()) continue;
-              questionImageSources.insert(oldImage);
-              const fs::path source = resolvePath(projectDirectory, oldImage);
-              if (!fs::is_regular_file(source)) continue;
-              std::string target = oldImage;
-              if (!isCourseImagePath(projectDirectory, courseId, oldImage)) {
-                if (!copyQuestionImage(projectDirectory, courseId, oldImage, source, target,
-                                       copiedImages)) {
-                  continue;
-                }
-                item["image"] = target;
-                structureChanged = true;
-              }
-              imageTargets.insert(target);
-              if (findFile(imageManifest["images"], target) < 0) {
-                const int globalIndex = findFile(globalImages["images"], oldImage);
-                const json* globalEntry = globalIndex >= 0
-                    ? &globalImages["images"][globalIndex] : nullptr;
-                json entry = makeCourseImageEntry(projectDirectory, courseId, target,
-                                                  globalEntry);
-                if (entry.is_object()) {
-                  imageManifest["images"].push_back(entry);
-                  imageManifestChanged = true;
-                }
-              }
+              if (item.is_object()) migrateImage(item);
             }
           }
         }
@@ -635,7 +644,7 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
         for (const auto& question : course["questions"]) {
           const std::string path = questionPath(question);
           if (!path.empty()) remainingPaths.insert(path);
-          collectOptionImages(question, remainingImagePaths);
+          collectQuestionImages(question, remainingImagePaths);
         }
       }
     }

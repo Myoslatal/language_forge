@@ -30,9 +30,9 @@ or bundled into the APK. Details and screenshots: [NO_BUNDLED_COURSES.md](NO_BUN
 Project resources (vocabulary, POS, fonts, vocabulary audio/images) live at the project
 root and are shared by all courses. Question audio lives under
 `resources/courses/<courseId>/audio` with a per-course `audios.json`; the course resource
-page only shows that course. Choice-like options can carry course question images
-(`optionItems[i][0].image`), selected/imported from the course picker; cloze has no image
-entry/rendering. Legacy projects and `.conlang` imports are migrated by reference. See
+page only shows that course. Every question can carry a course question image (`Question.image`), and choice-like options
+can carry course option images (`optionItems[i][0].image`); both use the course picker/import
+and delete protection. Question images render for all types, including cloze and card. Legacy projects and `.conlang` imports are migrated by reference. See
 [RESOURCE_SCOPE_TESTING.md](RESOURCE_SCOPE_TESTING.md).
 
 ### WorkBuddy share-site course migration (2026-11-25)

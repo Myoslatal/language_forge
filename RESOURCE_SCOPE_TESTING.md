@@ -102,8 +102,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 边界
 
-- 当前 schema 仍没有**题目级题图**字段（本次只实现选项附图）；课程级图片目录/清单已用于选项附图，`resources/courses/<id>/images` 与 `images.json` 生效。
-  题目图片将来可复用 `resources/courses/<id>/images` 与同构清单。
+- 题目级题图与选项附图均已实现（task-80/task-79）；课程级图片池同时服务题图与选项图，`resources/courses/<id>/images` 与 `images.json` 生效，题图全题型显示。
+- 删除单题不会自动回收不再引用的课程图片/音频文件；文件仍只在该课程作用域，可在课程资源页手动清理。
 - 删除单个题目不会自动回收不再引用的课程音频文件；文件仍只在该课程作用域内，不影响其他课程。
   迁移器不会把课程文件误并回全局。
 - 无头/模拟器只能证明文件存在、清单和播放调用；可听性仍见 RD-08。
@@ -180,3 +180,69 @@ Android fixture（`Option Image Test-e3e7a1`）：
 - 删除单个题目不会自动回收它不再引用的课程图片；文件仍只在该课程作用域内。
 - 无头/模拟器只能证明图片路径存在、清单与渲染/判定调用；真实视觉清晰度仍由截图和
   设备显示决定。
+
+## 题目图片（task-80）
+
+### 数据与作用域
+
+- `Question.image` 保存项目相对路径；旧结构没有该字段时按空处理。双端
+  `structure.json` 读写、项目复制、`.conlang` 导出/导入都保留该字段。
+- 题图和选项图共用课程图片池 `resources/courses/<courseId>/images/` 与
+  `images.json`，不会使用全局词汇图片池。题图在所有题型中都可用。
+- 同一文件既可被题图引用，也可被选项图引用；课程内只保留一份文件，删除被引用图片
+  会同时检查题图与选项图。
+
+### 编辑器与学习端
+
+- 双端题目编辑器都在题型控件下提供「题目图片（全题型）」：缩略图、更换图、移除图；
+  选择器只列出当前课程图片，并提供「导入新图片」后立即选中。
+- 题图可以为空；纯图片题目允许题干/正文为空（支持 choice、card、reading、dialog
+  等有文字校验的题型），保存重开保留。
+- 学习端在题型标题之后、其它题目内容之前显示题图，居中、自适应宽度，最大高度约
+  330；缺失文件显示「〔题目图片缺失〕」。card、cloze、custom(none) 等所有分支一致。
+
+### 迁移与引用
+
+- 加载/导入/导出时扫描 `question.image` 和 `optionItems[*][*].image`；非课程路径复制
+  到所属课程并重写，登记课程清单；同一文件复用。
+- 旧全局图片若仅被题图引用，课程副本成功后再清理全局清单/文件；仍被词汇引用时保留。
+- 课程删除清理整个 `resources/courses/<courseId>`；题图/选项图引用均计入删除保护。
+
+### 双端实测
+
+桌面 fixture：`/tmp/lf-image-desktop/Option Image Test`。
+
+- 卡片题 `qcard` 的旧题图 `resources/images/vocab.png` 在加载时复制为
+  `resources/courses/course-a/images/q_c65d65eab242f4b5_vocab.png` 并重写；原全局文件保留。
+- 编辑器截图：`q-editor.png`（choice）、`q-card-editor-before.png`（card）；
+  已有课程图选择：`q-picker.png`；现场导入新图并附图：`q-card-imported.png`。
+- 学习端：`q-learn-choice.png`（题图+选项图同题）、`q-learn-reading.png`、
+  `q-learn-custom.png`、`q-learn-cloze.png`（cloze 题图）、`q-learn-card2.png`
+  （card 题图）、`q-learn-pure.png`（纯图片题）。
+- 纯图片题保存：`q-pure-saved.png`；保存后 `parts=[]`、`sentence=""`、`image` 保留。
+- `.conlang` 导出 `/tmp/q80.conlang`，导入为新项目
+  `Option Image Test-f92564`：6 道 A 题 + 1 道 B 题、4 张 A 图 + 1 张 B 图，题图
+  路径和时间戳图片均保留，无重复。
+
+Android fixture：`Option Image Test-e3e7a1`。
+
+- 卡片题旧全局题图迁移日志：`movedImages=1 copiedImages=1 removedGlobalImages=0 missing=0`；
+  课程 A 中生成 `q_5b8f5b82b3ea9772_vocab.png`。
+- 编辑器题图控件在 choice/card/cloze 均可见；课程 A 选择器只列出 A 的图片。
+  题图现场导入新图并保存为
+  `resources/courses/course-a/images/img_a911473a-cbc0-44f9-b5c2-cdc0d4473ec4_1795607027468.png`。
+- 学习端：`task80-android-learn-qa.png`（题图+选项图）、`task80-android-learn-cloze.png`
+  （cloze 题图）、`task80-android-learn-card.png`（card 题图）、
+  `task80-android-learn-pure.png`（纯图片题）。
+- 纯图片保存：`task80-android-pure-save.png`；数据仍为 `parts=[]`、`sentence=""`。
+- 课程 A 图片页引用显示题图标签，例如
+  `被本课程 6 个选项引用：shared · 题目图、…`；题图参与删除保护。
+- 删除课程 A 的一张题图文件后重进学习：页面显示 `〔题目图片缺失〕`，不崩溃；
+  同文件选项显示 `〔选项图片缺失〕`。截图：`task80-android-missing.png`。
+- Android 导出 ZIP `/tmp/q80-android.conlang` 含 4 张 A 图 + 1 张 B 图、A/B 清单与
+  题图路径；重新导入为 `Option Image Test-55d711` 后题图路径和图片完整。
+
+### 边界
+
+- 修改题图不会自动删除旧题图文件；课程图片页可按引用状态手动清理。
+- 无头截图证明布局/路径/判定；真实屏幕清晰度仍以设备显示为准。
