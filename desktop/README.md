@@ -156,6 +156,19 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   `image-draw.png`.
 - `.conlang` export/import includes `images.json` and `resources/images/`.
 
+## Resource scopes (project vs course)
+
+- **项目资源（全局）** is opened from the Structure page. It contains the shared vocabulary,
+  POS, fonts, vocabulary audio (`resources/audio`) and vocabulary images (`resources/images`).
+- **课程资源** is opened from a course editor. It lists only that course's question audio,
+  `resources/courses/<courseId>/audios.json` and its `audio/` directory; global items are not
+  shown. `AudioStore(projectDir, courseId)` scopes import/code/play/delete.
+- Question recording and selected vocabulary audio are copied into the course scope on save.
+  Legacy projects and `.conlang` import/export run `migrateResourceScopes`: vocabulary stays
+  global, each question audio moves to its course (with a copy when a vocabulary shares the
+  file), updates the manifests and is idempotent. See
+  [RESOURCE_SCOPE_TESTING.md](../RESOURCE_SCOPE_TESTING.md).
+
 ## Phase 3B: audio and vocabulary pronunciation
 
 - Project-level `audios.json` (`schema:1`, `audios`) stores

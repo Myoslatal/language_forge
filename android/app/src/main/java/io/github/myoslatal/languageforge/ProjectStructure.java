@@ -33,6 +33,7 @@ final class ProjectStructure {
         if (projectDirectory == null) {
             return structure;
         }
+        ResourceScopeMigration.migrate(projectDirectory);
         File file = new File(projectDirectory, FILE_NAME);
         if (!file.isFile()) {
             Log.i(TAG, "No structure.json; using empty structure: " + file);

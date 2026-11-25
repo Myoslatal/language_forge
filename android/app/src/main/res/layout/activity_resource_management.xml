@@ -90,11 +90,12 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/resource_hint"
                 style="@style/Forge.Text.Hint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="课程的词汇、图片、音频等资源将在这里管理。" />
+                android:text="项目级共享词汇、词性、字体与词汇音频/图片；题目音频按课程隔离。" />
 
             <LinearLayout
                 android:id="@+id/vocabulary_entry"
@@ -381,11 +382,12 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:id="@+id/audio_title"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:fontFamily="sans-serif"
                         android:includeFontPadding="false"
-                        android:text="音频管理"
+                        android:text="词汇音频（全局）"
                         android:textColor="@color/forge_text"
                         android:textSize="15sp"
                         android:textStyle="bold" />

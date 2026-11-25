@@ -154,19 +154,25 @@ directory and all three IDs before showing anything.
 * Question names/order are part of the project directory, so `.conlang` export/import
   includes and preserves them automatically.
 
-## Resource management
+## Resource scopes (project vs course)
 
-The course editor top bar has a **资源管理** button next to the question count. It opens
-`ResourceManagementActivity` with the chapter/unit/course names as Intent extras; missing
-context names are omitted from the subtitle.
+Resources have two explicit scopes:
 
-* The page uses the same Forge top bar and edge-to-edge insets. It shows a **资源** heading,
-  a short explanation, a **词汇管理** card with the real count and “管理词汇表”, and a
-  **字体管理** card with the real font count / active font. Tapping opens
-  `VocabularyListActivity` / `FontManagementActivity`.
-* A faint “更多资源类型稍后加入” note is shown below the cards.
-* No storage permissions or media files are implemented. The activity is registered with
-  `exported=false`; back (button or system back) returns to the course editor.
+* **项目资源（全局）** — opened by **项目资源** on the structure screen. It contains the
+  shared vocabulary, POS, fonts, vocabulary audio (`resources/audio`) and vocabulary images
+  (`resources/images`). Every course sees the same data.
+* **课程资源（仅本课程题目）** — opened by **课程资源** in the course editor. It only shows that
+  course's question audio, read from `resources/courses/<courseId>/audios.json` and
+  `resources/courses/<courseId>/audio/`. Other courses' audio is never listed here.
+
+`ResourceManagementActivity` labels the scope explicitly in its subtitle and hint; the
+course scope hides the global vocabulary/POS/font/image cards. The course audio screen uses
+`AudioStore(projectDirectory, courseId)`; import, code, playback and delete all stay inside
+the course directory. Question recordings/TTS/selected vocabulary audio are copied into the
+course scope on save. Legacy projects and imported `.conlang` files are migrated on
+load/import (question audio split by course; vocabulary audio/images stay global; a file
+shared by vocabulary and a question is kept globally and copied per course). See
+[`RESOURCE_SCOPE_TESTING.md`](../RESOURCE_SCOPE_TESTING.md).
 
 ## Vocabulary
 

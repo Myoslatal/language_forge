@@ -123,6 +123,7 @@ public class QuestionEditorActivity extends ForgeActivity {
     private LinearLayout cardWordPreview;
     private LinearLayout cardExamples;
     private final List<ProjectStructure.Question.CardExample> editExamples = new ArrayList<>();
+    private String courseId = "";
     private String audioRelative = "";
     private String audioSource = "";
     private EditText listenPrompt;
@@ -161,7 +162,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         String folder = getIntent().getStringExtra(EXTRA_FOLDER_NAME);
         String chapterId = getIntent().getStringExtra(EXTRA_CHAPTER_ID);
         String unitId = getIntent().getStringExtra(EXTRA_UNIT_ID);
-        String courseId = getIntent().getStringExtra(EXTRA_COURSE_ID);
+        courseId = getIntent().getStringExtra(EXTRA_COURSE_ID);
         String questionId = getIntent().getStringExtra(EXTRA_QUESTION_ID);
         File base = getExternalFilesDir(null);
         if (folder == null || base == null || chapterId == null || unitId == null
@@ -2015,7 +2016,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         long duration = pendingAudio != null ? pendingDuration : existingDuration;
         if (pendingAudio != null) {
             try {
-                java.io.File copied = MediaFiles.copyAudioToProject(projectDirectory,
+                java.io.File copied = MediaFiles.copyAudioToCourse(projectDirectory, courseId,
                         new java.io.File(pendingAudio), question.id);
                 path = MediaFiles.relativePath(projectDirectory, copied);
                 duration = MediaFiles.audioDuration(copied);
@@ -2025,6 +2026,7 @@ public class QuestionEditorActivity extends ForgeActivity {
                 return;
             }
         }
+        path = ensureCourseAudio(path, question.id);
         if (path.isEmpty() && tts.isEmpty()) {
             toast("请先选择或录制音频，或填写朗读文本（TTS）");
             return;
@@ -2081,6 +2083,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         String previousAudio = originalAudio == null ? "" : originalAudio;
         if (!previousAudio.isEmpty() && !previousAudio.equals(path)) {
             MediaFiles.deleteQuietly(MediaFiles.resolveProjectFile(projectDirectory, previousAudio));
@@ -2441,6 +2444,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true; toast("已保存自定义题型"); finish();
     }
 
@@ -2512,6 +2516,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true; toast("已保存选词填空"); finish();
     }
 
@@ -2570,6 +2575,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true; toast("已保存阅读短文"); finish();
     }
 
@@ -2631,6 +2637,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true;
         toast("已保存对话题");
         finish();
@@ -2657,6 +2664,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true; toast("已保存新知卡片"); finish();
     }
 
@@ -2705,6 +2713,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true;
         toast("已保存输入题");
         finish();
@@ -2734,6 +2743,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true;
         toast("已保存配对题");
         finish();
@@ -2963,6 +2973,7 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
         if (!structure.save(projectDirectory)) { toast("保存题目失败"); return; }
+        syncCourseAudioManifest();
         saved = true;
         toast("已保存词块组句");
         finish();
@@ -3057,8 +3068,8 @@ public class QuestionEditorActivity extends ForgeActivity {
         String audioRelative = audioRemoved ? "" : existingAudio;
         if (sourceAudio != null) {
             try {
-                File copied = MediaFiles.copyAudioToProject(projectDirectory, sourceAudio,
-                        question.id);
+                File copied = MediaFiles.copyAudioToCourse(projectDirectory, courseId,
+                        sourceAudio, question.id);
                 File desired = new File(copied.getParent(), "question_" + question.id + "_"
                         + System.currentTimeMillis() + extensionOf(copied));
                 if (copied.renameTo(desired)) copied = desired;
@@ -3069,6 +3080,7 @@ public class QuestionEditorActivity extends ForgeActivity {
                 return;
             }
         }
+        audioRelative = ensureCourseAudio(audioRelative, question.id);
         question.parts.clear();
         question.parts.addAll(parts);
         question.segments.clear();
@@ -3114,7 +3126,8 @@ public class QuestionEditorActivity extends ForgeActivity {
             toast("保存题目失败");
             return;
         }
-        if (!oldAudio.isEmpty() && !oldAudio.equals(audioRelative)) {
+        syncCourseAudioManifest();
+        if (!oldAudio.isEmpty() && !oldAudio.equals(audioRelative) && canDeleteAudio(oldAudio)) {
             MediaFiles.deleteQuietly(MediaFiles.resolveProjectFile(projectDirectory, oldAudio));
         }
         originalAudio = audioRelative;
@@ -3123,6 +3136,57 @@ public class QuestionEditorActivity extends ForgeActivity {
         saved = true;
         toast("题目已保存");
         finish();
+    }
+
+    private void syncCourseAudioManifest() {
+        AudioStore store = new AudioStore(projectDirectory, courseId);
+        for (ProjectStructure.Question item : course.questions) {
+            if (item.audio == null || item.audio.isEmpty()) continue;
+            if (!CourseResourcePaths.isCourseAudioPath(projectDirectory, courseId, item.audio)) {
+                continue;
+            }
+            File file = MediaFiles.resolveProjectFile(projectDirectory, item.audio);
+            if (file != null && file.isFile()) store.registerFile(file);
+        }
+    }
+
+    private boolean canDeleteAudio(String relative) {
+        if (relative == null || relative.isEmpty()) return false;
+        if (!CourseResourcePaths.isCourseAudioPath(projectDirectory, courseId, relative)) {
+            return false;
+        }
+        for (VocabularyEntry entry : vocabulary.entries) {
+            if (relative.equals(entry.audio)) return false;
+        }
+        for (ProjectStructure.Chapter chapter : structure.chapters) {
+            for (ProjectStructure.Unit unit : chapter.units) {
+                for (ProjectStructure.Course candidate : unit.courses) {
+                    for (ProjectStructure.Question question : candidate.questions) {
+                        if (question.id.equals(this.question.id)) continue;
+                        if (relative.equals(question.audio)) return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    private String ensureCourseAudio(String relative, String questionId) {
+        if (relative == null || relative.isEmpty()) return "";
+        File source = MediaFiles.resolveProjectFile(projectDirectory, relative);
+        if (source == null || !source.isFile()) return relative;
+        if (CourseResourcePaths.isCourseAudioPath(projectDirectory, courseId, relative)) {
+            return relative;
+        }
+        try {
+            File copied = MediaFiles.copyAudioToCourse(projectDirectory, courseId, source,
+                    questionId);
+            String scoped = MediaFiles.relativePath(projectDirectory, copied);
+            return scoped == null ? relative : scoped;
+        } catch (Exception e) {
+            toast("无法复制到课程音频目录");
+            return relative;
+        }
     }
 
     private String extensionOf(File file) {

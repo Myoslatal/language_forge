@@ -16,8 +16,10 @@ import androidx.core.content.ContextCompat;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
@@ -74,6 +76,7 @@ public class ProjectStructureActivity extends ForgeActivity {
                 ? folderName : projectName);
         findViewById(R.id.btn_structure_back).setOnClickListener(v -> finish());
         findViewById(R.id.btn_new_chapter).setOnClickListener(v -> showCreateChapterDialog());
+        findViewById(R.id.btn_project_resources).setOnClickListener(v -> openProjectResources());
         render();
     }
 
@@ -211,6 +214,13 @@ public class ProjectStructureActivity extends ForgeActivity {
         menu.addDivider();
         menu.addItem(redDelete(), () -> confirmDeleteCourse(unit, course));
         menu.show(anchor);
+    }
+
+    private void openProjectResources() {
+        Intent intent = new Intent(this, ResourceManagementActivity.class);
+        intent.putExtra(ResourceManagementActivity.EXTRA_FOLDER_NAME,
+                projectDirectory.getName());
+        startActivity(intent);
     }
 
     private void openCourseEditor(ProjectStructure.Chapter chapter,
@@ -355,10 +365,19 @@ public class ProjectStructureActivity extends ForgeActivity {
                 + units + " 个单元、" + courses + " 门课程。");
         dialog.setNegativeButton("取消", null);
         dialog.setPositiveButton("删除", (d, which) -> {
+            List<String> deletedCourseIds = new ArrayList<>();
+            for (ProjectStructure.Unit candidateUnit : chapter.units) {
+                for (ProjectStructure.Course candidateCourse : candidateUnit.courses) {
+                    deletedCourseIds.add(candidateCourse.id);
+                }
+            }
             structure.chapters.remove(chapter);
             expandedChapters.remove(chapter.id);
             if (!persist()) {
                 return;
+            }
+            for (String id : deletedCourseIds) {
+                CourseResourcePaths.deleteCourseResources(projectDirectory, id);
             }
             render();
             toast("已删除章节「" + chapter.name + "」");
@@ -375,10 +394,17 @@ public class ProjectStructureActivity extends ForgeActivity {
                 + courses + " 门课程。");
         dialog.setNegativeButton("取消", null);
         dialog.setPositiveButton("删除", (d, which) -> {
+            List<String> deletedCourseIds = new ArrayList<>();
+            for (ProjectStructure.Course candidate : unit.courses) {
+                deletedCourseIds.add(candidate.id);
+            }
             chapter.units.remove(unit);
             expandedUnits.remove(unit.id);
             if (!persist()) {
                 return;
+            }
+            for (String id : deletedCourseIds) {
+                CourseResourcePaths.deleteCourseResources(projectDirectory, id);
             }
             render();
             toast("已删除单元「" + unit.name + "」");
@@ -393,10 +419,12 @@ public class ProjectStructureActivity extends ForgeActivity {
         dialog.setBodyText("确定删除「" + course.name + "」吗？");
         dialog.setNegativeButton("取消", null);
         dialog.setPositiveButton("删除", (d, which) -> {
+            String deletedCourseId = course.id;
             unit.courses.remove(course);
             if (!persist()) {
                 return;
             }
+            CourseResourcePaths.deleteCourseResources(projectDirectory, deletedCourseId);
             render();
             toast("已删除课程「" + course.name + "」");
         });

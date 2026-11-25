@@ -98,6 +98,7 @@ public class CourseEditorActivity extends ForgeActivity {
         intent.putExtra(ResourceManagementActivity.EXTRA_CHAPTER_NAME, chapter.name);
         intent.putExtra(ResourceManagementActivity.EXTRA_UNIT_NAME, unit.name);
         intent.putExtra(ResourceManagementActivity.EXTRA_COURSE_NAME, course.name);
+        intent.putExtra(ResourceManagementActivity.EXTRA_COURSE_ID, course.id);
         startActivity(intent);
     }
 

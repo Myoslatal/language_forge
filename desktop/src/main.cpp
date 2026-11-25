@@ -30,6 +30,7 @@
 #include "lexicon.h"
 #include "audio.h"
 #include "pos.h"
+#include "resource_scope.h"
 #include "tts.h"
 #include <SDL_mixer.h>
 #include "nlohmann/json.hpp"
@@ -373,6 +374,10 @@ struct App {
   std::unique_ptr<ImageStore> imageStore;
   std::map<std::string, SDL_Texture*> imageTextures;
   std::unique_ptr<AudioStore> audioStore;
+  std::unique_ptr<AudioStore> courseAudioStore;
+  std::string courseAudioId;
+  bool resourceScopeCourse = false;
+  bool courseAudioScope = false;
   std::unique_ptr<PosStore> posStore;
   bool posEditorOpen = false;
   std::string posEditId;
@@ -821,7 +826,9 @@ struct App {
                                  [&](const Course& c) { return c.id == modalId3; });
           if (it != unit->courses.end()) unit->courses.erase(it);
         }
+        const std::string deletedCourseId = modalId3;
         if (!persist()) return;
+        deleteCourseResources(currentProjectDirectory(), deletedCourseId);
         if (screen == Screen::Course && courseId == modalId3) screen = Screen::Structure;
         showToast("已删除课程");
         break;
@@ -864,11 +871,13 @@ struct App {
         break;
       }
       case ModalKind::ConfirmAudio: {
-        ensureAudioLoaded();
-        if (audioStore) {
+        if (courseAudioScope) ensureCourseAudioLoaded();
+        else ensureAudioLoaded();
+        AudioStore* store = courseAudioScope ? courseAudioStore.get() : audioStore.get();
+        if (store) {
           std::string error;
           if (!modalId1.empty()) {
-            if (!audioStore->deleteAudio(modalId1, error)) { showToast(error); return; }
+            if (!store->deleteAudio(modalId1, error)) { showToast(error); return; }
           } else if (!modalId2.empty()) {
             std::error_code ec;
             fs::remove(currentProjectDirectory() / pathFromUtf8(modalId2), ec);
@@ -1447,6 +1456,36 @@ struct App {
     screen = Screen::QuestionEditor;
   }
 
+  void ensureQuestionAudioScoped() {
+    if (editQuestion.audio.empty()) return;
+    if (isCourseAudioPath(currentProjectDirectory(), courseId, editQuestion.audio)) {
+      const fs::path existing = audioAbsolute(editQuestion.audio);
+      if (fs::is_regular_file(existing)) {
+        AudioStore store(currentProjectDirectory(), courseId);
+        store.registerFile(existing);
+      }
+      return;
+    }
+    fs::path source = audioAbsolute(editQuestion.audio);
+    if (!fs::is_regular_file(source)) return;
+    fs::path copied;
+    std::string error;
+    if (!copyAudioToCourse(currentProjectDirectory(), courseId, source, editQuestion.id,
+                           copied, error)) {
+      showToast("无法复制到课程音频目录：" + error);
+      return;
+    }
+    fs::path relative = copied.lexically_relative(currentProjectDirectory());
+    if (!relative.empty()) editQuestion.audio = relative.generic_string();
+    if (editQuestion.audioDuration <= 0) {
+      int duration = 0;
+      loadAudioDuration(copied, duration);
+      editQuestion.audioDuration = duration;
+    }
+    AudioStore store(currentProjectDirectory(), courseId);
+    store.registerFile(copied);
+  }
+
   void saveQuestion() {
     editQuestion.explain = explainInput;
     // tts/ttsLang are stored for every type (HTML keeps them on all questions);
@@ -1455,6 +1494,7 @@ struct App {
     editQuestion.ttsLang = trimCopy(ttsLangInput);
     Course* course = selectedCourse();
     if (!course) return;
+    ensureQuestionAudioScoped();
     auto trim = [](std::string value) {
       auto notSpace = [](unsigned char c) { return !std::isspace(c); };
       value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
@@ -2814,8 +2854,37 @@ struct App {
   }
 
   void openAudios() {
+    courseAudioScope = false;
     ensureAudioLoaded();
     screen = Screen::Audios;
+  }
+
+  void ensureCourseAudioLoaded() {
+    fs::path dir = currentProjectDirectory();
+    if (dir.empty() || courseId.empty()) return;
+    if (!courseAudioStore || courseAudioStore->projectDirectory != dir ||
+        courseAudioStore->courseId != courseId) {
+      courseAudioStore = std::make_unique<AudioStore>(dir, courseId);
+    }
+  }
+
+  void openCourseAudios() {
+    courseAudioScope = true;
+    courseAudioId = courseId;
+    ensureCourseAudioLoaded();
+    screen = Screen::Audios;
+  }
+
+  void openProjectResources() {
+    resourceScopeCourse = false;
+    courseAudioScope = false;
+    screen = Screen::Resources;
+  }
+
+  void openCourseResources() {
+    resourceScopeCourse = true;
+    courseAudioScope = false;
+    screen = Screen::Resources;
   }
 
   fs::path audioAbsolute(const std::string& relative) const {
@@ -3024,8 +3093,10 @@ struct App {
     audioCodeId = id;
     audioCodeFile = file;
     audioCodeInput[0] = '\0';
-    if (audioStore && !id.empty()) {
-      const AudioEntry* audio = audioStore->find(id);
+    if (courseAudioScope) ensureCourseAudioLoaded();
+    AudioStore* store = courseAudioScope ? courseAudioStore.get() : audioStore.get();
+    if (store && !id.empty()) {
+      const AudioEntry* audio = store->find(id);
       if (audio) {
         audioCodeFile = audio->file;
         std::snprintf(audioCodeInput, sizeof(audioCodeInput), "%s", audio->code.c_str());
@@ -3148,18 +3219,29 @@ struct App {
       return;
     }
     if (screen == Screen::QuestionEditor) {
+      fs::path courseDirectory = currentProjectDirectory() /
+          pathFromUtf8(courseAudioDir(currentProjectDirectory(), courseId));
+      fs::create_directories(courseDirectory, ec);
+      if (ec) {
+        showToast("无法创建课程音频目录");
+        return;
+      }
       std::string qid = Store::newUuid();
       qid.erase(std::remove(qid.begin(), qid.end(), '-'), qid.end());
-      fs::path questionTarget = directory / ("question_" + editQuestion.id + "_" + qid + ".wav");
+      fs::path questionTarget = courseDirectory /
+          ("question_" + editQuestion.id + "_" + qid + ".wav");
       fs::rename(target, questionTarget, ec);
       if (ec) {
         showToast("录音保存失败");
         return;
       }
-      editQuestion.audio = "resources/audio/" + utf8(questionTarget.filename());
+      fs::path relative = questionTarget.lexically_relative(currentProjectDirectory());
+      editQuestion.audio = relative.generic_string();
       editQuestion.audioDuration = static_cast<int>(recordBuffer.size() / 2 * 1000 / 44100);
       editQuestion.audioStart = 0;
       editQuestion.audioEnd = editQuestion.audioDuration;
+      AudioStore courseStore(currentProjectDirectory(), courseId);
+      courseStore.registerFile(questionTarget);
       questionDirty = true;
       showToast("整句录音完成");
       return;
@@ -3358,10 +3440,12 @@ struct App {
         audioBrowserForEditor = false;
         importEditorAudio(target);
       } else {
-        ensureAudioLoaded();
-        if (!audioStore) { browserError = "音频数据不可用"; return; }
+        if (courseAudioScope) ensureCourseAudioLoaded();
+        else ensureAudioLoaded();
+        AudioStore* store = courseAudioScope ? courseAudioStore.get() : audioStore.get();
+        if (!store) { browserError = "音频数据不可用"; return; }
         AudioEntry imported;
-        if (!audioStore->importAudio(target, utf8(target.filename()), imported, error)) {
+        if (!store->importAudio(target, utf8(target.filename()), imported, error)) {
           browserError = error;
           return;
         }
@@ -3715,8 +3799,10 @@ void renderStructure(App& app) {
             fmt("%d 章 · %d 单元 · %d 课程 · %d 题", stats.chapters, stats.units,
                 stats.courses, stats.questions));
   ImGui::SameLine();
-  const float right = ImGui::GetWindowWidth() - 170;
+  const float right = ImGui::GetWindowWidth() - 300;
   if (right > 0) ImGui::SetCursorPosX(right);
+  if (ImGui::Button("项目资源", ImVec2(120, 34))) app.openProjectResources();
+  ImGui::SameLine();
   if (ImGui::Button("＋ 新建章节", ImVec2(140, 34))) {
     app.openModalText(App::ModalKind::AddChapter, "新建章节", "未命名章节");
   }
@@ -6250,7 +6336,7 @@ void renderCourse(App& app) {
   ImGui::SameLine();
   const float right = ImGui::GetWindowWidth() - 310;
   if (right > 0) ImGui::SetCursorPosX(right);
-  if (ImGui::Button("资源管理", ImVec2(120, 34))) app.screen = App::Screen::Resources;
+  if (ImGui::Button("课程资源", ImVec2(120, 34))) app.openCourseResources();
   ImGui::SameLine();
   if (ImGui::Button("＋ 新建题目", ImVec2(140, 34))) {
     app.openQuestionEditor("");
@@ -7981,7 +8067,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
                                                           "images.json", "audios.json",
                                                           "pos.json"}) &&
                      zipContainsPrefix(exportPath, "resources/images/") &&
-                     zipContainsPrefix(exportPath, "resources/audio/");
+                     zipContainsPrefix(exportPath, "resources/audio/") &&
+                     zipContainsPrefix(exportPath, "resources/courses/");
   ProjectSummary imported;
   bool importedOk = app.store->importConlang(exportPath, imported, error);
   bool importStatsOk = importedOk && imported.stats.chapters == 1 &&
@@ -8514,12 +8601,18 @@ void renderVocabularyEditor(App& app) {
   if (app.focusAudioSection) ImGui::SetScrollHereY(1.0f);
 }
 
+void renderCourseResources(App& app);
+
 void renderResourcesWithPhase2(App& app) {
-  if (ImGui::Button("← 课程", ImVec2(100, 30))) app.screen = App::Screen::Course;
+  if (app.resourceScopeCourse) {
+    renderCourseResources(app);
+    return;
+  }
+  if (ImGui::Button("← 结构", ImVec2(100, 30))) app.screen = App::Screen::Structure;
   ImGui::SameLine();
-  ImGui::TextDisabled("资源管理");
+  ImGui::TextDisabled("项目资源（全局）");
   ImGui::Spacing();
-  pageTitle("RESOURCES", "资源管理", "词汇、字体、图片与音频项目资源。");
+  pageTitle("RESOURCES", "项目资源（全局）", "词汇、词性、字体与词汇音频/图片，所有课程共享。");
   ImGui::SameLine();
   const float audioButtonX = ImGui::GetWindowWidth() - 150;
   if (audioButtonX > 0) ImGui::SetCursorPosX(audioButtonX);
@@ -8550,9 +8643,9 @@ void renderResourcesWithPhase2(App& app) {
       {"词汇表", "V", "项目级共享词汇、编码与示例发音。", std::to_string(vocabCount) + " 条词汇", true},
       {"词性管理", "POS", "项目级词性名称、描述与编码。", std::to_string(posCount) + " 个词性", true},
       {"字体管理", "F", "导入 TTF/OTF/TTC，仅词汇内容应用字体。", "当前：" + activeFont, true},
-      {"图片管理", "P", "项目图片导入、编码与词汇引用。",
+      {"词汇图片", "P", "项目级词汇图片导入、编码与引用。",
        std::to_string(imageCount) + " 张图片", true},
-      {"音频管理", "A", "项目音频导入、编码与词汇引用。",
+      {"词汇音频", "A", "项目级词汇音频导入、编码与引用。",
        std::to_string(audioCount) + " 段音频", true},
     };
     for (const auto& card : cards) {
@@ -8578,8 +8671,8 @@ void renderResourcesWithPhase2(App& app) {
           if (std::string(card.name) == "词汇表") app.openVocabulary();
           else if (std::string(card.name) == "字体管理") app.openFonts();
           else if (std::string(card.name) == "词性管理") app.openPos();
-          else if (std::string(card.name) == "图片管理") app.openImages();
-          else if (std::string(card.name) == "音频管理") app.openAudios();
+          else if (std::string(card.name) == "词汇图片") app.openImages();
+          else if (std::string(card.name) == "词汇音频") app.openAudios();
         }
       } else {
         ImGui::TextDisabled("后续阶段");
@@ -8590,6 +8683,67 @@ void renderResourcesWithPhase2(App& app) {
       ImGui::Spacing();
     }
     ImGui::EndTable();
+  }
+}
+
+void renderCourseResources(App& app) {
+  Course* course = app.selectedCourse();
+  if (!course) {
+    ImGui::TextDisabled("课程不存在");
+    if (ImGui::Button("← 结构", ImVec2(100, 30))) app.screen = App::Screen::Structure;
+    return;
+  }
+  if (ImGui::Button("← 课程", ImVec2(100, 30))) app.screen = App::Screen::Course;
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s / 课程资源（仅本课程题目）", course->name.c_str());
+  ImGui::Spacing();
+  app.ensureCourseAudioLoaded();
+  int count = 0;
+  if (app.courseAudioStore) {
+    count = static_cast<int>(app.courseAudioStore->audios.size() +
+                             app.courseAudioStore->unregisteredFiles().size());
+  }
+  pageTitle("COURSE RESOURCES", "课程资源",
+            std::to_string(count) + " 段题目音频 · 仅本课程");
+  ImGui::SameLine();
+  const float right = ImGui::GetWindowWidth() - 300;
+  if (right > 0) ImGui::SetCursorPosX(right);
+  if (ImGui::Button("打开课程音频管理", ImVec2(210, 34))) app.openCourseAudios();
+  ImGui::TextWrapped("这里只出现本课程题目引用的音频。词汇、词性、字体与词汇音频/图片属于项目资源，请从项目结构进入「项目资源」。");
+  ImGui::Spacing();
+  if (!app.courseAudioStore) {
+    ImGui::TextDisabled("课程音频数据不可用");
+    return;
+  }
+  if (app.courseAudioStore->audios.empty() && app.courseAudioStore->unregisteredFiles().empty()) {
+    ImGui::Dummy(ImVec2(0, 40));
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() * 0.5f - 150);
+    ImGui::TextDisabled("本课程还没有题目音频。");
+    return;
+  }
+  std::map<std::string, int> refs;
+  for (const auto& question : course->questions) {
+    if (!question.audio.empty()) refs[question.audio]++;
+  }
+  for (const auto& audio : app.courseAudioStore->audios) {
+    ImGui::PushID(audio.id.c_str());
+    ImGui::BeginChild("##course_audio", ImVec2(0, 54), ImGuiChildFlags_Borders,
+                      ImGuiWindowFlags_NoScrollbar);
+    ImGui::SetCursorPos(ImVec2(14, 8));
+    ImGui::TextUnformatted(audio.name.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s · %s", audio.file.c_str(), formatDuration(audio.duration).c_str());
+    ImGui::SameLine();
+    const auto it = refs.find(audio.file);
+    ImGui::TextDisabled("被本课程 %d 道题目引用", it == refs.end() ? 0 : it->second);
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 110);
+    if (ImGui::Button("播放", ImVec2(82, 28))) {
+      app.playAudioFile(audio.file, 0, audio.duration);
+    }
+    ImGui::EndChild();
+    ImGui::PopID();
+    ImGui::Spacing();
   }
 }
 
@@ -9646,38 +9800,45 @@ void renderImageModals(App& app) {
   }
 }
 void renderAudios(App& app) {
-  if (ImGui::Button("← 资源", ImVec2(100, 30))) app.screen = App::Screen::Resources;
+  if (ImGui::Button(app.courseAudioScope ? "← 课程资源" : "← 项目资源", ImVec2(120, 30))) {
+    app.screen = App::Screen::Resources;
+  }
   ImGui::SameLine();
-  ImGui::TextDisabled("%s / 音频", app.project.name.c_str());
+  Course* scopeCourse = app.courseAudioScope ? app.selectedCourse() : nullptr;
+  ImGui::TextDisabled("%s / %s", app.project.name.c_str(),
+                      app.courseAudioScope
+                          ? (scopeCourse ? scopeCourse->name.c_str() : "课程音频")
+                          : "词汇音频（全局）");
   ImGui::Spacing();
-  app.ensureAudioLoaded();
+  if (app.courseAudioScope) app.ensureCourseAudioLoaded();
+  else app.ensureAudioLoaded();
   app.ensureVocabularyLoaded();
+  AudioStore* store = app.courseAudioScope ? app.courseAudioStore.get()
+                                           : app.audioStore.get();
   std::map<std::string, std::vector<std::string>> references;
   std::map<std::string, std::vector<std::string>> questionReferences;
-  if (app.vocabulary) {
+  if (app.courseAudioScope) {
+    if (scopeCourse) {
+      for (const auto& question : scopeCourse->questions) {
+        if (question.audio.empty()) continue;
+        questionReferences[question.audio].push_back(
+            question.sentence.empty() ? question.name : question.sentence);
+      }
+    }
+  } else if (app.vocabulary) {
     for (const auto& entry : app.vocabulary->entries) {
       if (!entry.audio.empty()) references[entry.audio].push_back(displayName(entry, app.vocabulary->entries));
     }
   }
-  for (const auto& chapter : app.structure.chapters) {
-    for (const auto& unit : chapter.units) {
-      for (const auto& course : unit.courses) {
-        for (const auto& question : course.questions) {
-          if (question.audio.empty()) continue;
-          questionReferences[question.audio].push_back(
-              question.sentence.empty() ? question.name : question.sentence);
-        }
-      }
-    }
-  }
   std::vector<fs::path> unregistered;
   std::size_t registeredCount = 0;
-  if (app.audioStore) {
-    registeredCount = app.audioStore->audios.size();
-    unregistered = app.audioStore->unregisteredFiles();
+  if (store) {
+    registeredCount = store->audios.size();
+    unregistered = store->unregisteredFiles();
   }
   const std::size_t total = registeredCount + unregistered.size();
-  pageTitle("AUDIOS", "音频管理", std::to_string(total) + " 段音频（登记 + 未登记）");
+  pageTitle("AUDIOS", app.courseAudioScope ? "课程题目音频" : "词汇音频（全局）",
+            std::to_string(total) + " 段音频（登记 + 未登记）");
   ImGui::SameLine();
   const float right = ImGui::GetWindowWidth() - 190;
   if (right > 0) ImGui::SetCursorPosX(right);
@@ -9715,11 +9876,11 @@ void renderAudios(App& app) {
     bool registered = false;
   };
   std::vector<Row> rows;
-  if (app.audioStore) {
-    for (const auto& audio : app.audioStore->audios) {
+  if (store) {
+    for (const auto& audio : store->audios) {
       if (!matches(audio.name, audio.file, audio.code)) continue;
       rows.push_back({audio.id, audio.name, audio.file, audio.code,
-                      app.audioStore->audioPath(audio), audio.duration, true});
+                      store->audioPath(audio), audio.duration, true});
     }
   }
   for (const auto& file : unregistered) {
@@ -9775,12 +9936,20 @@ void renderAudios(App& app) {
           names += name;
         }
       }
-      ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.2f, 1.0f),
-                         "被 %zu 个词汇、%zu 道题目引用：%s", vocabCount, questionCount,
-                         names.c_str());
+      if (app.courseAudioScope) {
+        ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.2f, 1.0f),
+                           "被本课程 %zu 道题目引用：%s", questionCount, names.c_str());
+      } else {
+        ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.2f, 1.0f),
+                           "被 %zu 个词汇引用：%s", vocabCount, names.c_str());
+      }
     }
     ImGui::EndGroup();
-    ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 48, 12));
+    ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 150, 12));
+    if (ImGui::Button("播放", ImVec2(80, 28))) {
+      app.playAudioFile(row.file, 0, row.duration);
+    }
+    ImGui::SameLine();
     if (ImGui::Button("⋯", ImVec2(30, 26))) ImGui::OpenPopup("##audio_menu");
     if (ImGui::BeginPopup("##audio_menu")) {
       if (ImGui::MenuItem("设置编码")) {
@@ -9837,14 +10006,17 @@ void renderAudioModals(App& app) {
     if (ImGui::Button("取消", ImVec2(110, 34))) { app.audioCodeOpen = false; open = false; }
     ImGui::SameLine();
     if (ImGui::Button("保存", ImVec2(120, 34))) {
-      app.ensureAudioLoaded();
-      if (app.audioStore) {
+      if (app.courseAudioScope) app.ensureCourseAudioLoaded();
+      else app.ensureAudioLoaded();
+      AudioStore* store = app.courseAudioScope ? app.courseAudioStore.get()
+                                               : app.audioStore.get();
+      if (store) {
         if (app.audioCodeId.empty()) {
-          AudioEntry* registered = app.audioStore->registerFile(
+          AudioEntry* registered = store->registerFile(
               app.currentProjectDirectory() / pathFromUtf8(app.audioCodeFile));
-          if (registered) app.audioStore->setCode(registered->id, app.audioCodeInput);
+          if (registered) store->setCode(registered->id, app.audioCodeInput);
         } else {
-          app.audioStore->setCode(app.audioCodeId, app.audioCodeInput);
+          store->setCode(app.audioCodeId, app.audioCodeInput);
         }
       }
       app.audioCodeOpen = false;

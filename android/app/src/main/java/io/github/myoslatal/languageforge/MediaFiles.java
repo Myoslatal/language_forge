@@ -111,6 +111,12 @@ final class MediaFiles {
         }
     }
 
+    static File copyAudioToCourse(File projectDirectory, String courseId, File source,
+                                 String questionId) throws IOException {
+        return CourseResourcePaths.copyAudioToCourse(projectDirectory, courseId, source,
+                questionId);
+    }
+
     static File copyAudioToProject(File projectDirectory, File source, String entryId)
             throws IOException {
         File directory = new File(projectDirectory, AUDIO_DIR);

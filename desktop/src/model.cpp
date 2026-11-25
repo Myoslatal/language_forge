@@ -23,6 +23,7 @@
 
 #include "miniz.h"
 #include "nlohmann/json.hpp"
+#include "resource_scope.h"
 
 namespace forge {
 namespace {
@@ -685,6 +686,10 @@ bool Store::loadProject(const std::string& folder, ProjectSummary& project,
                         Structure& structure) const {
   fs::path dir = projectDirectory(folder);
   if (dir.empty()) return false;
+  std::string migrationError;
+  if (!migrateResourceScopes(dir, migrationError) && !migrationError.empty()) {
+    std::fprintf(stderr, "FORGE_RESOURCE_MIGRATION failed: %s\n", migrationError.c_str());
+  }
   json projectValue = readJson(dir / "project.json");
   if (!projectValue.is_object()) return false;
   project = projectFromJson(dir, projectValue);
@@ -738,6 +743,11 @@ bool Store::exportProject(const std::string& folder, const fs::path& output,
     return false;
   }
   std::error_code ec;
+  std::string migrationError;
+  if (!migrateResourceScopes(dir, migrationError)) {
+    error = migrationError.empty() ? "迁移课程资源失败" : migrationError;
+    return false;
+  }
   fs::path parent = output.parent_path();
   if (!parent.empty()) fs::create_directories(parent, ec);
 
@@ -933,6 +943,12 @@ bool Store::importConlang(const fs::path& input, ProjectSummary& project,
     fs::remove_all(dir, ec);
     error = "写入 project.json 失败";
     return false;
+  }
+  std::string migrationError;
+  if (!migrateResourceScopes(dir, migrationError) && !migrationError.empty()) {
+    // Keep the imported legacy layout usable; a later load/export retries.
+    std::fprintf(stderr, "FORGE_RESOURCE_MIGRATION import failed: %s\n",
+                 migrationError.c_str());
   }
   Structure structure;
   loadStructureFile(dir, structure);

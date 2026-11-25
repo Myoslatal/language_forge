@@ -20,9 +20,12 @@ struct AudioEntry {
 
 struct AudioStore {
   fs::path projectDirectory;
+  fs::path manifestDirectory;
+  fs::path audioDirectory;
+  std::string courseId;
   std::vector<AudioEntry> audios;
 
-  explicit AudioStore(fs::path projectDir);
+  explicit AudioStore(fs::path projectDir, std::string courseId = "");
   void load();
   bool save() const;
   AudioEntry* find(const std::string& id);

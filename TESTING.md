@@ -25,6 +25,14 @@ seeded). Migrated courses are intentionally external: `nortu-l1-2.conlang` and
 `Nortu-Intro-html.conlang` live under `/ai/nortu/` and are never committed
 or bundled into the APK. Details and screenshots: [NO_BUNDLED_COURSES.md](NO_BUNDLED_COURSES.md).
 
+### Resource scopes: project vocabulary vs course question audio (2026-11-25)
+
+Project resources (vocabulary, POS, fonts, vocabulary audio/images) live at the project
+root and are shared by all courses. Question audio lives under
+`resources/courses/<courseId>/audio` with a per-course `audios.json`; the course resource
+page only shows that course. Legacy projects and `.conlang` imports are migrated by
+reference. See [RESOURCE_SCOPE_TESTING.md](RESOURCE_SCOPE_TESTING.md).
+
 ### WorkBuddy share-site course migration (2026-11-25)
 
 The 3-course/46-question Nortu L1-2 pack, 23 embedded recordings, Nozu Sans TTF and 17-entry

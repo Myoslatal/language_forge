@@ -66,6 +66,15 @@
     </LinearLayout>
 
     <io.github.myoslatal.languageforge.uikit.ForgeButton
+        android:id="@+id/audio_play"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:contentDescription="播放音频"
+        android:text="播放"
+        android:textSize="12sp"
+        app:forgeVariant="ghost" />
+
+    <io.github.myoslatal.languageforge.uikit.ForgeButton
         android:id="@+id/audio_more"
         android:layout_width="36dp"
         android:layout_height="36dp"

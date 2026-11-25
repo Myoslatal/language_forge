@@ -26,11 +26,32 @@ class AudioStore {
     static final String AUDIO_DIR = "resources/audio";
 
     final File projectDirectory;
+    final File manifestDirectory;
+    final File audioDirectory;
+    final String courseId;
     final List<ProjectAudio> audios = new ArrayList<>();
 
     AudioStore(File projectDirectory) {
+        this(projectDirectory, null);
+    }
+
+    AudioStore(File projectDirectory, String courseId) {
         this.projectDirectory = projectDirectory;
+        this.courseId = courseId == null ? "" : courseId.trim();
+        if (this.courseId.isEmpty()) {
+            this.manifestDirectory = projectDirectory;
+            this.audioDirectory = new File(projectDirectory, AUDIO_DIR);
+        } else {
+            this.manifestDirectory = CourseResourcePaths.courseDirectory(projectDirectory,
+                    this.courseId);
+            this.audioDirectory = new File(manifestDirectory,
+                    CourseResourcePaths.AUDIO_DIR_NAME);
+        }
         load();
+    }
+
+    boolean isCourseScoped() {
+        return !courseId.isEmpty();
     }
 
     static File resolveProjectDirectory(Context context, String folderName) {
@@ -43,7 +64,7 @@ class AudioStore {
 
     void load() {
         audios.clear();
-        File file = new File(projectDirectory, FILE_NAME);
+        File file = new File(manifestDirectory, FILE_NAME);
         if (!file.isFile()) {
             return;
         }
@@ -101,16 +122,19 @@ class AudioStore {
                 array.put(object);
             }
             root.put("audios", array);
-            File temp = new File(projectDirectory, TEMP_NAME);
+            if (!manifestDirectory.exists() && !manifestDirectory.mkdirs()) {
+                return false;
+            }
+            File temp = new File(manifestDirectory, TEMP_NAME);
             try (FileOutputStream out = new FileOutputStream(temp)) {
                 out.write(root.toString().getBytes(StandardCharsets.UTF_8));
             }
-            Files.move(temp.toPath(), new File(projectDirectory, FILE_NAME).toPath(),
+            Files.move(temp.toPath(), new File(manifestDirectory, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
             return true;
         } catch (Exception e) {
-            new File(projectDirectory, TEMP_NAME).delete();
+            new File(manifestDirectory, TEMP_NAME).delete();
             return false;
         }
     }
@@ -145,7 +169,7 @@ class AudioStore {
 
     List<File> unregisteredFiles() {
         List<File> result = new ArrayList<>();
-        File directory = new File(projectDirectory, AUDIO_DIR);
+        File directory = audioDirectory;
         File[] files = directory.listFiles();
         if (files == null) {
             return result;
@@ -170,7 +194,7 @@ class AudioStore {
         if (!isSupportedExtension(extension)) {
             return null;
         }
-        File directory = new File(projectDirectory, AUDIO_DIR);
+        File directory = audioDirectory;
         if (!directory.exists() && !directory.mkdirs()) {
             return null;
         }

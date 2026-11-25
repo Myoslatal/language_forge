@@ -20,8 +20,12 @@ public class ResourceManagementActivity extends ForgeActivity {
     public static final String EXTRA_CHAPTER_NAME = "chapterName";
     public static final String EXTRA_UNIT_NAME = "unitName";
     public static final String EXTRA_COURSE_NAME = "courseName";
+    public static final String EXTRA_COURSE_ID = "courseId";
 
     private String folderName;
+    private String courseId;
+    private String courseName;
+    private boolean courseMode;
     private TextView vocabularySummary;
     private TextView posSummary;
     private TextView fontSummary;
@@ -42,6 +46,9 @@ public class ResourceManagementActivity extends ForgeActivity {
         imageSummary = findViewById(R.id.image_summary);
         audioSummary = findViewById(R.id.audio_summary);
         folderName = getIntent().getStringExtra(EXTRA_FOLDER_NAME);
+        courseId = getIntent().getStringExtra(EXTRA_COURSE_ID);
+        courseName = getIntent().getStringExtra(EXTRA_COURSE_NAME);
+        courseMode = courseId != null && !courseId.trim().isEmpty();
         findViewById(R.id.vocabulary_entry).setOnClickListener(v -> openVocabulary());
         findViewById(R.id.pos_entry).setOnClickListener(v -> openPos());
         findViewById(R.id.font_entry).setOnClickListener(v -> openFonts());
@@ -57,10 +64,19 @@ public class ResourceManagementActivity extends ForgeActivity {
         addIfPresent(parts, courseName);
 
         TextView context = findViewById(R.id.resource_context);
-        if (parts.isEmpty()) {
-            context.setVisibility(View.GONE);
+        TextView hint = findViewById(R.id.resource_hint);
+        if (courseMode) {
+            context.setText("课程资源（仅本课程题目） · " + String.join(" · ", parts));
+            hint.setText("只显示本课程题目引用的音频；词汇、词性、字体和词汇音频/图片是项目资源，请从项目结构进入「项目资源」。");
+            findViewById(R.id.vocabulary_entry).setVisibility(View.GONE);
+            findViewById(R.id.pos_entry).setVisibility(View.GONE);
+            findViewById(R.id.font_entry).setVisibility(View.GONE);
+            findViewById(R.id.image_entry).setVisibility(View.GONE);
+            ((TextView) findViewById(R.id.audio_title)).setText("课程题目音频");
         } else {
-            context.setText(String.join(" · ", parts));
+            context.setText("项目资源（全局） · 所有课程共享");
+            hint.setText("项目级共享词汇、词性、字体与词汇音频/图片；题目音频按课程隔离。");
+            ((TextView) findViewById(R.id.audio_title)).setText("词汇音频（全局）");
         }
     }
 
@@ -115,10 +131,13 @@ public class ResourceManagementActivity extends ForgeActivity {
         int count = 0;
         java.io.File directory = AudioStore.resolveProjectDirectory(this, folderName);
         if (directory != null) {
-            AudioStore store = new AudioStore(directory);
+            AudioStore store = courseMode ? new AudioStore(directory, courseId)
+                    : new AudioStore(directory);
             count = store.audios.size() + store.unregisteredFiles().size();
         }
-        audioSummary.setText(count + " 条音频 · 编码与引用");
+        audioSummary.setText(courseMode
+                ? count + " 条题目音频 · 仅本课程"
+                : count + " 条词汇音频 · 项目全局");
     }
 
     private void openAudios() {
@@ -128,6 +147,10 @@ public class ResourceManagementActivity extends ForgeActivity {
         }
         Intent intent = new Intent(this, AudioManagementActivity.class);
         intent.putExtra(AudioManagementActivity.EXTRA_FOLDER_NAME, folderName);
+        if (courseMode) {
+            intent.putExtra(AudioManagementActivity.EXTRA_COURSE_ID, courseId);
+            intent.putExtra(AudioManagementActivity.EXTRA_COURSE_NAME, courseName);
+        }
         startActivity(intent);
     }
 

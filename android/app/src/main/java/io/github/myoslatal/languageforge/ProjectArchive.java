@@ -60,6 +60,7 @@ final class ProjectArchive {
         if (projectDirectory == null || !projectDirectory.isDirectory()) {
             throw new IOException("项目目录不存在");
         }
+        ResourceScopeMigration.migrate(projectDirectory);
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(output))) {
             addFiles(zip, projectDirectory, "");
             zip.finish();
@@ -95,6 +96,7 @@ final class ProjectArchive {
                 throw new IOException("无法创建项目文件夹");
             }
             copyContents(contentRoot, finalDirectory);
+            ResourceScopeMigration.migrate(finalDirectory);
             return new ImportResult(name, finalDirectory);
         } catch (Exception e) {
             if (finalDirectory != null) {

@@ -12,6 +12,10 @@
 
 生成结果：1 个 chapter「Nortu 自由语」、3 个 unit（第1关/第2关/第3关）、每个 unit 1 个 course，共 **3 课 46 题**。
 
+导入后的题目音频按课程迁移到 `resources/courses/<courseId>/audio/`，每个课程有自己的
+`audios.json`；词汇音频/图片和词汇表仍是项目全局资源。迁移规则和双端实测见
+[RESOURCE_SCOPE_TESTING.md](../RESOURCE_SCOPE_TESTING.md)。
+
 ```
 chapters=1 units=3 courses=3 questions=46
 choice=30 arrange=9 match=3 type=2 listen=2

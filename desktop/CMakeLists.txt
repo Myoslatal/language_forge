@@ -37,6 +37,7 @@ add_executable(nostongue-forge
   src/lexicon.cpp
   src/images.cpp
   src/audio.cpp
+  src/resource_scope.cpp
   src/pos.cpp
   src/tts.cpp
   ${IMGUI_DIR}/imgui.cpp

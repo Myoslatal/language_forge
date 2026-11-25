@@ -3,6 +3,7 @@ package io.github.myoslatal.languageforge;
 import android.app.Activity;
 import android.content.Intent;
 import android.database.Cursor;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
@@ -34,9 +35,14 @@ import io.github.myoslatal.languageforge.uikit.ForgeToast;
 public class AudioManagementActivity extends ForgeActivity {
 
     public static final String EXTRA_FOLDER_NAME = "folderName";
+    public static final String EXTRA_COURSE_ID = "courseId";
+    public static final String EXTRA_COURSE_NAME = "courseName";
     private static final int REQUEST_IMPORT_AUDIO = 4801;
 
     private File projectDirectory;
+    private String courseId = "";
+    private String courseName = "";
+    private MediaPlayer previewPlayer;
     private AudioStore store;
     private LinearLayout list;
     private LinearLayout emptyState;
@@ -50,13 +56,18 @@ public class AudioManagementActivity extends ForgeActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String folderName = getIntent().getStringExtra(EXTRA_FOLDER_NAME);
+        courseId = getIntent().getStringExtra(EXTRA_COURSE_ID);
+        courseName = getIntent().getStringExtra(EXTRA_COURSE_NAME);
+        if (courseId == null) courseId = "";
+        if (courseName == null) courseName = "";
         projectDirectory = AudioStore.resolveProjectDirectory(this, folderName);
         if (projectDirectory == null) {
             toast("项目目录不存在");
             finish();
             return;
         }
-        store = new AudioStore(projectDirectory);
+        store = courseId.isEmpty() ? new AudioStore(projectDirectory)
+                : new AudioStore(projectDirectory, courseId);
 
         setContentView(R.layout.activity_audio_management);
         applyTopInset(findViewById(R.id.audio_topbar));
@@ -65,8 +76,11 @@ public class AudioManagementActivity extends ForgeActivity {
         emptyState = findViewById(R.id.audio_empty);
         count = findViewById(R.id.audio_count);
         search = findViewById(R.id.audio_search);
-        ((TextView) findViewById(R.id.audio_project))
-                .setText(AudioStore.readProjectName(projectDirectory));
+        String title = AudioStore.readProjectName(projectDirectory);
+        if (!courseId.isEmpty() && !courseName.isEmpty()) {
+            title += " / " + courseName;
+        }
+        ((TextView) findViewById(R.id.audio_project)).setText(title);
 
         findViewById(R.id.btn_audio_back).setOnClickListener(v -> finish());
         findViewById(R.id.btn_import_audio_asset).setOnClickListener(v -> pickAudio());
@@ -100,18 +114,22 @@ public class AudioManagementActivity extends ForgeActivity {
     private void reloadReferences() {
         references = new HashMap<>();
         questionReferences = new HashMap<>();
-        VocabularyStore vocabulary = new VocabularyStore(projectDirectory);
-        for (VocabularyEntry entry : vocabulary.entries) {
-            if (entry.audio == null || entry.audio.isEmpty()) {
-                continue;
+        if (courseId.isEmpty()) {
+            VocabularyStore vocabulary = new VocabularyStore(projectDirectory);
+            for (VocabularyEntry entry : vocabulary.entries) {
+                if (entry.audio == null || entry.audio.isEmpty()) {
+                    continue;
+                }
+                references.computeIfAbsent(entry.audio, key -> new ArrayList<>())
+                        .add(vocabulary.displayName(entry));
             }
-            references.computeIfAbsent(entry.audio, key -> new ArrayList<>())
-                    .add(vocabulary.displayName(entry));
+            return;
         }
         ProjectStructure structure = ProjectStructure.load(projectDirectory);
         for (ProjectStructure.Chapter chapter : structure.chapters) {
             for (ProjectStructure.Unit unit : chapter.units) {
                 for (ProjectStructure.Course course : unit.courses) {
+                    if (!course.id.equals(courseId)) continue;
                     for (ProjectStructure.Question question : course.questions) {
                         if (question.audio == null || question.audio.isEmpty()) continue;
                         String title = question.sentence == null || question.sentence.isEmpty()
@@ -164,9 +182,10 @@ public class AudioManagementActivity extends ForgeActivity {
         TextView code = row.findViewById(R.id.audio_code);
         TextView refs = row.findViewById(R.id.audio_refs);
         ForgeButton more = row.findViewById(R.id.audio_more);
+        ForgeButton play = row.findViewById(R.id.audio_play);
 
         name.setText(item.name());
-        String prefix = item.registered ? "" : "未登记/来自词汇 · ";
+        String prefix = item.registered ? "" : "未登记 · ";
         meta.setText(prefix + item.fileName() + " · " + formatDuration(item.duration())
                 + " · " + formatSize(item.size()));
         code.setText(item.code().isEmpty() ? "未设置编码" : "编码：" + item.code());
@@ -177,14 +196,15 @@ public class AudioManagementActivity extends ForgeActivity {
         int questionCount = titles == null ? 0 : titles.size();
         if (vocabCount == 0 && questionCount == 0) {
             refs.setText("未被引用");
+        } else if (!courseId.isEmpty()) {
+            refs.setText("被本课程 " + questionCount + " 道题目引用："
+                    + String.join("、", titles == null ? new ArrayList<>() : titles));
         } else {
-            List<String> all = new ArrayList<>();
-            if (names != null) all.addAll(names);
-            if (titles != null) all.addAll(titles);
-            refs.setText("被 " + vocabCount + " 个词汇、" + questionCount
-                    + " 道题目引用：" + String.join("、", all));
+            refs.setText("被 " + vocabCount + " 个词汇引用："
+                    + String.join("、", names == null ? new ArrayList<>() : names));
         }
         row.setOnClickListener(v -> showEditCode(item));
+        play.setOnClickListener(v -> preview(item));
         more.setOnClickListener(v -> showMenu(more, item));
         list.addView(row);
     }
@@ -355,6 +375,50 @@ public class AudioManagementActivity extends ForgeActivity {
         return String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024f));
     }
 
+    private void preview(Item item) {
+        if (item.file == null || !item.file.isFile()) {
+            toast("音频文件不存在");
+            return;
+        }
+        stopPreview();
+        try {
+            previewPlayer = new MediaPlayer();
+            previewPlayer.setDataSource(item.file.getAbsolutePath());
+            previewPlayer.setOnCompletionListener(mp -> stopPreview());
+            previewPlayer.setOnErrorListener((mp, what, extra) -> {
+                toast("音频播放失败");
+                stopPreview();
+                return true;
+            });
+            previewPlayer.prepare();
+            previewPlayer.start();
+            toast("播放中：" + item.name());
+        } catch (Exception e) {
+            stopPreview();
+            toast("音频播放失败");
+        }
+    }
+
+    private void stopPreview() {
+        if (previewPlayer != null) {
+            try {
+                previewPlayer.stop();
+            } catch (Exception ignored) {
+            }
+            try {
+                previewPlayer.release();
+            } catch (Exception ignored) {
+            }
+            previewPlayer = null;
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopPreview();
+        super.onDestroy();
+    }
+
     private void toast(CharSequence message) {
         ForgeToast.show(this, message, 24);
     }
@@ -363,7 +427,7 @@ public class AudioManagementActivity extends ForgeActivity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private static final class Item {
+    private final class Item {
         final ProjectAudio audio;
         final File file;
         final boolean registered;
@@ -389,7 +453,7 @@ public class AudioManagementActivity extends ForgeActivity {
             if (audio != null) {
                 return audio.file;
             }
-            return file == null ? "" : "resources/audio/" + file.getName();
+            return file == null ? "" : MediaFiles.relativePath(projectDirectory, file);
         }
 
         String fileName() {

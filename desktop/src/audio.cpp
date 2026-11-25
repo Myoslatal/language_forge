@@ -10,6 +10,8 @@
 
 #include "nlohmann/json.hpp"
 
+#include "resource_scope.h"
+
 namespace forge {
 namespace {
 
@@ -95,13 +97,23 @@ bool loadAudioDuration(const fs::path& path, int& durationMs) {
   return true;
 }
 
-AudioStore::AudioStore(fs::path projectDir) : projectDirectory(std::move(projectDir)) {
+AudioStore::AudioStore(fs::path projectDir, std::string scopeCourseId)
+    : projectDirectory(std::move(projectDir)), courseId(std::move(scopeCourseId)) {
+  if (courseId.empty()) {
+    manifestDirectory = projectDirectory;
+    audioDirectory = projectDirectory / "resources" / "audio";
+  } else {
+    const fs::path courseAudio = projectDirectory /
+        pathFromUtf8(courseAudioDir(projectDirectory, courseId));
+    audioDirectory = courseAudio;
+    manifestDirectory = courseAudio.parent_path();
+  }
   load();
 }
 
 void AudioStore::load() {
   audios.clear();
-  json value = readJson(projectDirectory / "audios.json");
+  json value = readJson(manifestDirectory / "audios.json");
   if (!value.is_object() || value.value("schema", 0) != 1) return;
   if (!value.contains("audios") || !value["audios"].is_array()) return;
   for (const auto& item : value["audios"]) {
@@ -129,7 +141,7 @@ bool AudioStore::save() const {
                               {"duration", audio.duration},
                               {"createdAt", audio.createdAt}});
   }
-  return writeJsonAtomic(projectDirectory / "audios.json", root);
+  return writeJsonAtomic(manifestDirectory / "audios.json", root);
 }
 
 AudioEntry* AudioStore::find(const std::string& id) {
@@ -169,7 +181,7 @@ fs::path AudioStore::audioPath(const AudioEntry& audio) const {
 
 std::vector<fs::path> AudioStore::unregisteredFiles() const {
   std::vector<fs::path> result;
-  fs::path directory = projectDirectory / "resources" / "audio";
+  const fs::path directory = audioDirectory;
   std::error_code ec;
   if (!fs::is_directory(directory, ec)) return result;
   for (const auto& entry : fs::directory_iterator(directory, ec)) {
@@ -201,7 +213,7 @@ bool AudioStore::importAudio(const fs::path& source, const std::string& displayN
     return false;
   }
   std::error_code ec;
-  fs::path directory = projectDirectory / "resources" / "audio";
+  const fs::path directory = audioDirectory;
   fs::create_directories(directory, ec);
   if (ec) {
     error = "无法创建音频目录";
@@ -225,7 +237,8 @@ bool AudioStore::importAudio(const fs::path& source, const std::string& displayN
   }
   imported.id = id;
   imported.name = trim(displayName).empty() ? utf8(source.filename()) : trim(displayName);
-  imported.file = "resources/audio/" + utf8(target.filename());
+  fs::path relative = target.lexically_relative(projectDirectory);
+  imported.file = relative.empty() ? "" : relative.generic_string();
   imported.duration = checkDuration;
   imported.createdAt = nowMillis();
   audios.push_back(imported);
