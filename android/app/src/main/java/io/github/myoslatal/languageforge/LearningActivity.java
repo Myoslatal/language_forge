@@ -10,6 +10,7 @@ import android.os.Looper;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextPaint;
+import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.text.style.UnderlineSpan;
@@ -281,45 +282,233 @@ public class LearningActivity extends ForgeActivity {
         course = null;
         question = null;
         confirmButton.setVisibility(View.GONE);
-        titleView.setText("课程");
+        explainView.setVisibility(View.GONE);
+        titleView.setText("学习");
         subtitleView.setText("选择课程");
         content.removeAllViews();
+        if (scrollView != null) scrollView.scrollTo(0, 0);
         List<ProjectStructure.Course> courses = allCourses();
         progress.normalize(courses);
+        int chapterCount = structure.chapters.size();
+        int unitCount = 0;
+        for (ProjectStructure.Chapter chapter : structure.chapters) unitCount += chapter.units.size();
+        String projectName = VocabularyStore.readProjectName(projectDirectory).trim();
+        if (projectName.isEmpty()) projectName = "学习课程";
+        String summary = "共 " + chapterCount + " 章 · " + unitCount + " 单元 · "
+                + courses.size() + " 关";
+        if (!courses.isEmpty()) summary += " · 完成当前关卡后解锁下一关";
+
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        hero.setPadding(dp(4), dp(16), dp(4), dp(18));
+        TextView eyebrow = text("LEARN · 学习模式", 11, R.color.forge_accent);
+        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
+        eyebrow.setLetterSpacing(0.08f);
+        eyebrow.setGravity(Gravity.CENTER);
+        hero.addView(eyebrow);
+        TextView heading = text(projectName, 26, R.color.forge_text);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.setGravity(Gravity.CENTER);
+        heading.setMaxLines(2);
+        heading.setEllipsize(TextUtils.TruncateAt.END);
+        hero.addView(heading, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView intro = text(summary, 13, R.color.forge_muted);
+        intro.setGravity(Gravity.CENTER);
+        intro.setPadding(dp(4), 0, dp(4), 0);
+        hero.addView(intro);
+        content.addView(hero);
+
         for (ProjectStructure.Chapter chapter : structure.chapters) {
-            content.addView(text(chapter.name, 20, R.color.forge_text));
+            LinearLayout chapterHeader = new LinearLayout(this);
+            chapterHeader.setOrientation(LinearLayout.HORIZONTAL);
+            chapterHeader.setGravity(Gravity.CENTER_VERTICAL);
+            chapterHeader.setPadding(0, dp(14), 0, dp(8));
+            TextView chapterTitle = text(chapter.name, 20, R.color.forge_text);
+            chapterTitle.setTypeface(Typeface.DEFAULT_BOLD);
+            chapterTitle.setMaxLines(2);
+            chapterTitle.setEllipsize(TextUtils.TruncateAt.END);
+            chapterHeader.addView(chapterTitle, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            int chapterCourses = 0;
+            for (ProjectStructure.Unit unit : chapter.units) chapterCourses += unit.courses.size();
+            chapterHeader.addView(courseCountChip(chapter.units.size() + " 单元 · "
+                    + chapterCourses + " 关"));
+            content.addView(chapterHeader);
+
+            if (chapter.units.isEmpty()) {
+                content.addView(text("本章还没有单元", 13, R.color.forge_muted));
+            }
             for (ProjectStructure.Unit unit : chapter.units) {
-                TextView unitHeader = text(unit.name, 14, R.color.forge_muted);
-                unitHeader.setPadding(dp(12), dp(6), 0, dp(4));
-                content.addView(unitHeader);
-                for (ProjectStructure.Course item : unit.courses) {
-                    boolean unlocked = progress.isUnlocked(item);
-                    boolean completed = progress.isCompleted(item);
-                    LearningStats.Entry best = learningStats == null
-                            ? null : learningStats.best(item.id);
-                    String bestText = best == null ? "暂无成绩"
-                            : "历史最佳 " + best.bestAccuracy + "% · "
-                            + best.bestCorrect + "/" + best.bestTotal;
-                    Button row = new Button(this);
-                    row.setAllCaps(false);
-                    row.setText((unlocked ? "" : "🔒 ") + item.name
-                            + (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁")
-                            + "\n" + item.questions.size() + " 道题目 · " + bestText);
-                    row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-                    row.setPadding(dp(24), 0, dp(16), 0);
-                    row.setOnClickListener(v -> {
-                        if (!progress.isUnlocked(item)) {
-                            toast("完成上一课程后解锁");
-                            return;
-                        }
-                        startCourse(item);
-                    });
-                    content.addView(row, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, dp(72)));
-                }
+                content.addView(buildUnitCard(unit));
             }
         }
-        if (courses.isEmpty()) content.addView(text("还没有课程", 16, R.color.forge_muted));
+        if (courses.isEmpty()) {
+            TextView empty = text("还没有课程，请先在项目结构中添加章节、单元和课程。",
+                    14, R.color.forge_muted);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(12), dp(28), dp(12), dp(28));
+            content.addView(empty);
+        }
+    }
+
+    private View courseCountChip(String label) {
+        TextView chip = new TextView(this);
+        chip.setText(label);
+        chip.setTextSize(11f);
+        chip.setTextColor(getColor(R.color.forge_muted));
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(9), dp(4), dp(9), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(getColor(R.color.forge_panel2));
+        bg.setCornerRadius(dp(999));
+        bg.setStroke(dp(1), getColor(R.color.forge_line));
+        chip.setBackground(bg);
+        return chip;
+    }
+
+    private View buildUnitCard(ProjectStructure.Unit unit) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(getColor(R.color.forge_panel));
+        bg.setCornerRadius(dp(16));
+        bg.setStroke(dp(1), getColor(R.color.forge_line));
+        card.setBackground(bg);
+        card.setElevation(dp(1));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.bottomMargin = dp(12);
+        card.setLayoutParams(cardParams);
+
+        LinearLayout unitHeader = new LinearLayout(this);
+        unitHeader.setOrientation(LinearLayout.HORIZONTAL);
+        unitHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView unitTitle = text(unit.name, 16, R.color.forge_text);
+        unitTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        unitTitle.setMaxLines(2);
+        unitTitle.setEllipsize(TextUtils.TruncateAt.END);
+        unitHeader.addView(unitTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        unitHeader.addView(courseCountChip(unit.courses.size() + " 关"));
+        card.addView(unitHeader);
+        TextView unitSub = text("按顺序完成关卡，完成后解锁下一关", 12, R.color.forge_muted);
+        unitSub.setPadding(0, dp(3), 0, dp(8));
+        card.addView(unitSub);
+
+        for (int i = 0; i < unit.courses.size(); i++) {
+            if (i > 0) {
+                View divider = new View(this);
+                divider.setBackgroundColor(getColor(R.color.forge_line2));
+                LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+                dividerParams.topMargin = dp(10);
+                dividerParams.bottomMargin = dp(2);
+                card.addView(divider, dividerParams);
+            }
+            card.addView(buildCourseRow(unit.courses.get(i)));
+        }
+        if (unit.courses.isEmpty()) {
+            TextView empty = text("本单元还没有课程", 13, R.color.forge_muted);
+            empty.setPadding(0, dp(6), 0, 0);
+            card.addView(empty);
+        }
+        return card;
+    }
+
+    private View buildCourseRow(ProjectStructure.Course item) {
+        boolean unlocked = progress.isUnlocked(item);
+        boolean completed = progress.isCompleted(item);
+        LearningStats.Entry best = learningStats == null ? null : learningStats.best(item.id);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(10), 0, dp(2));
+
+        LinearLayout nameLine = new LinearLayout(this);
+        nameLine.setOrientation(LinearLayout.HORIZONTAL);
+        nameLine.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = text((unlocked ? "" : "🔒 ") + item.name, 15, R.color.forge_text);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setMaxLines(2);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        nameLine.addView(name, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        nameLine.addView(stateChip(completed ? "已完成" : unlocked ? "可学习" : "未解锁",
+                completed, unlocked));
+        row.addView(nameLine);
+
+        LinearLayout meta = new LinearLayout(this);
+        meta.setOrientation(LinearLayout.HORIZONTAL);
+        meta.setGravity(Gravity.CENTER_VERTICAL);
+        meta.setPadding(0, dp(5), 0, 0);
+        TextView questions = text(item.questions.size() + " 道题目", 12, R.color.forge_muted);
+        meta.addView(questions);
+        View gap = new View(this);
+        meta.addView(gap, new LinearLayout.LayoutParams(dp(8), dp(1)));
+        meta.addView(bestPill(best));
+        row.addView(meta);
+
+        ForgeButton start = new ForgeButton(this);
+        start.setVariant(unlocked ? ForgeButton.VARIANT_PRIMARY : ForgeButton.VARIANT_GHOST);
+        start.setText(completed ? "再练一次" : unlocked ? "开始这一关" : "未解锁");
+        start.setTextSize(14f);
+        start.setEnabled(unlocked);
+        start.setOnClickListener(v -> {
+            if (!progress.isUnlocked(item)) {
+                toast("完成上一课程后解锁");
+                return;
+            }
+            startCourse(item);
+        });
+        LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
+        startParams.topMargin = dp(10);
+        row.addView(start, startParams);
+
+        if (!unlocked) {
+            nameLine.setAlpha(0.55f);
+            meta.setAlpha(0.7f);
+        }
+        return row;
+    }
+
+    private View stateChip(String label, boolean completed, boolean unlocked) {
+        TextView chip = new TextView(this);
+        chip.setText(label);
+        chip.setTextSize(11f);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(8), dp(3), dp(8), dp(3));
+        chip.setTextColor(getColor(completed ? R.color.forge_ok
+                : unlocked ? R.color.forge_accent : R.color.forge_muted));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(getColor(completed ? R.color.forge_ok_bg
+                : unlocked ? R.color.forge_accent_soft : R.color.forge_panel2));
+        bg.setCornerRadius(dp(999));
+        bg.setStroke(dp(1), getColor(completed ? R.color.forge_ok_bg
+                : unlocked ? R.color.forge_accent_line : R.color.forge_line));
+        chip.setBackground(bg);
+        return chip;
+    }
+
+    private View bestPill(LearningStats.Entry best) {
+        TextView pill = new TextView(this);
+        pill.setText(best == null ? "暂无成绩"
+                : "最佳 " + best.bestAccuracy + "% · " + best.bestCorrect + "/" + best.bestTotal);
+        pill.setTextSize(11f);
+        pill.setTypeface(Typeface.DEFAULT_BOLD);
+        pill.setGravity(Gravity.CENTER);
+        pill.setPadding(dp(9), dp(3), dp(9), dp(3));
+        pill.setTextColor(getColor(best == null ? R.color.forge_muted : R.color.forge_ok));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(getColor(best == null ? R.color.forge_panel2 : R.color.forge_ok_bg));
+        bg.setCornerRadius(dp(999));
+        bg.setStroke(dp(1), getColor(best == null ? R.color.forge_line : R.color.forge_ok_bg));
+        pill.setBackground(bg);
+        return pill;
     }
 
     private void startCourse(ProjectStructure.Course selected) {
@@ -479,6 +668,7 @@ public class LearningActivity extends ForgeActivity {
                 + " / " + selected.questions.size() + " 题";
         updateRunSubtitle();
         content.removeAllViews();
+        if (scrollView != null) scrollView.scrollTo(0, 0);
         currentAttemptRecorded = false;
         if (ProjectStructure.Question.TYPE_CLOZE.equals(item.type)) {
             renderClozeQuestion(item);

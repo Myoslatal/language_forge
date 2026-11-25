@@ -56,6 +56,25 @@ A zero-answerable card-only course completed with 本课没有可作答题目，
 the stats file (`t81-empty-complete.png`). Smoke also asserts archive exclusion
 (`learning_stats_export=excluded import=excluded`).
 
+### Learning course-list visual refresh (2026-11-25)
+
+The learning course selector now follows the share-site start page (`/tmp/nortu-site.html`,
+`.pl-start/.pl-unit/.pl-bestline/.pl-best`: light surface, 760px content, 16px rounded cards,
+blue primary actions, green best-score pills). Android uses native rounded cards with elevation,
+state chips, best pills and full-width `开始这一关/再练一次` buttons; desktop uses ImGui-drawn
+rounded cards, borders/shadows, pills and buttons instead of the old selectable rows. The full
+chapter → unit → course hierarchy is retained, including chapter headers, unit titles/subtitles
+and locked rows that remain visible with a disabled button. Unlock order, completion progress,
+learning-stats, start/retry behavior and question pages are unchanged. A 2-chapter/3-unit/4-course
+fixture covered completed courses with 80%/100% bests, an unlocked course with no stats, and a
+locked course with an old 50% record; both themes were checked. Screenshots: Android
+`/tmp/t82-a-list-light-final.png`, `/tmp/t82-a-list-light-final-lower.png`,
+`/tmp/t82-a-list-dark.png`, `/tmp/t82-a-list-small-dark2.png`; desktop
+`/tmp/t82-d-list-light-final.png`, `/tmp/t82-d-list-light-final-lower.png`,
+`/tmp/t82-d-list-dark2.png`, `/tmp/t82-d-small-window-top.png`. Starting from a scrolled list
+resets the question view to the top. Android clean debug build and desktop clean Release build succeeded;
+desktop clean smoke ×2 reported SMOKE PASS (including learning_stats_export=excluded).
+
 ### WorkBuddy share-site course migration (2026-11-25)
 
 The 3-course/46-question Nortu L1-2 pack, 23 embedded recordings, Nozu Sans TTF and 17-entry
@@ -130,6 +149,7 @@ verification uses WAV/MediaPlayer/SDL logs; physical audibility remains RD-07.
 | E2 | per-word duplicate mixed/cancel, default code, phonetic append | PASS | smoke lexicon_prompt/perword/unicode |
 | F1 | fonts/images/audio import/ref/delete guards | PASS | smoke font/image/audio flags |
 | F2 | .conlang export/import including question audio | PASS | smoke zip/import/browser export/import |
+| I1 | learning course selector card refresh | PASS | Android/desktop 4-course hierarchy fixture: completed 80%/100%, unlocked no-stats, locked 50% disabled; light/dark; small Android 720x1280 and desktop 800x600 no overflow; start/retry works; screenshots above |
 | H1 | learning first-attempt accuracy + course best | PASS | desktop/Android mixed fixtures: 80% first run, 60% rerun kept 80, 100% rerun refreshed; card + custom-none excluded; restart/best and mid-run no-write verified; JSON learning-stats.json; screenshots above |
 | G1 | light/dark theme persistence | PASS | smoke theme/UI screenshots; no user desktop Xvfb |
 | G2 | no microphone / permission denied degradation | N/A | API29 emulator has virtual mic and recording succeeded; no physical no-device test — tracked as RD-02 in [REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md) |

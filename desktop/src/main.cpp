@@ -507,6 +507,7 @@ struct App {
   std::string learningRunQuestionId;
   bool learningRunBestRefreshed = false;
   bool learningRunFinished = false;
+  bool learningScrollTop = false;
 
   std::vector<Course*> allCoursesFlat() {
     std::vector<Course*> courses;
@@ -5512,8 +5513,218 @@ void renderQuestionEditor(App& app) {
   if (ImGui::Button("取消##question_cancel_bottom", ImVec2(90, 34))) app.screen = App::Screen::Course;
 }
 
+std::string ellipsizeLearningText(const std::string& text, float maxWidth) {
+  if (maxWidth <= 0) return "";
+  if (ImGui::CalcTextSize(text.c_str()).x <= maxWidth) return text;
+  const std::string dots = "…";
+  std::string result = text;
+  while (!result.empty()) {
+    std::size_t cut = result.size() - 1;
+    while (cut > 0 && (static_cast<unsigned char>(result[cut]) & 0xC0) == 0x80) --cut;
+    result.erase(cut);
+    if (ImGui::CalcTextSize((result + dots).c_str()).x <= maxWidth) return result + dots;
+  }
+  return dots;
+}
+
+void drawLearningPill(ImDrawList* draw, ImVec2 pos, const std::string& label,
+                      const ImVec4& background, const ImVec4& border,
+                      const ImVec4& foreground) {
+  const float height = 22.0f;
+  const ImVec2 size(ImGui::CalcTextSize(label.c_str()).x + 18.0f, height);
+  draw->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + height),
+                      ImGui::GetColorU32(background), height * 0.5f);
+  draw->AddRect(pos, ImVec2(pos.x + size.x, pos.y + height),
+                ImGui::GetColorU32(border), height * 0.5f);
+  textAt(ImVec2(pos.x + 9.0f, pos.y + 3.0f), ImGui::GetColorU32(foreground), label, 12.0f);
+}
+
+void renderLearningCourseList(App& app) {
+  app.loadCourseProgress();
+  int chapterCount = static_cast<int>(app.structure.chapters.size());
+  int unitCount = 0;
+  int courseCount = 0;
+  for (auto& chapter : app.structure.chapters) {
+    unitCount += static_cast<int>(chapter.units.size());
+    for (auto& unit : chapter.units) courseCount += static_cast<int>(unit.courses.size());
+  }
+  const float avail = ImGui::GetContentRegionAvail().x;
+  const float width = std::min(760.0f, std::max(280.0f, avail));
+  const float left = ImGui::GetCursorPosX() + std::max(0.0f, (avail - width) * 0.5f);
+
+  const ImVec4 panel = app.dark ? color(24, 33, 48) : color(255, 255, 255);
+  const ImVec4 panel2 = app.dark ? color(29, 40, 56) : color(246, 248, 251);
+  const ImVec4 panel3 = app.dark ? color(38, 50, 70) : color(233, 237, 244);
+  const ImVec4 text = ImGui::GetStyle().Colors[ImGuiCol_Text];
+  const ImVec4 muted = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+  const ImVec4 line = app.dark ? color(43, 56, 76) : color(223, 228, 236);
+  const ImVec4 accent = ImGui::GetStyle().Colors[ImGuiCol_CheckMark];
+  const ImVec4 green = app.dark ? color(76, 199, 127) : color(21, 148, 71);
+  const ImVec4 greenSoft = app.dark ? color(23, 52, 35) : color(232, 246, 237);
+  const ImVec4 white = color(255, 255, 255);
+
+  auto centered = [&](const std::string& value, float size, const ImVec4& tint) {
+    const float textWidth = ImGui::CalcTextSize(value.c_str()).x;
+    ImGui::SetCursorPosX(left + std::max(0.0f, (width - textWidth) * 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, tint);
+    if (size > 0.0f) ImGui::PushFont(nullptr, size);
+    ImGui::TextUnformatted(value.c_str());
+    if (size > 0.0f) ImGui::PopFont();
+    ImGui::PopStyleColor();
+  };
+
+  const std::string projectName = app.project.name.empty() ? "学习课程" : app.project.name;
+  const std::string summary = "共 " + std::to_string(chapterCount) + " 章 · " +
+      std::to_string(unitCount) + " 单元 · " + std::to_string(courseCount) +
+      " 关 · 完成当前关卡后解锁下一关";
+  ImGui::Dummy(ImVec2(0, 8));
+  centered("LEARN · 学习模式", 12.0f, accent);
+  centered(ellipsizeLearningText(projectName, width - 32.0f), 27.0f, text);
+  centered(summary, 13.0f, muted);
+  ImGui::Dummy(ImVec2(0, 10));
+
+  if (app.structure.chapters.empty()) {
+    centered("还没有课程，请先在项目结构中添加章节、单元和课程。", 0.0f, muted);
+    return;
+  }
+
+  for (auto& chapter : app.structure.chapters) {
+    ImGui::SetCursorPosX(left);
+    ImGui::PushStyleColor(ImGuiCol_Text, text);
+    ImGui::PushFont(nullptr, 20.0f);
+    ImGui::TextUnformatted(ellipsizeLearningText(chapter.name, width - 160.0f).c_str());
+    ImGui::PopFont();
+    ImGui::PopStyleColor();
+    ImGui::SetCursorPosX(left);
+    int chapterCourses = 0;
+    for (auto& unit : chapter.units) chapterCourses += static_cast<int>(unit.courses.size());
+    ImGui::TextDisabled("%d 单元 · %d 关", static_cast<int>(chapter.units.size()),
+                        chapterCourses);
+    ImGui::Dummy(ImVec2(0, 6));
+
+    if (chapter.units.empty()) {
+      ImGui::SetCursorPosX(left);
+      ImGui::TextDisabled("本章还没有单元");
+      ImGui::Dummy(ImVec2(0, 10));
+    }
+    for (auto& unit : chapter.units) {
+      const int rows = static_cast<int>(unit.courses.size());
+      const float rowHeight = 80.0f;
+      const float cardHeight = 62.0f + std::max(1, rows) * rowHeight + 12.0f;
+      ImGui::SetCursorPosX(left);
+      const ImVec2 cardPos = ImGui::GetCursorScreenPos();
+      ImDrawList* draw = ImGui::GetWindowDrawList();
+      draw->AddRectFilled(ImVec2(cardPos.x + 1, cardPos.y + 3),
+                          ImVec2(cardPos.x + width - 1, cardPos.y + cardHeight + 3),
+                          ImGui::GetColorU32(app.dark ? color(0, 0, 0, 90)
+                                                      : color(16, 24, 40, 18)), 16.0f);
+      draw->AddRectFilled(cardPos, ImVec2(cardPos.x + width, cardPos.y + cardHeight),
+                          ImGui::GetColorU32(panel), 16.0f);
+      draw->AddRect(cardPos, ImVec2(cardPos.x + width, cardPos.y + cardHeight),
+                    ImGui::GetColorU32(line), 16.0f);
+      draw->PushClipRect(cardPos, ImVec2(cardPos.x + width, cardPos.y + cardHeight), true);
+      textAt(ImVec2(cardPos.x + 16, cardPos.y + 14),
+             ImGui::GetColorU32(text), ellipsizeLearningText(unit.name, width - 130.0f), 16.0f);
+      textAt(ImVec2(cardPos.x + 16, cardPos.y + 37),
+             ImGui::GetColorU32(muted),
+             "共 " + std::to_string(rows) + " 关 · 完成上一关后解锁下一关", 12.5f);
+      const std::string unitCount = std::to_string(rows) + " 关";
+      const float unitCountWidth = ImGui::CalcTextSize(unitCount.c_str()).x;
+      textAt(ImVec2(cardPos.x + width - 16 - unitCountWidth, cardPos.y + 17),
+             ImGui::GetColorU32(muted), unitCount, 12.0f);
+
+      for (int i = 0; i < rows; ++i) {
+        Course& course = unit.courses[i];
+        const float rowTop = cardPos.y + 62.0f + i * rowHeight;
+        if (i > 0) {
+          draw->AddLine(ImVec2(cardPos.x + 16, rowTop),
+                        ImVec2(cardPos.x + width - 16, rowTop),
+                        ImGui::GetColorU32(line), 1.0f);
+        }
+        const bool unlocked = app.unlockedCourseIds.count(course.id) > 0;
+        const bool completed = app.completedCourseIds.count(course.id) > 0;
+        const bool hasQuestions = !course.questions.empty();
+        const App::LearningBest* best = app.bestFor(course.id);
+        const float infoWidth = width - 16.0f - 136.0f - 16.0f - 24.0f;
+        textAt(ImVec2(cardPos.x + 16, rowTop + 12),
+               ImGui::GetColorU32(unlocked ? text : muted),
+               ellipsizeLearningText((unlocked ? "" : "🔒 ") + course.name, infoWidth), 15.5f);
+        const std::string count = std::to_string(course.questions.size()) + " 道题目 · ";
+        const std::string status = completed ? "已完成" : unlocked ? "可学习" : "未解锁";
+        float cursorX = cardPos.x + 16;
+        textAt(ImVec2(cursorX, rowTop + 34), ImGui::GetColorU32(unlocked ? muted : muted),
+               count, 12.0f);
+        cursorX += ImGui::CalcTextSize(count.c_str()).x;
+        textAt(ImVec2(cursorX, rowTop + 34), ImGui::GetColorU32(
+                   completed ? green : unlocked ? accent : muted), status, 12.0f);
+        const ImVec4 pillBg = best ? greenSoft : panel2;
+        const ImVec4 pillBorder = best ? green : line;
+        const ImVec4 pillText = best ? green : muted;
+        drawLearningPill(draw, ImVec2(cardPos.x + 16, rowTop + 53),
+                         best ? "最佳 " + std::to_string(best->bestAccuracy) + "% · " +
+                                    std::to_string(best->bestCorrect) + "/" +
+                                    std::to_string(best->bestTotal)
+                              : "暂无成绩",
+                         pillBg, pillBorder, pillText);
+      }
+      draw->PopClipRect();
+
+      for (int i = 0; i < rows; ++i) {
+        Course& course = unit.courses[i];
+        const bool unlocked = app.unlockedCourseIds.count(course.id) > 0;
+        const bool completed = app.completedCourseIds.count(course.id) > 0;
+        const bool hasQuestions = !course.questions.empty();
+        const float rowTop = cardPos.y + 62.0f + i * rowHeight;
+        const ImVec2 buttonPos(cardPos.x + width - 16.0f - 136.0f, rowTop + 18.0f);
+        ImGui::SetCursorScreenPos(buttonPos);
+        ImGui::PushID(course.id.c_str());
+        const bool enabled = unlocked && hasQuestions;
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+        if (enabled) {
+          ImGui::PushStyleColor(ImGuiCol_Button, accent);
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                app.dark ? color(129, 169, 255) : color(73, 133, 247));
+          ImGui::PushStyleColor(ImGuiCol_ButtonActive, accent);
+          ImGui::PushStyleColor(ImGuiCol_Text, white);
+        } else {
+          ImGui::PushStyleColor(ImGuiCol_Button, panel3);
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered, panel3);
+          ImGui::PushStyleColor(ImGuiCol_ButtonActive, panel3);
+          ImGui::PushStyleColor(ImGuiCol_Text, muted);
+        }
+        if (!enabled) ImGui::BeginDisabled();
+        const std::string buttonLabel = !hasQuestions ? "暂无题目"
+            : !unlocked ? "未解锁" : completed ? "再练一次" : "开始这一关";
+        if (ImGui::Button(buttonLabel.c_str(), ImVec2(136, 40))) {
+          app.learningShowList = false;
+          app.learningScrollTop = true;
+          app.beginLearningRun(&course);
+          app.learningCourseId = course.id;
+          app.learningQuestionId = course.questions.front().id;
+          app.learningComplete = false;
+          app.learningAnswered = false;
+          app.learningSelected = -1;
+        }
+        if (!enabled) ImGui::EndDisabled();
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
+        ImGui::PopID();
+      }
+
+      ImGui::SetCursorScreenPos(ImVec2(cardPos.x, cardPos.y + cardHeight));
+      ImGui::Dummy(ImVec2(0, 0));
+      ImGui::SetCursorPosX(left);
+      ImGui::Dummy(ImVec2(0, 8));
+    }
+  }
+}
+
 void renderLearning(App& app) {
   app.ensureLearningStatsLoaded();
+  if (app.learningScrollTop) {
+    ImGui::SetScrollY(0.0f);
+    app.learningScrollTop = false;
+  }
   if (app.learningCourseId.empty() && app.learningQuestionId.empty()) {
     app.learningComplete = false;
   }
@@ -5568,39 +5779,7 @@ void renderLearning(App& app) {
   }
   if (app.learningQuestionId.empty() && !app.learningComplete) {
     if (app.learningShowList) {
-      pageTitle("LEARN", "课程", "章节 / 单元 / 课程");
-      for (auto& chapter : app.structure.chapters) {
-        ImGui::Spacing();
-        ImGui::PushFont(nullptr, 20.0f);
-        ImGui::TextUnformatted(chapter.name.c_str());
-        ImGui::PopFont();
-        for (auto& unit : chapter.units) {
-          ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 12);
-          ImGui::TextDisabled("%s", unit.name.c_str());
-          for (auto& item : unit.courses) {
-            bool unlocked = app.unlockedCourseIds.count(item.id) > 0;
-            bool completed = app.completedCourseIds.count(item.id) > 0;
-            ImGui::PushID(item.id.c_str());
-            std::string label = std::string(unlocked ? "" : "🔒 ") + item.name +
-                (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁") +
-                "  ·  " + std::to_string(item.questions.size()) + " 题 · " +
-                app.bestLabel(item.id);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 24);
-            float rowWidth = ImGui::GetContentRegionAvail().x;
-            if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(rowWidth, 40))) {
-              if (!unlocked) app.showToast("完成上一课程后解锁");
-              else if (!item.questions.empty()) {
-                app.learningShowList = false;
-                app.beginLearningRun(&item);
-                app.learningCourseId = item.id;
-                app.learningQuestionId = item.questions.front().id;
-                app.learningComplete = false;
-              }
-            }
-            ImGui::PopID();
-          }
-        }
-      }
+      renderLearningCourseList(app);
       return;
     }
     app.loadCourseProgress();
@@ -5686,24 +5865,7 @@ void renderLearning(App& app) {
           app.learningComplete = false;
         }
       } else {
-        pageTitle("LEARN", "选择课程", "语法与词汇学习");
-        for (auto& chapter : app.structure.chapters) {
-          for (auto& unit : chapter.units) {
-            for (auto& item : unit.courses) {
-              ImGui::PushID(item.id.c_str());
-              if (ImGui::Button((item.name + "  ·  " + chapter.name + " / " + unit.name +
-                                 "  ·  " + std::to_string(item.questions.size()) + " 题 · " +
-                                 app.bestLabel(item.id)).c_str(),
-                                ImVec2(-1, 44))) {
-                app.beginLearningRun(&item);
-                app.learningCourseId = item.id;
-                app.learningComplete = false;
-                app.learningQuestionId = item.questions.empty() ? "" : item.questions.front().id;
-              }
-              ImGui::PopID();
-            }
-          }
-        }
+        renderLearningCourseList(app);
         return;
       }
     }
