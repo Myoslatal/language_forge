@@ -781,6 +781,7 @@ bool Store::exportProject(const std::string& folder, const fs::path& output,
                                 ? relative
                                 : fs::path(relative.generic_string()));
     std::replace(name.begin(), name.end(), '\\', '/');
+    if (name == "learning-stats.json") continue;
     std::string bytes = readBytes(entry.path());
     if (!mz_zip_writer_add_mem(&zip, name.c_str(), bytes.data(), bytes.size(),
                                MZ_BEST_COMPRESSION)) {
@@ -925,7 +926,7 @@ bool Store::importConlang(const fs::path& input, ProjectSummary& project,
       continue;
     }
     std::string relative = entry.name.substr(prefix.size());
-    if (relative.empty()) continue;
+    if (relative.empty() || relative == "learning-stats.json") continue;
     fs::path target = (dir / pathFromUtf8(relative)).lexically_normal();
     fs::path relativeCheck = target.lexically_relative(dir.lexically_normal());
     bool safe = !relativeCheck.empty() && !relativeCheck.is_absolute();

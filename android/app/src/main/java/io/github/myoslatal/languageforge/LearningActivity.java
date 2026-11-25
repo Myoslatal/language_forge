@@ -88,6 +88,12 @@ public class LearningActivity extends ForgeActivity {
     private final List<View> clozeCandidateViews = new ArrayList<>();
     private TextView typeNearView;
     private CourseProgress progress;
+    private LearningStats learningStats;
+    private int runEligible;
+    private int runAnswered;
+    private int runFirstCorrect;
+    private boolean currentAttemptRecorded;
+    private String runSubtitleBase = "";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -101,6 +107,7 @@ public class LearningActivity extends ForgeActivity {
         }
         structure = ProjectStructure.load(projectDirectory);
         progress = CourseProgress.load(projectDirectory);
+        learningStats = LearningStats.load(projectDirectory);
         vocabulary = new VocabularyStore(projectDirectory);
         vocabulary.load();
         posStore = new PosStore(projectDirectory);
@@ -288,11 +295,16 @@ public class LearningActivity extends ForgeActivity {
                 for (ProjectStructure.Course item : unit.courses) {
                     boolean unlocked = progress.isUnlocked(item);
                     boolean completed = progress.isCompleted(item);
+                    LearningStats.Entry best = learningStats == null
+                            ? null : learningStats.best(item.id);
+                    String bestText = best == null ? "暂无成绩"
+                            : "历史最佳 " + best.bestAccuracy + "% · "
+                            + best.bestCorrect + "/" + best.bestTotal;
                     Button row = new Button(this);
                     row.setAllCaps(false);
                     row.setText((unlocked ? "" : "🔒 ") + item.name
                             + (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁")
-                            + "\n" + item.questions.size() + " 道题目");
+                            + "\n" + item.questions.size() + " 道题目 · " + bestText);
                     row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
                     row.setPadding(dp(24), 0, dp(16), 0);
                     row.setOnClickListener(v -> {
@@ -311,6 +323,14 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void startCourse(ProjectStructure.Course selected) {
+        runEligible = 0;
+        runAnswered = 0;
+        runFirstCorrect = 0;
+        currentAttemptRecorded = false;
+        runSubtitleBase = "";
+        for (ProjectStructure.Question item : selected.questions) {
+            if (answerable(item)) runEligible++;
+        }
         if (selected.questions.isEmpty()) {
             course = selected;
             question = null;
@@ -329,6 +349,31 @@ public class LearningActivity extends ForgeActivity {
         showQuestion(selected, selected.questions.get(0));
     }
 
+    private boolean answerable(ProjectStructure.Question item) {
+        if (item == null) return false;
+        if (ProjectStructure.Question.TYPE_CARD.equals(item.type)) return false;
+        if (ProjectStructure.Question.TYPE_CUSTOM.equals(item.type)
+                && "none".equals(item.customMode == null ? "choice" : item.customMode)) {
+            return false;
+        }
+        return true;
+    }
+
+    private void recordAttempt(boolean correct) {
+        if (currentAttemptRecorded || question == null || !answerable(question)) return;
+        currentAttemptRecorded = true;
+        runAnswered++;
+        if (correct) runFirstCorrect++;
+        updateRunSubtitle();
+    }
+
+    private void updateRunSubtitle() {
+        if (subtitleView == null || runSubtitleBase.isEmpty()) return;
+        String suffix = runEligible <= 0 ? ""
+                : " · 首次答对 " + runFirstCorrect + " · 已答 " + runAnswered;
+        subtitleView.setText(runSubtitleBase + suffix);
+    }
+
     private void showComplete() {
         dismissHint();
         ProjectStructure.Course finished = course;
@@ -339,11 +384,34 @@ public class LearningActivity extends ForgeActivity {
             progress.complete(courses, finished);
             if (!progress.save(projectDirectory)) toast("进度保存失败");
         }
+        boolean refreshedBest = false;
+        if (finished != null && runEligible > 0 && learningStats != null) {
+            refreshedBest = learningStats.record(finished.id, runFirstCorrect, runEligible);
+            if (refreshedBest && !learningStats.save(projectDirectory)) {
+                toast("学习统计保存失败");
+            }
+        }
+        LearningStats.Entry best = finished == null || learningStats == null
+                ? null : learningStats.best(finished.id);
         titleView.setText("本课完成");
         subtitleView.setText(finished == null ? "" : finished.name);
         content.removeAllViews();
         content.addView(text("本课完成", 26, R.color.forge_text));
         content.addView(text("你已完成本课全部题目。", 16, R.color.forge_muted));
+        if (runEligible > 0) {
+            int accuracy = Math.round(runFirstCorrect * 100f / runEligible);
+            content.addView(text("首次答对 " + runFirstCorrect + " / " + runEligible
+                    + " · 正确率 " + accuracy + "%", 17, R.color.forge_text));
+            if (best != null) {
+                content.addView(text("历史最佳 " + best.bestAccuracy + "% · "
+                        + best.bestCorrect + "/" + best.bestTotal, 14, R.color.forge_muted));
+            }
+            if (refreshedBest) {
+                content.addView(text("刷新最佳", 14, R.color.forge_ok));
+            }
+        } else {
+            content.addView(text("本课没有可作答题目，不计入正确率。", 14, R.color.forge_muted));
+        }
         ProjectStructure.Course next = finished == null || progress == null
                 ? null : progress.next(courses, finished);
         if (next != null && progress.isUnlocked(next)) {
@@ -407,9 +475,11 @@ public class LearningActivity extends ForgeActivity {
                         ? (item.customLabel == null || item.customLabel.isEmpty()
                                 ? "自定义题型" : item.customLabel) : "选择正确翻译";
         int progress = selected.questions.indexOf(item) + 1;
-        subtitleView.setText(selected.name + " · " + mode + " · 第 " + progress
-                + " / " + selected.questions.size() + " 题");
+        runSubtitleBase = selected.name + " · " + mode + " · 第 " + progress
+                + " / " + selected.questions.size() + " 题";
+        updateRunSubtitle();
         content.removeAllViews();
+        currentAttemptRecorded = false;
         if (ProjectStructure.Question.TYPE_CLOZE.equals(item.type)) {
             renderClozeQuestion(item);
             addQuestionImage(item);
@@ -1539,12 +1609,14 @@ public class LearningActivity extends ForgeActivity {
             matchRight = -1;
             if (matchMatched.size() == item.pairs.size()) {
                 answered = true;
+                recordAttempt(true);
                 confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                 confirmButton.setVisibility(View.VISIBLE);
                 toast("全部配对完成");
             }
             renderMatchQuestion(item);
         } else {
+            recordAttempt(false);
             matchLeft = -1;
             matchRight = -1;
             toast("配对错误，请重试");
@@ -1815,8 +1887,10 @@ public class LearningActivity extends ForgeActivity {
                     customInput.setBackgroundColor(getColor(R.color.forge_ok_bg));
                     confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                     confirmButton.setVisibility(View.VISIBLE);
+                    recordAttempt(true);
                     toast("回答正确");
                 } else {
+                    recordAttempt(false);
                     { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请再试一次"); }
                 }
                 return;
@@ -1825,11 +1899,13 @@ public class LearningActivity extends ForgeActivity {
                 if (arrangeSelected.isEmpty()) return;
                 if (arrangeCorrect(question)) {
                     answered = true;
+                    recordAttempt(true);
                     renderCustomQuestion(question);
                     confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                     confirmButton.setVisibility(View.VISIBLE);
                     toast("回答正确");
                 } else {
+                    recordAttempt(false);
                     { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
                 }
                 return;
@@ -1847,9 +1923,11 @@ public class LearningActivity extends ForgeActivity {
                 if (i >= clozeFilled.size() || !clozeFilled.get(i).equals(question.clozeOrder.get(i))) ok = false;
             if (ok) {
                 answered = true;
+                recordAttempt(true);
                 refreshCloze(question);
                 toast("回答正确");
             } else {
+                recordAttempt(false);
                 { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
             }
             return;
@@ -1866,11 +1944,13 @@ public class LearningActivity extends ForgeActivity {
             if (listenSelected < 0) return;
             if (listenSelected == question.correctIndex) {
                 answered = true;
+                recordAttempt(true);
                 confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                 confirmButton.setVisibility(View.VISIBLE);
                 toast("回答正确");
                 renderListenQuestion(question);
             } else {
+                recordAttempt(false);
                 { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
                 listenSelected = -1;
                 renderListenQuestion(question);
@@ -1890,6 +1970,7 @@ public class LearningActivity extends ForgeActivity {
             }
             if (ok) {
                 answered = true;
+                recordAttempt(true);
                 readingInput.setEnabled(false);
                 readingInput.setTextColor(getColor(R.color.forge_ok));
                 readingInput.setBackgroundColor(getColor(R.color.forge_ok_bg));
@@ -1897,6 +1978,7 @@ public class LearningActivity extends ForgeActivity {
                 confirmButton.setVisibility(View.VISIBLE);
                 toast("回答正确");
             } else {
+                recordAttempt(false);
                 { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请再试一次"); }
             }
             return;
@@ -1913,6 +1995,7 @@ public class LearningActivity extends ForgeActivity {
             }
             if (ok) {
                 answered = true;
+                recordAttempt(true);
                 typeInput.setEnabled(false);
                 typeInput.setTextColor(getColor(R.color.forge_ok));
                 typeInput.setBackgroundColor(getColor(R.color.forge_ok_bg));
@@ -1920,6 +2003,7 @@ public class LearningActivity extends ForgeActivity {
                 confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                 confirmButton.setVisibility(View.VISIBLE);
             } else {
+                recordAttempt(false);
                 boolean warned = false;
                 for (ProjectStructure.Question.WarnRule rule : question.warn) {
                     String match = normalizeType(rule.match, question.ignoreCase, question.ignoreSpace);
@@ -1953,10 +2037,12 @@ public class LearningActivity extends ForgeActivity {
             dismissHint();
             if (arrangeCorrect(question)) {
                 answered = true;
+                recordAttempt(true);
                 renderArrangeQuestion(question);
                 confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
                 confirmButton.setVisibility(View.VISIBLE);
             } else {
+                recordAttempt(false);
                 { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
             }
             return;
@@ -1965,11 +2051,13 @@ public class LearningActivity extends ForgeActivity {
         dismissHint();
         if (selectedOption == question.correctIndex) {
             answered = true;
+            recordAttempt(true);
             updateOptionStyles();
             confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
             confirmButton.setVisibility(View.VISIBLE);
             if (isLastQuestion()) toast("本课完成");
         } else {
+            recordAttempt(false);
             { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
         }
     }

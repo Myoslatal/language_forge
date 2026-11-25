@@ -246,3 +246,21 @@ Android fixture：`Option Image Test-e3e7a1`。
 
 - 修改题图不会自动删除旧题图文件；课程图片页可按引用状态手动清理。
 - 无头截图证明布局/路径/判定；真实屏幕清晰度仍以设备显示为准。
+
+## Learning accuracy history (task-81)
+
+Learning records live in a separate versioned `learning-stats.json` at the project root, not in
+`progress.json` or course content. Per course id it stores `bestCorrect`, `bestTotal`,
+`bestAccuracy`, `updatedAt`; writes are atomic. Only the first answer check for an answerable
+question counts as first-correct; retry-after-wrong completes the question without first-correct.
+`card` and `custom`/`none` questions are excluded from the denominator. Best is strictly
+higher-only; a zero-answerable course writes nothing, and abandoning a run writes nothing.
+Course lists show 历史最佳 or 暂无成绩, completion shows current/best/刷新最佳, and the in-run
+header shows 首次答对/已答. `.conlang` export excludes this local file and import does not install
+archived stats. Desktop smoke asserts both exclusion directions; Android archive export inspected
+with `unzip -l` contained no `learning-stats.json`; importing a forged archive with a stats
+entry produced no `learning-stats.json` in the imported project. A card-only course
+completed without creating `learning-stats.json` and showed the zero-answerable note. Real runs: mixed fixture 4/5=80% (card/custom-none
+excluded), 3/5=60% retained best 80%, 5/5=100% refreshed; restart kept best; Course B remained
+independent; mid-run exit left the file byte-identical. Statistics screenshots are listed in
+[TESTING.md](TESTING.md).

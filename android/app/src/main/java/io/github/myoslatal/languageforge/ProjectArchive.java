@@ -96,6 +96,8 @@ final class ProjectArchive {
                 throw new IOException("无法创建项目文件夹");
             }
             copyContents(contentRoot, finalDirectory);
+            // Learning history is local to this device and must not travel in a project archive.
+            new File(finalDirectory, LearningStats.FILE_NAME).delete();
             ResourceScopeMigration.migrate(finalDirectory);
             return new ImportResult(name, finalDirectory);
         } catch (Exception e) {
@@ -254,6 +256,7 @@ final class ProjectArchive {
             if (child.isDirectory()) {
                 addFiles(zip, child, entryName);
             } else if (child.isFile()) {
+                if (relative.isEmpty() && LearningStats.FILE_NAME.equals(child.getName())) continue;
                 zip.putNextEntry(new ZipEntry(entryName));
                 try (FileInputStream in = new FileInputStream(child)) {
                     byte[] buffer = new byte[8192];

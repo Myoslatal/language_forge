@@ -35,6 +35,27 @@ can carry course option images (`optionItems[i][0].image`); both use the course 
 and delete protection. Question images render for all types, including cloze and card. Legacy projects and `.conlang` imports are migrated by reference. See
 [RESOURCE_SCOPE_TESTING.md](RESOURCE_SCOPE_TESTING.md).
 
+### Learning accuracy stats (2026-11-25)
+
+Each entry from question 1 is one run. Only the first answer check per answerable question can be
+first-correct; a wrong-then-retry question counts as answered but not first-correct. Card questions and
+custom questions with `customMode=none` are excluded from the denominator; all other types/modes count.
+Accuracy is rounded first-correct/answerable total, and a course with no answerable questions writes
+nothing. Only completing the whole course records a best; exiting mid-run does not write. The best is
+strictly higher-only and is stored per stable course id in a separate versioned `learning-stats.json`
+(atomic temp+rename), not in `progress.json`. Both course lists show 历史最佳 x% · c/t or 暂无成绩;
+completion shows current run, best and 刷新最佳, and question pages show 首次答对/已答. The file is
+local learning history: `.conlang` export excludes it and import never installs it. Android fixture used choice/type/card/custom-none, the main desktop fixture used
+choice/reading/custom/cloze/card and a second desktop fixture used choice/type/card. First wrong then
+retry gave 4/5=80% with card/custom-none excluded; the type fixture gave 2/2=100% with its card
+excluded; a 3/5=60% rerun left best 80%; a 5/5=100% rerun refreshed best; restart kept it; B stayed
+independent; an abandoned run left the file unchanged. Android screenshots: `t81-acomplete.png`,
+`t81-alower-complete.png`, `t81-abetter100.png`, `t81-afinal-list2.png`, `t81-arestart-list.png`;
+desktop: `t81-complete.png`, `t81-r3-complete2.png`, `t81-best100b.png`, `t81-restart-best.png`, `t81-dtype-fixed-complete.png`; Android archive `Stats Fixture.conlang` had no `learning-stats.json` entry; importing an archive with a forged local stats file produced a project without `learning-stats.json`.
+A zero-answerable card-only course completed with 本课没有可作答题目，不计入正确率 and did not create
+the stats file (`t81-empty-complete.png`). Smoke also asserts archive exclusion
+(`learning_stats_export=excluded import=excluded`).
+
 ### WorkBuddy share-site course migration (2026-11-25)
 
 The 3-course/46-question Nortu L1-2 pack, 23 embedded recordings, Nozu Sans TTF and 17-entry
@@ -109,6 +130,7 @@ verification uses WAV/MediaPlayer/SDL logs; physical audibility remains RD-07.
 | E2 | per-word duplicate mixed/cancel, default code, phonetic append | PASS | smoke lexicon_prompt/perword/unicode |
 | F1 | fonts/images/audio import/ref/delete guards | PASS | smoke font/image/audio flags |
 | F2 | .conlang export/import including question audio | PASS | smoke zip/import/browser export/import |
+| H1 | learning first-attempt accuracy + course best | PASS | desktop/Android mixed fixtures: 80% first run, 60% rerun kept 80, 100% rerun refreshed; card + custom-none excluded; restart/best and mid-run no-write verified; JSON learning-stats.json; screenshots above |
 | G1 | light/dark theme persistence | PASS | smoke theme/UI screenshots; no user desktop Xvfb |
 | G2 | no microphone / permission denied degradation | N/A | API29 emulator has virtual mic and recording succeeded; no physical no-device test — tracked as RD-02 in [REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md) |
 | G3 | API29 audio refs/delete protection + old name-only | PASS | refs 被 0 个词汇、1 道题目引用：nız，; delete toast + file remained; old-name opened/blank no crash, completed one word+options+correct saved; /tmp/api29-audio-delete.png, /tmp/api29-old-name.png |

@@ -490,6 +490,23 @@ struct App {
   bool learningExitConfirm = false;
   std::set<std::string> unlockedCourseIds;
   std::set<std::string> completedCourseIds;
+  struct LearningBest {
+    int bestCorrect = 0;
+    int bestTotal = 0;
+    int bestAccuracy = 0;
+    long long updatedAt = 0;
+  };
+  std::map<std::string, LearningBest> learningBest;
+  bool learningStatsLoaded = false;
+  std::string learningStatsFolder;
+  std::string learningRunCourseId;
+  int learningRunEligible = 0;
+  int learningRunAnswered = 0;
+  int learningRunCorrect = 0;
+  bool learningRunQuestionCounted = false;
+  std::string learningRunQuestionId;
+  bool learningRunBestRefreshed = false;
+  bool learningRunFinished = false;
 
   std::vector<Course*> allCoursesFlat() {
     std::vector<Course*> courses;
@@ -562,6 +579,117 @@ struct App {
     }
   }
 
+  void loadLearningStats() {
+    learningBest.clear();
+    learningStatsLoaded = true;
+    learningStatsFolder = folder;
+    if (folder.empty()) return;
+    std::ifstream in(currentProjectDirectory() / "learning-stats.json");
+    if (!in) return;
+    try {
+      json data;
+      in >> data;
+      if (data.value("version", 0) != 1 || !data.contains("courses") ||
+          !data["courses"].is_object()) {
+        return;
+      }
+      for (auto it = data["courses"].begin(); it != data["courses"].end(); ++it) {
+        if (!it.value().is_object()) continue;
+        const int total = std::max(0, it.value().value("bestTotal", 0));
+        const int correct = std::max(0, it.value().value("bestCorrect", 0));
+        if (total <= 0 || correct > total) continue;
+        LearningBest best;
+        best.bestCorrect = correct;
+        best.bestTotal = total;
+        best.bestAccuracy = it.value().value("bestAccuracy",
+            static_cast<int>(std::lround(correct * 100.0 / total)));
+        best.updatedAt = it.value().value("updatedAt", 0LL);
+        learningBest[it.key()] = best;
+      }
+    } catch (...) {
+      learningBest.clear();
+    }
+  }
+
+  void ensureLearningStatsLoaded() {
+    if (!learningStatsLoaded || learningStatsFolder != folder) loadLearningStats();
+  }
+
+  bool saveLearningStats() {
+    if (folder.empty()) return false;
+    json courses = json::object();
+    for (const auto& item : learningBest) {
+      courses[item.first] = json{{"bestCorrect", item.second.bestCorrect},
+                                 {"bestTotal", item.second.bestTotal},
+                                 {"bestAccuracy", item.second.bestAccuracy},
+                                 {"updatedAt", item.second.updatedAt}};
+    }
+    json data = json{{"version", 1}, {"courses", courses}};
+    fs::path target = currentProjectDirectory() / "learning-stats.json";
+    fs::path temp = target;
+    temp += ".tmp";
+    try {
+      std::ofstream out(temp);
+      out << data.dump();
+      out.close();
+      std::error_code ec;
+      fs::rename(temp, target, ec);
+      return !ec;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  bool answerableQuestion(const Question& question) const {
+    if (question.type == "card") return false;
+    if (question.type == "custom") {
+      const std::string mode = question.customMode.empty() ? "choice" : question.customMode;
+      if (mode == "none") return false;
+    }
+    return true;
+  }
+
+  void beginLearningRun(Course* course) {
+    learningRunCourseId = course ? course->id : "";
+    learningRunEligible = 0;
+    learningRunAnswered = 0;
+    learningRunCorrect = 0;
+    learningRunQuestionCounted = false;
+    learningRunQuestionId.clear();
+    learningRunBestRefreshed = false;
+    learningRunFinished = false;
+    if (course) {
+      for (const auto& question : course->questions)
+        if (answerableQuestion(question)) learningRunEligible++;
+    }
+  }
+
+  void recordLearningAttempt(bool correct) {
+    if (learningRunQuestionCounted || learningQuestionId.empty()) return;
+    Question* current = nullptr;
+    for (auto& chapter : structure.chapters)
+      for (auto& unit : chapter.units)
+        for (auto& item : unit.courses)
+          for (auto& question : item.questions)
+            if (question.id == learningQuestionId) current = &question;
+    if (!current || !answerableQuestion(*current)) return;
+    learningRunQuestionCounted = true;
+    learningRunAnswered++;
+    if (correct) learningRunCorrect++;
+  }
+
+  const LearningBest* bestFor(const std::string& courseId) const {
+    auto it = learningBest.find(courseId);
+    return it == learningBest.end() ? nullptr : &it->second;
+  }
+
+  std::string bestLabel(const std::string& courseId) const {
+    const LearningBest* best = bestFor(courseId);
+    if (!best) return "暂无成绩";
+    return "历史最佳 " + std::to_string(best->bestAccuracy) + "% · " +
+           std::to_string(best->bestCorrect) + "/" + std::to_string(best->bestTotal);
+  }
+
   Course* currentCourse() {
     auto courses = allCoursesFlat();
     for (Course* course : courses) {
@@ -583,6 +711,23 @@ struct App {
   }
 
   void finishLearning() {
+    if (learningRunFinished) return;
+    learningRunFinished = true;
+    ensureLearningStatsLoaded();
+    Course* finished = nullptr;
+    for (auto& chapter : structure.chapters)
+      for (auto& unit : chapter.units)
+        for (auto& item : unit.courses)
+          if (item.id == learningCourseId) finished = &item;
+    Question* current = nullptr;
+    if (finished) {
+      for (auto& item : finished->questions)
+        if (item.id == learningQuestionId) current = &item;
+    }
+    if (current && !learningRunQuestionCounted && answerableQuestion(*current)) {
+      if (learningAnswered) recordLearningAttempt(true);
+      else if (learningWrongExplain) recordLearningAttempt(false);
+    }
     completeCurrentCourse();
     learningComplete = true;
     learningQuestionId.clear();
@@ -590,6 +735,22 @@ struct App {
     learningAnswered = false;
     learningHintId.clear();
     stopAudioPlayback();
+    learningRunBestRefreshed = false;
+    if (finished && learningRunEligible > 0) {
+      const int accuracy = static_cast<int>(std::lround(
+          learningRunCorrect * 100.0 / learningRunEligible));
+      const LearningBest* old = bestFor(finished->id);
+      if (!old || accuracy > old->bestAccuracy) {
+        LearningBest best;
+        best.bestCorrect = learningRunCorrect;
+        best.bestTotal = learningRunEligible;
+        best.bestAccuracy = accuracy;
+        best.updatedAt = std::time(nullptr) * 1000LL;
+        learningBest[finished->id] = best;
+        learningRunBestRefreshed = true;
+        if (!saveLearningStats()) showToast("学习统计保存失败");
+      }
+    }
     showToast("本课完成");
   }
   bool answerDialogOpen = false;
@@ -5352,6 +5513,7 @@ void renderQuestionEditor(App& app) {
 }
 
 void renderLearning(App& app) {
+  app.ensureLearningStatsLoaded();
   if (app.learningCourseId.empty() && app.learningQuestionId.empty()) {
     app.learningComplete = false;
   }
@@ -5421,13 +5583,15 @@ void renderLearning(App& app) {
             ImGui::PushID(item.id.c_str());
             std::string label = std::string(unlocked ? "" : "🔒 ") + item.name +
                 (completed ? "  · 已完成" : unlocked ? "" : "  · 未解锁") +
-                "  ·  " + std::to_string(item.questions.size()) + " 题";
+                "  ·  " + std::to_string(item.questions.size()) + " 题 · " +
+                app.bestLabel(item.id);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 24);
             float rowWidth = ImGui::GetContentRegionAvail().x;
             if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(rowWidth, 40))) {
               if (!unlocked) app.showToast("完成上一课程后解锁");
               else if (!item.questions.empty()) {
                 app.learningShowList = false;
+                app.beginLearningRun(&item);
                 app.learningCourseId = item.id;
                 app.learningQuestionId = item.questions.front().id;
                 app.learningComplete = false;
@@ -5449,6 +5613,7 @@ void renderLearning(App& app) {
       app.learningComplete = true;
       app.learningCourseId.clear();
     } else {
+      app.beginLearningRun(current);
       app.learningCourseId = current->id;
       course = current;
       app.learningQuestionId = current->questions.empty() ? "" : current->questions.front().id;
@@ -5458,6 +5623,22 @@ void renderLearning(App& app) {
   if (app.learningComplete) {
     pageTitle("LEARN", "本课完成", course ? course->name : "");
     ImGui::TextWrapped("你已完成本课全部题目。");
+    if (app.learningRunEligible > 0) {
+      const int runAccuracy = static_cast<int>(std::lround(
+          app.learningRunCorrect * 100.0 / app.learningRunEligible));
+      ImGui::Text("首次答对 %d / %d · 正确率 %d%%", app.learningRunCorrect,
+                  app.learningRunEligible, runAccuracy);
+      const App::LearningBest* best = app.bestFor(app.learningCourseId);
+      if (best) {
+        ImGui::TextDisabled("历史最佳 %d%% · %d/%d", best->bestAccuracy,
+                            best->bestCorrect, best->bestTotal);
+      }
+      if (app.learningRunBestRefreshed) {
+        ImGui::TextColored(ImVec4(0.08f, 0.58f, 0.28f, 1), "刷新最佳");
+      }
+    } else {
+      ImGui::TextDisabled("本课没有可作答题目，不计入正确率。");
+    }
     auto courses = app.allCoursesFlat();
     for (std::size_t i = 0; i + 1 < courses.size(); ++i) {
       if (courses[i]->id != app.learningCourseId) continue;
@@ -5466,6 +5647,7 @@ void renderLearning(App& app) {
         if (ImGui::Button(("下一课：" + next->name + "##learning_next_course").c_str(),
                           ImVec2(-1, 42))) {
           app.learningComplete = false;
+          app.beginLearningRun(next);
           app.learningCourseId = next->id;
           app.learningQuestionId = next->questions.front().id;
           app.learningAnswered = false;
@@ -5499,6 +5681,7 @@ void renderLearning(App& app) {
             for (auto& item : unit.courses)
               if (course == nullptr) { app.learningCourseId = item.id; course = &item; }
         if (course && !course->questions.empty()) {
+          app.beginLearningRun(course);
           app.learningQuestionId = course->questions.front().id;
           app.learningComplete = false;
         }
@@ -5509,8 +5692,10 @@ void renderLearning(App& app) {
             for (auto& item : unit.courses) {
               ImGui::PushID(item.id.c_str());
               if (ImGui::Button((item.name + "  ·  " + chapter.name + " / " + unit.name +
-                                 "  ·  " + std::to_string(item.questions.size()) + " 题").c_str(),
+                                 "  ·  " + std::to_string(item.questions.size()) + " 题 · " +
+                                 app.bestLabel(item.id)).c_str(),
                                 ImVec2(-1, 44))) {
+                app.beginLearningRun(&item);
                 app.learningCourseId = item.id;
                 app.learningComplete = false;
                 app.learningQuestionId = item.questions.empty() ? "" : item.questions.front().id;
@@ -5523,6 +5708,7 @@ void renderLearning(App& app) {
       }
     }
     if (course && !course->questions.empty()) {
+      if (app.learningRunCourseId != course->id) app.beginLearningRun(course);
       app.learningQuestionId = course->questions.front().id;
       app.learningComplete = false;
     }
@@ -5534,6 +5720,19 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (app.learningRunQuestionId != question->id) {
+    app.learningRunQuestionId = question->id;
+    app.learningRunQuestionCounted = false;
+    app.learningWrongExplain = false;
+  }
+  if (!app.learningRunQuestionCounted && app.answerableQuestion(*question)) {
+    if (app.learningAnswered) app.recordLearningAttempt(true);
+    else if (app.learningWrongExplain) app.recordLearningAttempt(false);
+  }
+  if (app.learningRunEligible > 0) {
+    ImGui::TextDisabled("首次答对 %d · 已答 %d", app.learningRunCorrect,
+                        app.learningRunAnswered);
+  }
   if (app.learningQuestionRenderedId != question->id) {
     app.learningQuestionRenderedId = question->id;
     app.questionAudioAutoId.clear();
@@ -6360,8 +6559,10 @@ void renderLearning(App& app) {
           }
         } else if (!matched.empty()) {
           app.typeLearnCorrect = true;
+          app.recordLearningAttempt(true);
           app.showToast("回答正确");
         } else {
+          app.recordLearningAttempt(false);
           bool warned = false;
           for (const auto& rule : question->warn) {
             std::string match = normalize(rule.match, question->ignoreCase, question->ignoreSpace);
@@ -6381,7 +6582,8 @@ void renderLearning(App& app) {
               }
             }
           }
-          if (!warned) app.learningWrongExplain = true; app.showToast("回答错误，请再试一次");
+          app.learningWrongExplain = true;
+          if (!warned) app.showToast("回答错误，请再试一次");
         }
       }
     }
@@ -6426,7 +6628,7 @@ void renderLearning(App& app) {
               if (app.matchMatched.size() == question->pairs.size()) app.learningAnswered = true;
               app.showToast("配对正确");
             } else {
-              app.showToast("配对错误，请重试");
+              app.learningWrongExplain = true; app.showToast("配对错误，请重试");
             }
             app.matchSelLeft = -1;
             app.matchSelRight = -1;
@@ -6452,7 +6654,7 @@ void renderLearning(App& app) {
               if (app.matchMatched.size() == question->pairs.size()) app.learningAnswered = true;
               app.showToast("配对正确");
             } else {
-              app.showToast("配对错误，请重试");
+              app.learningWrongExplain = true; app.showToast("配对错误，请重试");
             }
             app.matchSelLeft = -1;
             app.matchSelRight = -1;
@@ -8485,17 +8687,27 @@ int runSmoke(App& app, const fs::path& outputDir) {
 
   const fs::path exportPath = outputDir / "export.conlang";
   std::string error;
+  {
+    std::ofstream stats(app.store->projectDirectory(app.folder) / "learning-stats.json");
+    stats << R"({"version":1,"courses":{"smoke":{"bestCorrect":1,"bestTotal":2,"bestAccuracy":50,"updatedAt":1}}})";
+  }
   const bool exported = app.store->exportProject(app.folder, exportPath, error);
+  const bool learningStatsExcluded = exported &&
+      !zipContainsPrefix(exportPath, "learning-stats.json");
   const bool zipOk = exported && zipContains(exportPath, {"project.json", "structure.json",
                                                           "vocabulary.json", "fonts.json",
                                                           "images.json", "audios.json",
                                                           "pos.json"}) &&
+                     learningStatsExcluded &&
                      zipContainsPrefix(exportPath, "resources/images/") &&
                      zipContainsPrefix(exportPath, "resources/audio/") &&
                      zipContainsPrefix(exportPath, "resources/courses/");
   ProjectSummary imported;
   bool importedOk = app.store->importConlang(exportPath, imported, error);
-  bool importStatsOk = importedOk && imported.stats.chapters == 1 &&
+  const bool learningStatsImportExcluded = importedOk &&
+      !fs::exists(app.store->projectDirectory(imported.folder) / "learning-stats.json");
+  bool importStatsOk = importedOk && learningStatsImportExcluded &&
+                       imported.stats.chapters == 1 &&
                        imported.stats.courses == 1 && imported.stats.questions >= 3;
   if (importedOk) {
     VocabularyStore importedVocab(app.store->projectDirectory(imported.folder));
@@ -8620,6 +8832,8 @@ int runSmoke(App& app, const fs::path& outputDir) {
   report << "unicode=" << (persistedVocab.entries.size() > 1
                                ? codepointsToUtf8(persistedVocab.entries[1].codepoints) : "") << "\n";
   report << "zip=" << (zipOk ? "ok" : "bad") << "\n";
+  report << "learning_stats_export=" << (learningStatsExcluded ? "excluded" : "included")
+         << " import=" << (learningStatsImportExcluded ? "excluded" : "included") << "\n";
   report << "import=" << (importedOk && importStatsOk ? "ok" : "bad") << "\n";
   report << "invalid_rejected=" << (invalidRejected ? "true" : "false") << "\n";
   report << "pin_toggled=" << (pinToggled ? "true" : "false") << "\n";
