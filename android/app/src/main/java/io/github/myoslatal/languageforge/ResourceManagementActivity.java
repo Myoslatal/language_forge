@@ -67,16 +67,17 @@ public class ResourceManagementActivity extends ForgeActivity {
         TextView hint = findViewById(R.id.resource_hint);
         if (courseMode) {
             context.setText("课程资源（仅本课程题目） · " + String.join(" · ", parts));
-            hint.setText("只显示本课程题目引用的音频；词汇、词性、字体和词汇音频/图片是项目资源，请从项目结构进入「项目资源」。");
+            hint.setText("只显示本课程题目引用的图片与音频；词汇、词性、字体和词汇音频/图片是项目资源，请从项目结构进入「项目资源」。");
             findViewById(R.id.vocabulary_entry).setVisibility(View.GONE);
             findViewById(R.id.pos_entry).setVisibility(View.GONE);
             findViewById(R.id.font_entry).setVisibility(View.GONE);
-            findViewById(R.id.image_entry).setVisibility(View.GONE);
             ((TextView) findViewById(R.id.audio_title)).setText("课程题目音频");
+            ((TextView) findViewById(R.id.image_title)).setText("课程题目图片");
         } else {
             context.setText("项目资源（全局） · 所有课程共享");
-            hint.setText("项目级共享词汇、词性、字体与词汇音频/图片；题目音频按课程隔离。");
+            hint.setText("项目级共享词汇、词性、字体与词汇音频/图片；题目图片/音频按课程隔离。");
             ((TextView) findViewById(R.id.audio_title)).setText("词汇音频（全局）");
+            ((TextView) findViewById(R.id.image_title)).setText("词汇图片（全局）");
         }
     }
 
@@ -161,10 +162,13 @@ public class ResourceManagementActivity extends ForgeActivity {
         int count = 0;
         java.io.File directory = ImageStore.resolveProjectDirectory(this, folderName);
         if (directory != null) {
-            ImageStore store = new ImageStore(directory);
+            ImageStore store = courseMode ? new ImageStore(directory, courseId)
+                    : new ImageStore(directory);
             count = store.images.size() + store.unregisteredFiles().size();
         }
-        imageSummary.setText(count + " 张图片 · 编码与引用");
+        imageSummary.setText(courseMode
+                ? count + " 张题目图片 · 仅本课程"
+                : count + " 张词汇图片 · 项目全局");
     }
 
     private void openImages() {
@@ -174,6 +178,10 @@ public class ResourceManagementActivity extends ForgeActivity {
         }
         Intent intent = new Intent(this, ImageManagementActivity.class);
         intent.putExtra(ImageManagementActivity.EXTRA_FOLDER_NAME, folderName);
+        if (courseMode) {
+            intent.putExtra(ImageManagementActivity.EXTRA_COURSE_ID, courseId);
+            intent.putExtra(ImageManagementActivity.EXTRA_COURSE_NAME, courseName);
+        }
         startActivity(intent);
     }
 

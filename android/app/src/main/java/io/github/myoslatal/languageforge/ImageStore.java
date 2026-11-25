@@ -26,11 +26,32 @@ class ImageStore {
     static final String IMAGE_DIR = "resources/images";
 
     final File projectDirectory;
+    final String courseId;
+    final File manifestDirectory;
+    final File imageDirectory;
     final List<ProjectImage> images = new ArrayList<>();
 
     ImageStore(File projectDirectory) {
+        this(projectDirectory, "");
+    }
+
+    ImageStore(File projectDirectory, String courseId) {
         this.projectDirectory = projectDirectory;
+        this.courseId = courseId == null ? "" : courseId.trim();
+        if (this.courseId.isEmpty()) {
+            this.manifestDirectory = projectDirectory;
+            this.imageDirectory = new File(projectDirectory, IMAGE_DIR);
+        } else {
+            this.manifestDirectory = CourseResourcePaths.imageManifestDirectory(projectDirectory,
+                    this.courseId);
+            this.imageDirectory = CourseResourcePaths.imageDirectory(projectDirectory,
+                    this.courseId);
+        }
         load();
+    }
+
+    boolean isCourseScoped() {
+        return !courseId.isEmpty();
     }
 
     static File resolveProjectDirectory(Context context, String folderName) {
@@ -43,7 +64,7 @@ class ImageStore {
 
     void load() {
         images.clear();
-        File file = new File(projectDirectory, FILE_NAME);
+        File file = new File(manifestDirectory, FILE_NAME);
         if (!file.isFile()) {
             return;
         }
@@ -103,11 +124,11 @@ class ImageStore {
                 array.put(object);
             }
             root.put("images", array);
-            File temp = new File(projectDirectory, TEMP_NAME);
+            File temp = new File(manifestDirectory, TEMP_NAME);
             try (FileOutputStream out = new FileOutputStream(temp)) {
                 out.write(root.toString().getBytes(StandardCharsets.UTF_8));
             }
-            Files.move(temp.toPath(), new File(projectDirectory, FILE_NAME).toPath(),
+            Files.move(temp.toPath(), new File(manifestDirectory, FILE_NAME).toPath(),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
             return true;
@@ -147,7 +168,7 @@ class ImageStore {
 
     List<File> unregisteredFiles() {
         List<File> result = new ArrayList<>();
-        File directory = new File(projectDirectory, IMAGE_DIR);
+        File directory = imageDirectory;
         File[] files = directory.listFiles();
         if (files == null) {
             return result;
@@ -172,7 +193,7 @@ class ImageStore {
         if (!isSupportedExtension(extension)) {
             return null;
         }
-        File directory = new File(projectDirectory, IMAGE_DIR);
+        File directory = imageDirectory;
         if (!directory.exists() && !directory.mkdirs()) {
             return null;
         }

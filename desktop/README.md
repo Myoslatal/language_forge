@@ -165,9 +165,14 @@ with UUIDs. Writes use a temp file + rename; malformed/missing JSON is treated a
   shown. `AudioStore(projectDir, courseId)` scopes import/code/play/delete.
 - Question recording and selected vocabulary audio are copied into the course scope on save.
   Legacy projects and `.conlang` import/export run `migrateResourceScopes`: vocabulary stays
-  global, each question audio moves to its course (with a copy when a vocabulary shares the
-  file), updates the manifests and is idempotent. See
+  global, each question audio/image moves to its course (with a copy when a vocabulary shares
+  the file), updates the manifests and is idempotent. See
   [RESOURCE_SCOPE_TESTING.md](../RESOURCE_SCOPE_TESTING.md).
+- Choice-like questions (choice, listen, dialog, reading-choice, custom-choice) can attach a
+  course question image to an option. The editor's "附图" opens a course-only picker with
+  "导入新图片"; image-only options are valid and the image renders above the option text.
+  Cloze has no image entry/rendering. Vocabulary images remain global; course question images
+  live in `resources/courses/<courseId>/images/` with a course `images.json`.
 
 ## Phase 3B: audio and vocabulary pronunciation
 

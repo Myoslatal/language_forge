@@ -166,10 +166,20 @@ Resources have two explicit scopes:
   `resources/courses/<courseId>/audio/`. Other courses' audio is never listed here.
 
 `ResourceManagementActivity` labels the scope explicitly in its subtitle and hint; the
-course scope hides the global vocabulary/POS/font/image cards. The course audio screen uses
-`AudioStore(projectDirectory, courseId)`; import, code, playback and delete all stay inside
-the course directory. Question recordings/TTS/selected vocabulary audio are copied into the
-course scope on save. Legacy projects and imported `.conlang` files are migrated on
+course scope hides the global vocabulary/POS/font cards and shows "课程题目图片" instead of
+the global vocabulary-image card. The course audio screen uses
+`AudioStore(projectDirectory, courseId)`, and the course image screen uses
+`ImageStore(projectDirectory, courseId)`; import, code, playback, delete and reference
+protection all stay inside the course directory. Question recordings/TTS/selected vocabulary
+audio are copied into the course scope on save.
+
+Choice-like questions (choice, listen, dialog, reading-choice and custom-choice) can attach a
+course question image to each option (`optionItems[i][0].image`). The editor opens a course
+image picker with "导入新图片"; the selected image is shown above the option text and an
+image-only option is valid. Cloze has no image entry or image rendering. Legacy image paths
+are copied into the course image scope on load/import, and shared vocabulary/question images
+remain globally owned while receiving a course copy. See
+[`RESOURCE_SCOPE_TESTING.md`](../RESOURCE_SCOPE_TESTING.md). Legacy projects and imported `.conlang` files are migrated on
 load/import (question audio split by course; vocabulary audio/images stay global; a file
 shared by vocabulary and a question is kept globally and copied per course). See
 [`RESOURCE_SCOPE_TESTING.md`](../RESOURCE_SCOPE_TESTING.md).

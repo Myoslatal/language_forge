@@ -305,6 +305,74 @@ std::string questionPath(const json& question) {
   return question.is_object() ? question.value("audio", "") : "";
 }
 
+void collectOptionImages(const json& question, std::set<std::string>& paths) {
+  if (!question.is_object() || !question.contains("optionItems") ||
+      !question["optionItems"].is_array()) {
+    return;
+  }
+  for (const auto& group : question["optionItems"]) {
+    if (!group.is_array()) continue;
+    for (const auto& item : group) {
+      if (!item.is_object()) continue;
+      const std::string image = item.value("image", "");
+      if (!image.empty()) paths.insert(image);
+    }
+  }
+}
+
+bool copyQuestionImage(const fs::path& projectDirectory, const std::string& courseId,
+                       const std::string& oldPath, const fs::path& source,
+                       std::string& target, int& copied) {
+  const fs::path directory = projectDirectory / pathFromUtf8(kCourseRoot) /
+      pathFromUtf8(safeSegment(courseId)) / "images";
+  std::error_code ec;
+  fs::create_directories(directory, ec);
+  if (ec) return false;
+  const std::string filename = "q_" + resourceScopeTag(courseId + "|" + oldPath) +
+      "_" + sanitizeName(utf8(source.filename()));
+  const fs::path destination = directory / pathFromUtf8(filename);
+  if (!fs::is_regular_file(destination)) {
+    fs::copy_file(source, destination, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+      std::fprintf(stderr, "FORGE_IMAGE_COPY fail copy %s -> %s: %s\n",
+                   utf8(source).c_str(), utf8(destination).c_str(), ec.message().c_str());
+      return false;
+    }
+    int width = 0;
+    int height = 0;
+    if (!loadImageSize(destination, width, height)) {
+      std::fprintf(stderr, "FORGE_IMAGE_COPY fail decode %s\n", utf8(destination).c_str());
+      std::error_code ignored;
+      fs::remove(destination, ignored);
+      return false;
+    }
+    ++copied;
+  }
+  target = relativePath(projectDirectory, destination);
+  return !target.empty();
+}
+
+json makeCourseImageEntry(const fs::path& projectDirectory, const std::string& courseId,
+                          const std::string& relative, const json* globalEntry) {
+  const fs::path file = resolvePath(projectDirectory, relative);
+  if (!fs::is_regular_file(file)) return json::object();
+  int width = 0;
+  int height = 0;
+  loadImageSize(file, width, height);
+  json entry = json::object();
+  entry["id"] = std::string("qi_") + resourceScopeTag(courseId + "|" + relative);
+  entry["name"] = globalEntry && globalEntry->is_object()
+      ? globalEntry->value("name", utf8(file.filename())) : utf8(file.filename());
+  entry["file"] = relative;
+  entry["code"] = globalEntry && globalEntry->is_object()
+      ? globalEntry->value("code", "") : "";
+  entry["width"] = width;
+  entry["height"] = height;
+  entry["createdAt"] = globalEntry && globalEntry->is_object()
+      ? globalEntry->value("createdAt", 0LL) : 0LL;
+  return entry;
+}
+
 }  // namespace
 
 std::string resourceScopeTag(const std::string& value) {
@@ -328,6 +396,15 @@ bool isCourseAudioPath(const fs::path& projectDirectory, const std::string& cour
                        const std::string& relative) {
   const std::string dir = courseAudioDir(projectDirectory, courseId);
   return underPath(relative, dir);
+}
+
+std::string courseImageDir(const fs::path& projectDirectory, const std::string& courseId) {
+  return (fs::path(kCourseRoot) / safeSegment(courseId) / "images").generic_string();
+}
+
+bool isCourseImagePath(const fs::path& projectDirectory, const std::string& courseId,
+                       const std::string& relative) {
+  return underPath(relative, courseImageDir(projectDirectory, courseId));
 }
 
 void deleteCourseResources(const fs::path& projectDirectory, const std::string& courseId) {
@@ -372,6 +449,43 @@ bool copyAudioToCourse(const fs::path& projectDirectory, const std::string& cour
   return true;
 }
 
+bool copyImageToCourse(const fs::path& projectDirectory, const std::string& courseId,
+                       const fs::path& source, const std::string& optionId,
+                       fs::path& copied, std::string& error) {
+  if (!fs::is_regular_file(source)) {
+    error = "图片不存在";
+    return false;
+  }
+  const fs::path directory = projectDirectory / pathFromUtf8(kCourseRoot) /
+      pathFromUtf8(safeSegment(courseId)) / "images";
+  std::error_code ec;
+  fs::create_directories(directory, ec);
+  if (ec) {
+    error = "无法创建课程图片目录";
+    return false;
+  }
+  const std::string extension = extensionOf(source.filename().string(), ".png");
+  const std::string filename = "option_" + safeSegment(optionId) + "_" +
+      std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count()) + extension;
+  const fs::path target = directory / pathFromUtf8(filename);
+  fs::copy_file(source, target, fs::copy_options::overwrite_existing, ec);
+  if (ec) {
+    error = "复制图片失败";
+    return false;
+  }
+  int width = 0;
+  int height = 0;
+  if (!loadImageSize(target, width, height)) {
+    std::error_code ignored;
+    fs::remove(target, ignored);
+    error = "复制后的图片无法解码";
+    return false;
+  }
+  copied = target;
+  return true;
+}
+
 bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error) {
   error.clear();
   if (projectDirectory.empty() || !fs::is_directory(projectDirectory)) return true;
@@ -398,8 +512,12 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
   std::set<std::string> targets;
   std::set<std::string> remainingPaths;
   std::set<std::string> removableSources;
+  std::set<std::string> questionImageSources;
+  std::set<std::string> imageTargets;
+  std::set<std::string> removableImageSources;
   bool structureChanged = false;
   int copied = 0;
+  int copiedImages = 0;
   for (auto& chapter : structure["chapters"]) {
     if (!chapter.is_object()) continue;
     for (auto& unit : chapter["units"]) {
@@ -448,10 +566,66 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
             return false;
           }
         }
+
+        const fs::path imageManifestPath = projectDirectory / pathFromUtf8(kCourseRoot) /
+            pathFromUtf8(safeSegment(courseId)) / "images.json";
+        json imageManifest = readJson(imageManifestPath);
+        if (!imageManifest.is_object()) {
+          imageManifest = json{{"schema", 1}, {"images", json::array()}};
+        }
+        if (!imageManifest.contains("images") || !imageManifest["images"].is_array()) {
+          imageManifest["images"] = json::array();
+        }
+        bool imageManifestChanged = false;
+        for (auto& question : course["questions"]) {
+          if (!question.is_object() || !question.contains("optionItems") ||
+              !question["optionItems"].is_array()) {
+            continue;
+          }
+          for (auto& group : question["optionItems"]) {
+            if (!group.is_array()) continue;
+            for (auto& item : group) {
+              if (!item.is_object()) continue;
+              const std::string oldImage = item.value("image", "");
+              if (oldImage.empty()) continue;
+              questionImageSources.insert(oldImage);
+              const fs::path source = resolvePath(projectDirectory, oldImage);
+              if (!fs::is_regular_file(source)) continue;
+              std::string target = oldImage;
+              if (!isCourseImagePath(projectDirectory, courseId, oldImage)) {
+                if (!copyQuestionImage(projectDirectory, courseId, oldImage, source, target,
+                                       copiedImages)) {
+                  continue;
+                }
+                item["image"] = target;
+                structureChanged = true;
+              }
+              imageTargets.insert(target);
+              if (findFile(imageManifest["images"], target) < 0) {
+                const int globalIndex = findFile(globalImages["images"], oldImage);
+                const json* globalEntry = globalIndex >= 0
+                    ? &globalImages["images"][globalIndex] : nullptr;
+                json entry = makeCourseImageEntry(projectDirectory, courseId, target,
+                                                  globalEntry);
+                if (entry.is_object()) {
+                  imageManifest["images"].push_back(entry);
+                  imageManifestChanged = true;
+                }
+              }
+            }
+          }
+        }
+        if (imageManifestChanged) {
+          if (!writeJsonAtomic(imageManifestPath, imageManifest)) {
+            error = "写入课程图片清单失败";
+            return false;
+          }
+        }
       }
     }
   }
 
+  std::set<std::string> remainingImagePaths;
   for (const auto& chapter : structure["chapters"]) {
     if (!chapter.is_object()) continue;
     for (const auto& unit : chapter["units"]) {
@@ -461,6 +635,7 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
         for (const auto& question : course["questions"]) {
           const std::string path = questionPath(question);
           if (!path.empty()) remainingPaths.insert(path);
+          collectOptionImages(question, remainingImagePaths);
         }
       }
     }
@@ -492,11 +667,37 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
   }
   if (globalChanged) globalAudio["audios"] = kept;
 
+  json keptImages = json::array();
+  bool globalImagesChanged = false;
+  for (const auto& entry : globalImages["images"]) {
+    if (!entry.is_object()) continue;
+    const std::string file = entry.value("file", "");
+    const bool keep = !file.empty() &&
+        (globalImageRefs.count(file) > 0 || questionImageSources.count(file) == 0 ||
+         imageTargets.count(file) > 0 || remainingImagePaths.count(file) > 0 ||
+         !underPath(file, kGlobalImages));
+    if (keep) {
+      keptImages.push_back(entry);
+    } else {
+      globalImagesChanged = true;
+      if (!file.empty()) removableImageSources.insert(file);
+    }
+  }
+  for (const auto& source : questionImageSources) {
+    if (globalImageRefs.count(source) == 0 && imageTargets.count(source) == 0 &&
+        remainingImagePaths.count(source) == 0 && underPath(source, kGlobalImages)) {
+      removableImageSources.insert(source);
+    }
+  }
+  if (globalImagesChanged) globalImages["images"] = keptImages;
+
   if (vocabularyChanged) {
     if (!writeJsonAtomic(projectDirectory / "vocabulary.json", vocabulary)) {
       error = "写入 vocabulary.json 失败";
       return false;
     }
+  }
+  if (vocabularyChanged || globalImagesChanged) {
     if (!writeJsonAtomic(projectDirectory / "images.json", globalImages)) {
       error = "写入 images.json 失败";
       return false;
@@ -527,8 +728,20 @@ bool migrateResourceScopes(const fs::path& projectDirectory, std::string& error)
       fs::remove(path, ec);
     }
   }
-  if (copied > 0) {
-    std::fprintf(stderr, "FORGE_RESOURCE_MIGRATION copied=%d\n", copied);
+  for (const auto& file : removableImageSources) {
+    if (globalImageRefs.count(file) > 0 || imageTargets.count(file) > 0 ||
+        remainingImagePaths.count(file) > 0 || !underPath(file, kGlobalImages)) {
+      continue;
+    }
+    const fs::path path = resolvePath(projectDirectory, file);
+    if (fs::is_regular_file(path)) {
+      std::error_code ec;
+      fs::remove(path, ec);
+    }
+  }
+  if (copied > 0 || copiedImages > 0) {
+    std::fprintf(stderr, "FORGE_RESOURCE_MIGRATION copied=%d copiedImages=%d\n",
+                 copied, copiedImages);
   }
   return true;
 }

@@ -499,54 +499,47 @@ public class LearningActivity extends ForgeActivity {
     private void renderChoiceOptions(ProjectStructure.Question item) {
         addQuestionAudio(item);
         content.addView(text("选项（选择后确认）", 14, R.color.forge_muted));
-        for (int i = 0; i < item.options.size(); i++) {
+        int count = Math.max(item.options.size(), item.optionItems.size());
+        for (int i = 0; i < count; i++) {
             final int index = i;
-            boolean hasVocab = i < item.optionItems.size() && !item.optionItems.get(i).isEmpty();
-            if (hasVocab) {
+            List<ProjectStructure.Question.OptionItem> group = i < item.optionItems.size()
+                    ? item.optionItems.get(i) : new ArrayList<>();
+            String imagePath = optionItemImage(group);
+            if (!group.isEmpty() || !imagePath.isEmpty()) {
+                LinearLayout column = new LinearLayout(this);
+                column.setOrientation(LinearLayout.VERTICAL);
+                column.setPadding(dp(16), dp(6), dp(16), dp(6));
+                addOptionImageAbove(column, imagePath);
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(dp(16), dp(4), dp(16), dp(4));
                 TextView number = new TextView(this);
                 number.setText((i + 1) + ". ");
                 row.addView(number);
-                for (ProjectStructure.Question.OptionItem value : item.optionItems.get(i)) {
-                    if ("vocab".equals(value.kind)) {
-                        VocabularyEntry entry = findEntry(value.vocabId);
-                        if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
-                            android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
-                            if (bitmap != null) {
-                                android.widget.ImageView image = new android.widget.ImageView(this);
-                                image.setImageBitmap(bitmap);
-                                image.setAdjustViewBounds(true);
-                                int h = dp(22);
-                                int w = Math.max(dp(22), bitmap.getWidth() * h / Math.max(1, bitmap.getHeight()));
-                                row.addView(image, new LinearLayout.LayoutParams(w, h));
-                            } else {
-                                row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
-                            }
-                        } else if (entry != null) {
-                            row.addView(text(vocabulary.displayName(entry), 16, R.color.forge_text));
-                        }
-                    } else {
-                        row.addView(text(value.text, 16, R.color.forge_text));
-                    }
+                if (group.isEmpty()) {
+                    String fallback = i < item.options.size() ? item.options.get(i) : "";
+                    row.addView(text(fallback, 16, R.color.forge_text));
+                } else {
+                    addOptionTextItems(row, group);
                 }
-                styleMatchRow(row, answered && index == item.correctIndex, selectedOption == index);
-                row.setTag("option");
-                row.setOnClickListener(v -> {
+                column.addView(row);
+                styleMatchRow(column, answered && index == item.correctIndex,
+                        selectedOption == index);
+                column.setTag("option");
+                column.setOnClickListener(v -> {
                     if (answered) return;
                     dismissHint();
                     selectedOption = index;
                     updateOptionStyles();
                     confirmButton.setVisibility(View.VISIBLE);
                 });
-                content.addView(row, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+                content.addView(column, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
                 ForgeButton option = new ForgeButton(this);
                 option.setAllCaps(false);
-                option.setText((i + 1) + ". " + item.options.get(i));
+                String fallback = i < item.options.size() ? item.options.get(i) : "";
+                option.setText((i + 1) + ". " + fallback);
                 option.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
                 option.setTextSize(16f);
                 option.setPadding(dp(16), 0, dp(16), 0);
@@ -563,6 +556,82 @@ public class LearningActivity extends ForgeActivity {
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
             }
         }
+    }
+
+    private String optionItemImage(List<ProjectStructure.Question.OptionItem> group) {
+        if (group == null) return "";
+        for (ProjectStructure.Question.OptionItem value : group) {
+            if (value.image != null && !value.image.isEmpty()) return value.image;
+        }
+        return "";
+    }
+
+    private void addOptionTextItems(LinearLayout row, List<ProjectStructure.Question.OptionItem> group) {
+        for (ProjectStructure.Question.OptionItem value : group) {
+            if (value.image != null && !value.image.isEmpty()) continue;
+            if ("vocab".equals(value.kind)) {
+                VocabularyEntry entry = findEntry(value.vocabId);
+                if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory,
+                            entry.image);
+                    if (bitmap != null) {
+                        android.widget.ImageView image = new android.widget.ImageView(this);
+                        image.setImageBitmap(bitmap);
+                        image.setAdjustViewBounds(true);
+                        int h = dp(22);
+                        int w = Math.max(dp(22), bitmap.getWidth() * h
+                                / Math.max(1, bitmap.getHeight()));
+                        row.addView(image, new LinearLayout.LayoutParams(w, h));
+                    } else {
+                        row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
+                    }
+                } else if (entry != null) {
+                    row.addView(text(vocabulary.displayName(entry), 16, R.color.forge_text));
+                }
+            } else if (value.text != null && !value.text.isEmpty()) {
+                row.addView(text(value.text, 16, R.color.forge_text));
+            }
+        }
+    }
+
+    private LinearLayout optionRowWithImage(LinearLayout row,
+            List<ProjectStructure.Question.OptionItem> group) {
+        String path = optionItemImage(group);
+        if (path.isEmpty()) return row;
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(dp(8), 0, dp(8), 0);
+        addOptionImageAbove(column, path);
+        column.addView(row);
+        return column;
+    }
+
+    private void addOptionImageAbove(LinearLayout column, String path) {
+        if (path == null || path.isEmpty()) return;
+        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, path);
+        if (bitmap == null) {
+            TextView missing = text("〔选项图片缺失〕", 13, R.color.forge_warn);
+            missing.setGravity(Gravity.CENTER);
+            missing.setOnClickListener(v -> column.performClick());
+            column.addView(missing);
+            return;
+        }
+        android.widget.ImageView image = new android.widget.ImageView(this);
+        image.setImageBitmap(bitmap);
+        image.setAdjustViewBounds(true);
+        image.setClickable(true);
+        image.setFocusable(false);
+        image.setOnClickListener(v -> column.performClick());
+        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        float scale = Math.min(1f, (float) dp(150) / Math.max(1, bitmap.getHeight()));
+        int h = Math.max(1, Math.round(bitmap.getHeight() * scale));
+        int maxWidth = Math.max(dp(60), getResources().getDisplayMetrics().widthPixels - dp(64));
+        int w = Math.min(maxWidth,
+                Math.max(1, Math.round(bitmap.getWidth() * scale)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
+        lp.gravity = Gravity.CENTER_HORIZONTAL;
+        lp.bottomMargin = dp(6);
+        column.addView(image, lp);
     }
 
     private void renderDialogQuestion(ProjectStructure.Question item) {
@@ -1005,41 +1074,39 @@ public class LearningActivity extends ForgeActivity {
                             ? View.GONE : View.VISIBLE));
             return;
         }
-        for (int i = 0; i < item.options.size(); i++) {
+        int optionCount = Math.max(item.options.size(), item.optionItems.size());
+        for (int i = 0; i < optionCount; i++) {
             final int index = i;
-            boolean hasVocab = i < item.optionItems.size() && !item.optionItems.get(i).isEmpty();
-            if (hasVocab) {
+            List<ProjectStructure.Question.OptionItem> group = i < item.optionItems.size()
+                    ? item.optionItems.get(i) : new ArrayList<>();
+            String imagePath = optionItemImage(group);
+            if (!group.isEmpty() || !imagePath.isEmpty()) {
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setPadding(dp(16), dp(4), dp(16), dp(4));
                 row.addView(text((i + 1) + ". ", 16, R.color.forge_text));
-                for (ProjectStructure.Question.OptionItem value : item.optionItems.get(i)) {
-                    if ("vocab".equals(value.kind)) {
-                        VocabularyEntry entry = findEntry(value.vocabId);
-                        if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
-                            android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
-                            if (bitmap != null) {
-                                android.widget.ImageView image = new android.widget.ImageView(this);
-                                image.setImageBitmap(bitmap); image.setAdjustViewBounds(true);
-                                int h = dp(22);
-                                int w = Math.max(dp(22), bitmap.getWidth() * h / Math.max(1, bitmap.getHeight()));
-                                row.addView(image, new LinearLayout.LayoutParams(w, h));
-                            }
-                        } else if (entry != null) row.addView(text(vocabulary.displayName(entry), 16, R.color.forge_text));
-                    } else row.addView(text(value.text, 16, R.color.forge_text));
+                if (group.isEmpty()) {
+                    row.addView(text(i < item.options.size() ? item.options.get(i) : "",
+                            16, R.color.forge_text));
+                } else {
+                    addOptionTextItems(row, group);
                 }
-                styleMatchRow(row, answered && index == item.correctIndex, selectedOption == index);
-                row.setTag("option");
-                row.setOnClickListener(v -> {
+                LinearLayout shown = optionRowWithImage(row, group);
+                styleMatchRow(shown, answered && index == item.correctIndex,
+                        selectedOption == index);
+                shown.setTag("option");
+                shown.setOnClickListener(v -> {
                     if (answered) return;
                     dismissHint(); selectedOption = index;
                     updateOptionStyles(); confirmButton.setVisibility(View.VISIBLE);
                 });
-                content.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+                content.addView(shown, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
                 ForgeButton option = new ForgeButton(this);
-                option.setAllCaps(false); option.setText((i + 1) + ". " + item.options.get(i));
+                option.setAllCaps(false);
+                option.setText((i + 1) + ". " + (i < item.options.size() ? item.options.get(i) : ""));
                 option.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
                 styleOption(option, false, false); option.setTag("option");
                 option.setOnClickListener(v -> {
@@ -1047,7 +1114,8 @@ public class LearningActivity extends ForgeActivity {
                     dismissHint(); selectedOption = index;
                     updateOptionStyles(); confirmButton.setVisibility(View.VISIBLE);
                 });
-                content.addView(option, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+                content.addView(option, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
             }
         }
     }
@@ -1121,10 +1189,13 @@ public class LearningActivity extends ForgeActivity {
         listenPlayButton.setEnabled(playable);
         listenPlayButton.setOnClickListener(v -> playListen(item));
         content.addView(listenPlayButton);
-        for (int i = 0; i < item.options.size(); i++) {
+        int optionCount = Math.max(item.options.size(), item.optionItems.size());
+        for (int i = 0; i < optionCount; i++) {
             final int index = i;
-            boolean hasVocab = i < item.optionItems.size() && !item.optionItems.get(i).isEmpty();
-            if (hasVocab) {
+            List<ProjectStructure.Question.OptionItem> group = i < item.optionItems.size()
+                    ? item.optionItems.get(i) : new ArrayList<>();
+            String imagePath = optionItemImage(group);
+            if (!group.isEmpty() || !imagePath.isEmpty()) {
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -1132,44 +1203,26 @@ public class LearningActivity extends ForgeActivity {
                 TextView number = new TextView(this);
                 number.setText((i + 1) + ". ");
                 row.addView(number);
-                for (ProjectStructure.Question.OptionItem value : item.optionItems.get(i)) {
-                    if ("vocab".equals(value.kind)) {
-                        VocabularyEntry entry = null;
-                        for (VocabularyEntry candidate : vocabulary.entries) {
-                            if (value.vocabId.equals(candidate.id)) { entry = candidate; break; }
-                        }
-                        if (entry != null && VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
-                            android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
-                            if (bitmap != null) {
-                                android.widget.ImageView image = new android.widget.ImageView(this);
-                                image.setImageBitmap(bitmap);
-                                image.setAdjustViewBounds(true);
-                                image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                                int width = Math.max(dp(22), bitmap.getWidth() * dp(22) / Math.max(1, bitmap.getHeight()));
-                                row.addView(image, new LinearLayout.LayoutParams(width, dp(22)));
-                            } else {
-                                row.addView(text("〔图片缺失〕", 12, R.color.forge_warn));
-                            }
-                        } else if (entry != null) {
-                            row.addView(text(vocabulary.displayName(entry), 16, R.color.forge_text));
-                        }
-                    } else {
-                        row.addView(text(value.text, 16, R.color.forge_text));
-                    }
+                if (group.isEmpty()) {
+                    row.addView(text(i < item.options.size() ? item.options.get(i) : "",
+                            16, R.color.forge_text));
+                } else {
+                    addOptionTextItems(row, group);
                 }
-                styleMatchRow(row, answered && index == item.correctIndex, listenSelected == index);
-                row.setOnClickListener(v -> {
+                LinearLayout shown = optionRowWithImage(row, group);
+                styleMatchRow(shown, answered && index == item.correctIndex, listenSelected == index);
+                shown.setOnClickListener(v -> {
                     if (answered || !playable) return;
                     listenSelected = index;
                     confirmButton.setVisibility(View.VISIBLE);
                     renderListenQuestion(item);
                 });
-                content.addView(row, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+                content.addView(shown, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
                 ForgeButton option = new ForgeButton(this);
                 option.setAllCaps(false);
-                option.setText((i + 1) + ". " + item.options.get(i));
+                option.setText((i + 1) + ". " + (i < item.options.size() ? item.options.get(i) : ""));
                 option.setOnClickListener(v -> {
                     if (answered || !playable) return;
                     listenSelected = index;

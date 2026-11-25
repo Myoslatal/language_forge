@@ -1,5 +1,7 @@
 #include "images.h"
 
+#include "resource_scope.h"
+
 #include <SDL_image.h>
 
 #include <algorithm>
@@ -93,13 +95,21 @@ bool loadImageSize(const fs::path& path, int& width, int& height) {
   return width > 0 && height > 0;
 }
 
-ImageStore::ImageStore(fs::path projectDir) : projectDirectory(std::move(projectDir)) {
+ImageStore::ImageStore(fs::path projectDir, std::string course) : projectDirectory(std::move(projectDir)),
+    courseId(std::move(course)) {
+  if (courseId.empty()) {
+    manifestDirectory = projectDirectory;
+    imageDirectory = projectDirectory / "resources" / "images";
+  } else {
+    imageDirectory = projectDirectory / pathFromUtf8(courseImageDir(projectDirectory, courseId));
+    manifestDirectory = imageDirectory.parent_path();
+  }
   load();
 }
 
 void ImageStore::load() {
   images.clear();
-  json value = readJson(projectDirectory / "images.json");
+  json value = readJson(manifestDirectory / "images.json");
   if (!value.is_object() || value.value("schema", 0) != 1) return;
   if (!value.contains("images") || !value["images"].is_array()) return;
   for (const auto& item : value["images"]) {
@@ -129,7 +139,7 @@ bool ImageStore::save() const {
                               {"height", image.height},
                               {"createdAt", image.createdAt}});
   }
-  return writeJsonAtomic(projectDirectory / "images.json", root);
+  return writeJsonAtomic(manifestDirectory / "images.json", root);
 }
 
 ImageEntry* ImageStore::find(const std::string& id) {
@@ -169,7 +179,7 @@ fs::path ImageStore::resolveFile(const std::string& relativePath) const {
 
 std::vector<fs::path> ImageStore::unregisteredFiles() const {
   std::vector<fs::path> result;
-  fs::path directory = projectDirectory / "resources" / "images";
+  fs::path directory = imageDirectory;
   std::error_code ec;
   if (!fs::is_directory(directory, ec)) return result;
   for (const auto& entry : fs::directory_iterator(directory, ec)) {
@@ -203,7 +213,7 @@ bool ImageStore::importImage(const fs::path& source, const std::string& displayN
     return false;
   }
   std::error_code ec;
-  fs::path directory = projectDirectory / "resources" / "images";
+  fs::path directory = imageDirectory;
   fs::create_directories(directory, ec);
   if (ec) {
     error = "无法创建图片目录";
@@ -228,7 +238,8 @@ bool ImageStore::importImage(const fs::path& source, const std::string& displayN
   }
   imported.id = id;
   imported.name = trim(displayName).empty() ? utf8(source.filename()) : trim(displayName);
-  imported.file = "resources/images/" + utf8(target.filename());
+  const fs::path relativeFile = target.lexically_relative(projectDirectory);
+  imported.file = relativeFile.generic_string();
   imported.width = checkWidth;
   imported.height = checkHeight;
   imported.createdAt = nowMillis();

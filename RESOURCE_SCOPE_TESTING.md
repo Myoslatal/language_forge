@@ -102,9 +102,81 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 边界
 
-- 当前 schema 没有题目图片字段；课程级图片目录/清单**未启用**，仅保留路径设计语义。
+- 当前 schema 仍没有**题目级题图**字段（本次只实现选项附图）；课程级图片目录/清单已用于选项附图，`resources/courses/<id>/images` 与 `images.json` 生效。
   题目图片将来可复用 `resources/courses/<id>/images` 与同构清单。
 - 删除单个题目不会自动回收不再引用的课程音频文件；文件仍只在该课程作用域内，不影响其他课程。
   迁移器不会把课程文件误并回全局。
 - 无头/模拟器只能证明文件存在、清单和播放调用；可听性仍见 RD-08。
 - 迁移会保留缺失文件的引用路径，便于用户修复；不会把缺失文件制造为空文件。
+
+## 选项附图（task-79）
+
+### 存储与数据
+
+- 课程级题目图片：`resources/courses/<courseId>/images/` + 同目录 `images.json`；
+  与全局词汇图片（`resources/images/` + 项目根 `images.json`）完全分离。
+- 选项图片字段：`optionItems[optionIndex][itemIndex].image`，值是该项目的相对路径；
+  一个选项的图片取该选项组第一个带 `image` 的 item。旧 JSON 没有 `image` 时按空处理。
+- 选项可只有图片：文字字段留空，判定仍按 `correctIndex`；图片只影响展示。
+- 附图入口只出现在 choice / listen / dialog / reading(choice) / custom(choice)；
+  cloze 没有入口，也不会把图片字段渲染为候选词。
+- 题目资源图片选择器只枚举当前课程 `resources/courses/<courseId>/images`；
+  可从选择器导入新图片（复制进当前课程、注册课程 `images.json` 后立即选中）。
+- 课程资源页显示「课程题目图片」和真实计数；被选项引用的图片禁止删除。
+
+### 自动迁移
+
+- 加载/导入/导出时扫描 `optionItems` 的 `image` 引用；旧全局/外部路径按
+  `(courseId, 原路径)` 生成稳定文件名复制到当前课程 `images/`，写回结构并登记课程清单。
+- 同一课程多个选项/题目引用同一文件只复制一份；不同课程各自复制，绝不共享课程图片路径。
+- 词汇图片和题目图片同源时：全局词汇图片保留，课程再复制一份。仅题目引用的旧全局
+  图片在课程副本写入成功后从全局清单和目录移除；缺失文件保留引用并计数。
+- 所有 JSON 原子写；迁移幂等；课程删除递归删除整个 `resources/courses/<courseId>`。
+
+### 双端实测
+
+桌面 fixture（`/tmp/lf-image-desktop/Option Image Test`）：
+
+- 旧布局 `/tmp/lf-image-fixture/Option Image Test` 导入后迁移：
+  `FORGE_RESOURCE_MIGRATION copied=0 copiedImages=2`；A/B 各自生成
+  `resources/courses/<id>/images.json` + 一张课程图片；全局 `images.json` 只保留 `vocab.png`。
+- 课程 A 图片页只出现 `shared.png`（被本课程 1 个选项引用）；B 的课程清单只有 `b.png`。
+  桌面 B 资源页截图未单独留档，B 的隔离由清单和 Android B 页截图验证。
+- 桌面编辑器点击「更换图」打开课程图片选择器；选择已有 `shared.png` 后保存，结构写回
+  `optionItems[1][0].image`。点击「导入新图片」并选中新图后立即附图到选项 1；保存重开仍保留。
+  截图：`/tmp/lf-image-desktop/editor-a.png`、`/tmp/lf-image-desktop/picker-a.png`、
+  `/tmp/lf-image-desktop/picker-two.png`、`/tmp/lf-image-desktop/picker-existing.png`、
+  `/tmp/lf-image-desktop/saved-existing2.png`。
+- 学习页把选项图片显示在文字上方、居中；纯图片第一项判定正确，截图：
+  `/tmp/lf-image-desktop/learn-result.png`。
+- reading(choice) 附图学习和编辑器截图：`/tmp/lf-image-desktop/reading-editor.png`、
+  `/tmp/lf-image-desktop/learn-reading.png`。
+- cloze 编辑器没有附图入口：`/tmp/lf-image-desktop/cloze-editor.png`。
+- 桌面 `.conlang` 导出再导入：4 道 A 题 + 1 道 B 题、2 张 A 图片 + 1 张 B 图片完整，
+  无重复；导出 ZIP 同时含两个课程 `images.json` 和图片文件。
+
+Android fixture（`Option Image Test-e3e7a1`）：
+
+- 导入旧 `.conlang` 自动迁移：`movedImages=2 copiedImages=2 removedGlobalImages=2 missing=0`；
+  文件路径全部为 `resources/courses/course-a|b/images/...`。
+- 课程资源页显示「课程题目图片」1 张；A 图片页只有 `shared.png`，B 图片页只有 `b.png`；
+  B 页面不会出现 A 图片。截图：`/tmp/lf-image-android-a-images.png`、
+  `/tmp/lf-image-android-b-images.png`。
+- 编辑器「更换图 / 移除图 / 附图」；打开选择器只有本课程图片；点「导入并选择」后
+  新图复制进 `resources/courses/course-a/images`、登记并立即附图。保存后
+  `structure.json` 的 `optionItems[0][0].image` 指向新课程图片。
+- 编辑器分别选中已有 `shared.png`（选项 2）和导入的新图（选项 1），保存后结构同时保留两条
+  课程图片路径；学习页图片显示在选项文字上方，纯图片选项判定通过，截图：
+  `/tmp/lf-image-android-a-editor.png`、`/tmp/lf-image-android-a-editor-new.png`、
+  `/tmp/lf-image-android-a-learning.png`、`/tmp/lf-image-android-a-answered.png`。
+- Android reading(choice) 附图、编辑器与学习页均已验证：
+  `/tmp/lf-image-android-reading-learn2.png`。
+- Android 导出 ZIP 含两门课程图片目录/清单；ZIP 文件见
+  `/tmp/option-image-android-export.conlang`。
+
+### 边界
+
+- 选择器/学习端只按当前课程 `courseId` 过滤，课程间资源不共享。
+- 删除单个题目不会自动回收它不再引用的课程图片；文件仍只在该课程作用域内。
+- 无头/模拟器只能证明图片路径存在、清单与渲染/判定调用；真实视觉清晰度仍由截图和
+  设备显示决定。

@@ -36,9 +36,16 @@ import io.github.myoslatal.languageforge.uikit.ForgeToast;
 public class ImageManagementActivity extends ForgeActivity {
 
     public static final String EXTRA_FOLDER_NAME = "folderName";
+    public static final String EXTRA_COURSE_ID = "courseId";
+    public static final String EXTRA_COURSE_NAME = "courseName";
+    public static final String EXTRA_SELECT_MODE = "selectImage";
+    public static final String EXTRA_SELECTED_IMAGE = "selectedImage";
     private static final int REQUEST_IMPORT_IMAGE = 4701;
 
     private File projectDirectory;
+    private String courseId = "";
+    private String courseName = "";
+    private boolean selectMode;
     private ImageStore store;
     private LinearLayout list;
     private LinearLayout emptyState;
@@ -51,13 +58,19 @@ public class ImageManagementActivity extends ForgeActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String folderName = getIntent().getStringExtra(EXTRA_FOLDER_NAME);
+        courseId = getIntent().getStringExtra(EXTRA_COURSE_ID);
+        courseName = getIntent().getStringExtra(EXTRA_COURSE_NAME);
+        if (courseId == null) courseId = "";
+        if (courseName == null) courseName = "";
+        selectMode = getIntent().getBooleanExtra(EXTRA_SELECT_MODE, false);
         projectDirectory = ImageStore.resolveProjectDirectory(this, folderName);
         if (projectDirectory == null) {
             toast("项目目录不存在");
             finish();
             return;
         }
-        store = new ImageStore(projectDirectory);
+        store = courseId.isEmpty() ? new ImageStore(projectDirectory)
+                : new ImageStore(projectDirectory, courseId);
 
         setContentView(R.layout.activity_image_management);
         applyTopInset(findViewById(R.id.image_topbar));
@@ -66,11 +79,21 @@ public class ImageManagementActivity extends ForgeActivity {
         emptyState = findViewById(R.id.image_empty);
         count = findViewById(R.id.image_count);
         search = findViewById(R.id.image_search);
-        ((TextView) findViewById(R.id.image_project))
-                .setText(ImageStore.readProjectName(projectDirectory));
+        String title = ImageStore.readProjectName(projectDirectory);
+        if (!courseId.isEmpty() && !courseName.isEmpty()) title += " / " + courseName;
+        ((TextView) findViewById(R.id.image_project)).setText(title);
+        TextView heading = findViewById(R.id.image_title);
+        if (heading != null) {
+            heading.setText(courseId.isEmpty() ? "词汇图片（全局）" : "课程题目图片");
+        }
+        ForgeButton importButton = findViewById(R.id.btn_import_image_asset);
+        if (selectMode) {
+            importButton.setText("＋ 导入并选择");
+            ((TextView) findViewById(R.id.image_project)).setText(title + " · 点击图片选择");
+        }
 
         findViewById(R.id.btn_image_back).setOnClickListener(v -> finish());
-        findViewById(R.id.btn_import_image_asset).setOnClickListener(v -> pickImage());
+        importButton.setOnClickListener(v -> pickImage());
         search.getEditText().addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -100,14 +123,37 @@ public class ImageManagementActivity extends ForgeActivity {
 
     private void reloadReferences() {
         references = new HashMap<>();
-        VocabularyStore vocabulary = new VocabularyStore(projectDirectory);
-        for (VocabularyEntry entry : vocabulary.entries) {
-            if (!VocabularyEntry.TYPE_IMAGE.equals(entry.type)
-                    || entry.image == null || entry.image.isEmpty()) {
-                continue;
+        if (courseId.isEmpty()) {
+            VocabularyStore vocabulary = new VocabularyStore(projectDirectory);
+            for (VocabularyEntry entry : vocabulary.entries) {
+                if (!VocabularyEntry.TYPE_IMAGE.equals(entry.type)
+                        || entry.image == null || entry.image.isEmpty()) {
+                    continue;
+                }
+                references.computeIfAbsent(entry.image, key -> new ArrayList<>())
+                        .add(vocabulary.displayName(entry));
             }
-            references.computeIfAbsent(entry.image, key -> new ArrayList<>())
-                    .add(vocabulary.displayName(entry));
+            return;
+        }
+        ProjectStructure structure = ProjectStructure.load(projectDirectory);
+        store.load();
+        for (ProjectStructure.Chapter chapter : structure.chapters) {
+            for (ProjectStructure.Unit unit : chapter.units) {
+                for (ProjectStructure.Course course : unit.courses) {
+                    if (!courseId.equals(course.id)) continue;
+                    for (ProjectStructure.Question question : course.questions) {
+                        for (List<ProjectStructure.Question.OptionItem> group
+                                : question.optionItems) {
+                            for (ProjectStructure.Question.OptionItem item : group) {
+                                if (item.image == null || item.image.isEmpty()) continue;
+                                references.computeIfAbsent(item.image, key -> new ArrayList<>())
+                                        .add(question.name == null || question.name.isEmpty()
+                                                ? "未命名题目" : question.name);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -164,7 +210,8 @@ public class ImageManagementActivity extends ForgeActivity {
         name.setText(item.name());
         String dimensions = item.width() > 0 && item.height() > 0
                 ? item.width() + " × " + item.height() : "尺寸未知";
-        String prefix = item.registered ? "" : "未登记/来自词汇 · ";
+        String prefix = item.registered ? "" : (courseId.isEmpty()
+                ? "未登记/来自词汇 · " : "未登记 · ");
         meta.setText(prefix + item.fileName() + " · " + dimensions);
         code.setText(item.code().isEmpty() ? "未设置编码" : "编码：" + item.code());
 
@@ -173,11 +220,48 @@ public class ImageManagementActivity extends ForgeActivity {
             refs.setText("未被引用");
         } else {
             String joined = String.join("、", names);
-            refs.setText("被 " + names.size() + " 个词汇引用：" + joined);
+            refs.setText(courseId.isEmpty()
+                    ? "被 " + names.size() + " 个词汇引用：" + joined
+                    : "被本课程 " + names.size() + " 个选项引用：" + joined);
         }
-        row.setOnClickListener(v -> showEditCode(item));
-        more.setOnClickListener(v -> showMenu(more, item));
+        if (selectMode) {
+            row.setOnClickListener(v -> selectImage(item));
+        } else {
+            row.setOnClickListener(v -> showEditCode(item));
+        }
+        more.setOnClickListener(v -> {
+            if (selectMode) showSelectMenu(more, item);
+            else showMenu(more, item);
+        });
         list.addView(row);
+    }
+
+    private void selectImage(Item item) {
+        if (item.file == null || !item.file.isFile()) {
+            toast("图片文件不存在");
+            return;
+        }
+        if (item.image == null) {
+            if (store.registerFile(item.file) == null) {
+                toast("图片登记失败");
+                return;
+            }
+        }
+        String path = MediaFiles.relativePath(projectDirectory, item.file);
+        if (path == null || path.isEmpty()) return;
+        Intent result = new Intent();
+        result.putExtra(EXTRA_SELECTED_IMAGE, path);
+        setResult(Activity.RESULT_OK, result);
+        finish();
+    }
+
+    private void showSelectMenu(View anchor, Item item) {
+        ForgeMenu menu = new ForgeMenu(this);
+        menu.addHeader(item.name());
+        menu.addItem("选择此图片", () -> selectImage(item));
+        menu.addDivider();
+        menu.addItem("删除", () -> confirmDelete(item));
+        menu.show(anchor);
     }
 
     private void showMenu(View anchor, Item item) {
@@ -242,7 +326,9 @@ public class ImageManagementActivity extends ForgeActivity {
     private void confirmDelete(Item item) {
         List<String> names = references.get(item.relativePath());
         if (names != null && !names.isEmpty()) {
-            toast("被 " + names.size() + " 个词汇引用，请先移除引用");
+            toast(courseId.isEmpty()
+                    ? "被 " + names.size() + " 个词汇引用，请先移除引用"
+                    : "被本课程 " + names.size() + " 个选项引用，请先移除引用");
             return;
         }
         ForgeDialog dialog = new ForgeDialog(this);
@@ -291,6 +377,9 @@ public class ImageManagementActivity extends ForgeActivity {
             ProjectImage image = store.importImage(cache, displayName);
             if (image == null) {
                 toast("图片无法解码，已拒绝");
+            } else if (selectMode) {
+                Item item = new Item(image, store.resolveFile(image.file), true);
+                selectImage(item);
             } else {
                 render();
                 toast("已导入图片：" + image.name);
@@ -330,7 +419,7 @@ public class ImageManagementActivity extends ForgeActivity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private static final class Item {
+    private final class Item {
         final ProjectImage image;
         final File file;
         final boolean registered;
@@ -356,7 +445,7 @@ public class ImageManagementActivity extends ForgeActivity {
             if (image != null) {
                 return image.file;
             }
-            return file == null ? "" : "resources/images/" + file.getName();
+            return file == null ? "" : MediaFiles.relativePath(projectDirectory, file);
         }
 
         String fileName() {

@@ -33,8 +33,11 @@ using json = nlohmann::json;
 json itemsToJson(const std::vector<QuestionOptionItem>& items) {
   json result = json::array();
   for (const auto& item : items) {
-    if (item.kind == "vocab") result.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
-    else result.push_back({{"kind", "text"}, {"text", item.text}});
+    json value = item.kind == "vocab"
+        ? json{{"kind", "vocab"}, {"vocabId", item.vocabId}}
+        : json{{"kind", "text"}, {"text", item.text}};
+    if (!item.image.empty()) value["image"] = item.image;
+    result.push_back(std::move(value));
   }
   return result;
 }
@@ -47,6 +50,7 @@ std::vector<QuestionOptionItem> itemsFromJson(const json& object, const char* ke
     item.kind = value.value("kind", "text");
     item.text = value.value("text", "");
     item.vocabId = value.value("vocabId", "");
+    item.image = value.value("image", "");
     result.push_back(item);
   }
   return result;
@@ -207,15 +211,21 @@ json structureToJson(const Structure& structure) {
           }
           json promptItems = json::array();
           for (const auto& item : question.promptItems) {
-            if (item.kind == "vocab") promptItems.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
-            else promptItems.push_back({{"kind", "text"}, {"text", item.text}});
+            json value = item.kind == "vocab"
+                ? json{{"kind", "vocab"}, {"vocabId", item.vocabId}}
+                : json{{"kind", "text"}, {"text", item.text}};
+            if (!item.image.empty()) value["image"] = item.image;
+            promptItems.push_back(std::move(value));
           }
           json optionItems = json::array();
           for (const auto& group : question.optionItems) {
             json arr = json::array();
             for (const auto& item : group) {
-              if (item.kind == "vocab") arr.push_back({{"kind", "vocab"}, {"vocabId", item.vocabId}});
-              else arr.push_back({{"kind", "text"}, {"text", item.text}});
+              json value = item.kind == "vocab"
+                  ? json{{"kind", "vocab"}, {"vocabId", item.vocabId}}
+                  : json{{"kind", "text"}, {"text", item.text}};
+              if (!item.image.empty()) value["image"] = item.image;
+              arr.push_back(std::move(value));
             }
             optionItems.push_back(arr);
           }
@@ -378,6 +388,7 @@ Structure structureFromJson(const json& value) {
                         item.kind = itemValue.value("kind", "text");
                         item.text = itemValue.value("text", "");
                         item.vocabId = itemValue.value("vocabId", "");
+                        item.image = itemValue.value("image", "");
                         group.push_back(item);
                       }
                     }
@@ -413,6 +424,7 @@ Structure structureFromJson(const json& value) {
                     item.kind = itemValue.value("kind", "text");
                     item.text = itemValue.value("text", "");
                     item.vocabId = itemValue.value("vocabId", "");
+                    item.image = itemValue.value("image", "");
                     question.promptItems.push_back(item);
                   }
                 }
@@ -425,6 +437,7 @@ Structure structureFromJson(const json& value) {
                         item.kind = itemValue.value("kind", "text");
                         item.text = itemValue.value("text", "");
                         item.vocabId = itemValue.value("vocabId", "");
+                        item.image = itemValue.value("image", "");
                         group.push_back(item);
                       }
                     }

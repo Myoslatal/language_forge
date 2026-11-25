@@ -181,6 +181,7 @@ final class ProjectStructure {
                                                         value.kind = item.optString("kind", "text");
                                                         value.text = item.optString("text", "");
                                                         value.vocabId = item.optString("vocabId", "");
+                                                        value.image = item.optString("image", "");
                                                         parsed.add(value);
                                                     }
                                                 }
@@ -228,6 +229,7 @@ final class ProjectStructure {
                                                 value.kind = item.optString("kind", "text");
                                                 value.text = item.optString("text", "");
                                                 value.vocabId = item.optString("vocabId", "");
+                                                value.image = item.optString("image", "");
                                                 question.promptItems.add(value);
                                             }
                                         }
@@ -244,6 +246,7 @@ final class ProjectStructure {
                                                         value.kind = item.optString("kind", "text");
                                                         value.text = item.optString("text", "");
                                                         value.vocabId = item.optString("vocabId", "");
+                                                        value.image = item.optString("image", "");
                                                         parsed.add(value);
                                                     }
                                                 }
@@ -269,6 +272,7 @@ final class ProjectStructure {
                                                             option.kind = item.optString("kind", "text");
                                                             option.text = item.optString("text", "");
                                                             option.vocabId = item.optString("vocabId", "");
+                                                            option.image = item.optString("image", "");
                                                             value.leftItems.add(option);
                                                         }
                                                     }
@@ -281,6 +285,7 @@ final class ProjectStructure {
                                                             option.kind = item.optString("kind", "text");
                                                             option.text = item.optString("text", "");
                                                             option.vocabId = item.optString("vocabId", "");
+                                                            option.image = item.optString("image", "");
                                                             value.rightItems.add(option);
                                                         }
                                                     }
@@ -500,6 +505,7 @@ final class ProjectStructure {
                                     object.put("kind", item.kind);
                                     if ("vocab".equals(item.kind)) object.put("vocabId", item.vocabId);
                                     else object.put("text", item.text);
+                                    if (!item.image.isEmpty()) object.put("image", item.image);
                                     promptItems.put(object);
                                 }
                                 questionObject.put("promptItems", promptItems);
@@ -512,6 +518,7 @@ final class ProjectStructure {
                                     object.put("kind", item.kind);
                                     if ("vocab".equals(item.kind)) object.put("vocabId", item.vocabId);
                                     else object.put("text", item.text);
+                                    if (!item.image.isEmpty()) object.put("image", item.image);
                                     group.put(object);
                                 }
                                 optionItems.put(group);
@@ -713,6 +720,7 @@ final class ProjectStructure {
             object.put("kind", item.kind);
             if ("vocab".equals(item.kind)) object.put("vocabId", item.vocabId);
             else object.put("text", item.text);
+            if (!item.image.isEmpty()) object.put("image", item.image);
             array.put(object);
         }
         return array;
@@ -755,6 +763,7 @@ final class ProjectStructure {
             String kind = "text";
             String text = "";
             String vocabId = "";
+            String image = "";
         }
 
         static final class WarnRule {

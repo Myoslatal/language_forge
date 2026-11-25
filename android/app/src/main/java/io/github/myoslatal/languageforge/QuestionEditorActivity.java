@@ -15,6 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.RadioButton;
@@ -138,7 +139,19 @@ public class QuestionEditorActivity extends ForgeActivity {
     private final List<List<ProjectStructure.Question.OptionItem>> choiceOptionItems = new ArrayList<>();
     private final LinearLayout[] choiceOptionPreviews = new LinearLayout[4];
     private final View[] choiceOptionExtras = new View[4];
+    private final List<ImageControl> choiceImageControls = new ArrayList<>();
+    private final List<ImageControl> listenImageControls = new ArrayList<>();
     private int choiceOptionPickIndex = -1;
+    private int pendingOptionImageIndex = -1;
+    private boolean pendingOptionImageListen;
+
+    private static final class ImageControl {
+        LinearLayout bar;
+        ForgeButton choose;
+        ImageView thumb;
+        TextView missing;
+        ForgeButton remove;
+    }
     private EditText typePrompt;
     private EditText typeAnswers;
     private CheckBox typeIgnoreCase;
@@ -404,6 +417,10 @@ public class QuestionEditorActivity extends ForgeActivity {
             optionPreview.setId(3000 + i);
             optionPreview.setOrientation(LinearLayout.HORIZONTAL);
             listenSection.addView(optionPreview);
+            LinearLayout imageControls = new LinearLayout(this);
+            imageControls.setOrientation(LinearLayout.VERTICAL);
+            addOptionImageControls(imageControls, i, true);
+            listenSection.addView(imageControls);
             android.widget.RadioButton radio = new android.widget.RadioButton(this);
             radio.setText("正确 " + (i + 1));
             radio.setId(1000 + i);
@@ -801,6 +818,8 @@ public class QuestionEditorActivity extends ForgeActivity {
             optionFields[i].getEditText().addTextChangedListener(new SimpleWatcher());
             ViewGroup parent = (ViewGroup) optionFields[i].getParent();
             int fieldIndex = parent.indexOfChild(optionFields[i]);
+            LinearLayout controls = new LinearLayout(this);
+            controls.setOrientation(LinearLayout.VERTICAL);
             LinearLayout extra = new LinearLayout(this);
             extra.setOrientation(LinearLayout.HORIZONTAL);
             extra.setGravity(Gravity.CENTER_VERTICAL);
@@ -819,8 +838,10 @@ public class QuestionEditorActivity extends ForgeActivity {
             choiceOptionPreviews[i] = preview;
             extra.addView(preview, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            parent.addView(extra, fieldIndex + 1);
-            choiceOptionExtras[i] = extra;
+            controls.addView(extra);
+            addOptionImageControls(controls, i, false);
+            parent.addView(controls, fieldIndex + 1);
+            choiceOptionExtras[i] = controls;
         }
         renderChoiceOptionPreviews();
         if (question.correctIndex >= 0 && question.correctIndex < 4) {
@@ -1714,6 +1735,9 @@ public class QuestionEditorActivity extends ForgeActivity {
             int optionId = getResources().getIdentifier("question_option_" + i, "id", getPackageName());
             View option = findViewById(optionId);
             if (option != null) option.setVisibility(View.GONE);
+            if (choiceOptionExtras[i] != null) {
+                choiceOptionExtras[i].setVisibility(View.GONE);
+            }
         }
         if (hintsEnabledView != null) hintsEnabledView.setVisibility(View.GONE);
     }
@@ -1790,10 +1814,11 @@ public class QuestionEditorActivity extends ForgeActivity {
     private void renderListenOptionPreviews() {
         for (int i = 0; i < 4; i++) {
             LinearLayout preview = findViewById(3000 + i);
-            if (preview == null) continue;
+            if (preview == null || i >= listenOptionItems.size()) continue;
             renderOptionPreviewItems(listenOptionItems.get(i), listenOptions[i], preview,
                     this::renderListenOptionPreviews);
         }
+        refreshOptionImageControls();
     }
 
     private void renderOptionPreviewItems(List<ProjectStructure.Question.OptionItem> items,
@@ -1933,10 +1958,11 @@ public class QuestionEditorActivity extends ForgeActivity {
     private void renderChoiceOptionPreviews() {
         for (int i = 0; i < 4; i++) {
             LinearLayout preview = choiceOptionPreviews[i];
-            if (preview == null) continue;
+            if (preview == null || i >= choiceOptionItems.size()) continue;
             renderOptionPreviewItems(choiceOptionItems.get(i), optionFields[i].getEditText(),
                     preview, this::renderChoiceOptionPreviews);
         }
+        refreshOptionImageControls();
     }
 
     private void openChoiceOptionPicker() {
@@ -1969,6 +1995,141 @@ public class QuestionEditorActivity extends ForgeActivity {
                 dirty = true;
                 choiceOptionPickIndex = -1;
             });
+
+    private void openOptionImagePicker(int index, boolean listen) {
+        if (index < 0 || index >= 4) return;
+        pendingOptionImageIndex = index;
+        pendingOptionImageListen = listen;
+        Intent intent = new Intent(this, ImageManagementActivity.class);
+        intent.putExtra(ImageManagementActivity.EXTRA_FOLDER_NAME, projectDirectory.getName());
+        intent.putExtra(ImageManagementActivity.EXTRA_COURSE_ID, courseId);
+        intent.putExtra(ImageManagementActivity.EXTRA_COURSE_NAME, course.name);
+        intent.putExtra(ImageManagementActivity.EXTRA_SELECT_MODE, true);
+        optionImageLauncher.launch(intent);
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<Intent> optionImageLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts
+                    .StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                String path = result.getData().getStringExtra(
+                        ImageManagementActivity.EXTRA_SELECTED_IMAGE);
+                if (path == null || path.isEmpty() || pendingOptionImageIndex < 0) return;
+                if (!CourseResourcePaths.isCourseImagePath(projectDirectory, courseId, path)) {
+                    toast("只能选择本课程题目图片");
+                    return;
+                }
+                List<ProjectStructure.Question.OptionItem> group = optionImageGroup(
+                        pendingOptionImageIndex, pendingOptionImageListen);
+                setOptionImage(group, path);
+                refreshOptionImageControls();
+                dirty = true;
+                pendingOptionImageIndex = -1;
+            });
+
+    private List<ProjectStructure.Question.OptionItem> optionImageGroup(int index, boolean listen) {
+        if (index < 0 || index >= 4) return new ArrayList<>();
+        if (listen) {
+            return index < listenOptionItems.size()
+                    ? listenOptionItems.get(index) : new ArrayList<>();
+        }
+        return index < choiceOptionItems.size()
+                ? choiceOptionItems.get(index) : new ArrayList<>();
+    }
+
+    private String optionImagePath(List<ProjectStructure.Question.OptionItem> group) {
+        if (group == null) return "";
+        for (ProjectStructure.Question.OptionItem item : group) {
+            if (item.image != null && !item.image.isEmpty()) return item.image;
+        }
+        return "";
+    }
+
+    private void setOptionImage(List<ProjectStructure.Question.OptionItem> group, String path) {
+        if (group == null) return;
+        if (group.isEmpty()) {
+            ProjectStructure.Question.OptionItem item =
+                    new ProjectStructure.Question.OptionItem();
+            item.text = "";
+            group.add(item);
+        }
+        for (ProjectStructure.Question.OptionItem item : group) item.image = "";
+        group.get(0).image = path == null ? "" : path;
+    }
+
+    private void clearOptionImage(List<ProjectStructure.Question.OptionItem> group) {
+        if (group == null) return;
+        for (ProjectStructure.Question.OptionItem item : group) item.image = "";
+    }
+
+    private void addOptionImageControls(LinearLayout parent, int index, boolean listen) {
+        ImageControl control = new ImageControl();
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        ForgeButton choose = new ForgeButton(this);
+        choose.setAllCaps(false);
+        choose.setOnClickListener(v -> openOptionImagePicker(index, listen));
+        bar.addView(choose);
+        ImageView thumb = new ImageView(this);
+        thumb.setAdjustViewBounds(true);
+        thumb.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(dp(64), dp(48));
+        thumbLp.setMargins(dp(6), 0, dp(6), 0);
+        bar.addView(thumb, thumbLp);
+        TextView missing = new TextView(this);
+        missing.setText("〔图片缺失〕");
+        missing.setTextColor(getColor(R.color.forge_warn));
+        missing.setTextSize(12f);
+        bar.addView(missing);
+        ForgeButton remove = new ForgeButton(this);
+        remove.setAllCaps(false);
+        remove.setText("移除图");
+        remove.setOnClickListener(v -> {
+            clearOptionImage(optionImageGroup(index, listen));
+            refreshOptionImageControls();
+            dirty = true;
+        });
+        bar.addView(remove);
+        control.bar = bar;
+        control.choose = choose;
+        control.thumb = thumb;
+        control.missing = missing;
+        control.remove = remove;
+        (listen ? listenImageControls : choiceImageControls).add(control);
+        parent.addView(bar);
+        renderOptionImageControl(control, optionImageGroup(index, listen));
+    }
+
+    private void renderOptionImageControl(ImageControl control,
+            List<ProjectStructure.Question.OptionItem> group) {
+        String path = optionImagePath(group);
+        boolean has = !path.isEmpty();
+        control.choose.setText(has ? "更换图" : "附图");
+        control.thumb.setVisibility(has ? View.VISIBLE : View.GONE);
+        control.remove.setVisibility(has ? View.VISIBLE : View.GONE);
+        control.thumb.setImageDrawable(null);
+        if (!has) {
+            control.missing.setVisibility(View.GONE);
+            return;
+        }
+        android.graphics.Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, path);
+        if (bitmap == null) {
+            control.missing.setVisibility(View.VISIBLE);
+        } else {
+            control.missing.setVisibility(View.GONE);
+            control.thumb.setImageBitmap(bitmap);
+        }
+    }
+
+    private void refreshOptionImageControls() {
+        for (int i = 0; i < choiceImageControls.size(); i++) {
+            renderOptionImageControl(choiceImageControls.get(i), optionImageGroup(i, false));
+        }
+        for (int i = 0; i < listenImageControls.size(); i++) {
+            renderOptionImageControl(listenImageControls.get(i), optionImageGroup(i, true));
+        }
+    }
 
     private void openListenAudioPicker() {
         Intent intent = new Intent(this, VocabularyPickerActivity.class);
@@ -2039,7 +2200,10 @@ public class QuestionEditorActivity extends ForgeActivity {
         List<String> options = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             String value = listenOptions[i].getText().toString().trim();
-            if (value.isEmpty()) { toast("四个选项都不能为空"); return; }
+            if (value.isEmpty() && listenOptionImage(i).isEmpty()) {
+                toast("每个选项至少填写文字或附图");
+                return;
+            }
             options.add(value);
         }
         int correct = -1;
@@ -2060,10 +2224,12 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.optionItems.clear();
         for (int i = 0; i < 4; i++) {
             List<ProjectStructure.Question.OptionItem> items = listenOptionItems.get(i);
+            String image = listenOptionImage(i);
             String mirror = mirrorListenOption(items);
             if (!mirror.equals(options.get(i))) {
                 ProjectStructure.Question.OptionItem textItem = new ProjectStructure.Question.OptionItem();
                 textItem.text = options.get(i);
+                textItem.image = image;
                 items = new ArrayList<>();
                 items.add(textItem);
             }
@@ -2076,7 +2242,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
             if (hasVocabItem) break;
         }
-        if (!hasVocabItem) question.optionItems.clear();
+        if (!hasVocabItem && !hasAnyOptionImage(question.optionItems)) question.optionItems.clear();
         question.correctIndex = correct;
         question.hintsEnabled = false;
         question.name = (prompt.isEmpty() ? "听音选择" : prompt) + " · " + options.get(correct);
@@ -2402,9 +2568,13 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.blocks.clear(); question.answers.clear(); question.correctIndex = -1;
         if ("choice".equals(question.customMode)) {
             List<String> options = new ArrayList<>();
-            for (ForgeTextField field : optionFields) {
+            for (int i = 0; i < 4; i++) {
+                ForgeTextField field = optionFields[i];
                 String value = field.getText().toString().trim();
-                if (value.isEmpty()) { toast("四个选项都必须填写"); return; }
+                if (value.isEmpty() && choiceOptionImage(i).isEmpty()) {
+                    toast("每个选项至少填写文字或附图");
+                    return;
+                }
                 options.add(value);
             }
             int correct = -1;
@@ -2412,10 +2582,11 @@ public class QuestionEditorActivity extends ForgeActivity {
             if (correct < 0) { toast("请选择一个正确答案"); return; }
             question.options.addAll(options); question.correctIndex = correct;
             for (int i = 0; i < 4; i++) {
+                String image = choiceOptionImage(i);
                 List<ProjectStructure.Question.OptionItem> items = new ArrayList<>(choiceOptionItems.get(i));
                 if (!mirrorListenOption(items).equals(options.get(i))) {
                     ProjectStructure.Question.OptionItem text = new ProjectStructure.Question.OptionItem();
-                    text.text = options.get(i); items.clear(); items.add(text);
+                    text.text = options.get(i); text.image = image; items.clear(); items.add(text);
                 }
                 question.optionItems.add(items);
             }
@@ -2547,9 +2718,13 @@ public class QuestionEditorActivity extends ForgeActivity {
             question.near = readingNear.isChecked();
         } else {
             List<String> options = new ArrayList<>();
-            for (ForgeTextField field : optionFields) {
+            for (int i = 0; i < 4; i++) {
+                ForgeTextField field = optionFields[i];
                 String value = field.getText() == null ? "" : field.getText().toString().trim();
-                if (value.isEmpty()) { toast("四个选项都必须填写"); return; }
+                if (value.isEmpty() && choiceOptionImage(i).isEmpty()) {
+                    toast("每个选项至少填写文字或附图");
+                    return;
+                }
                 options.add(value);
             }
             int correct = -1;
@@ -2559,10 +2734,11 @@ public class QuestionEditorActivity extends ForgeActivity {
             question.acceptedAnswers.clear();
             question.correctIndex = correct;
             for (int i = 0; i < 4; i++) {
+                String image = choiceOptionImage(i);
                 List<ProjectStructure.Question.OptionItem> items = new ArrayList<>(choiceOptionItems.get(i));
                 if (!mirrorListenOption(items).equals(options.get(i))) {
                     ProjectStructure.Question.OptionItem text = new ProjectStructure.Question.OptionItem();
-                    text.text = options.get(i); items.clear(); items.add(text);
+                    text.text = options.get(i); text.image = image; items.clear(); items.add(text);
                 }
                 question.optionItems.add(items);
             }
@@ -2570,7 +2746,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             for (List<ProjectStructure.Question.OptionItem> group : question.optionItems)
                 for (ProjectStructure.Question.OptionItem item : group)
                     if ("vocab".equals(item.kind)) hasVocab = true;
-            if (!hasVocab) question.optionItems.clear();
+            if (!hasVocab && !hasAnyOptionImage(question.optionItems)) question.optionItems.clear();
         }
         if (!course.questions.contains(question)) course.questions.add(question);
         if (explainInput != null) question.explain = explainInput.getText().toString().trim();
@@ -2593,9 +2769,13 @@ public class QuestionEditorActivity extends ForgeActivity {
         }
         if (!hasLineText) { toast("对话里至少需要一句台词"); return; }
         List<String> options = new ArrayList<>();
-        for (ForgeTextField field : optionFields) {
+        for (int i = 0; i < 4; i++) {
+            ForgeTextField field = optionFields[i];
             String value = field.getText() == null ? "" : field.getText().toString().trim();
-            if (value.isEmpty()) { toast("四个选项都必须填写"); return; }
+            if (value.isEmpty() && choiceOptionImage(i).isEmpty()) {
+                toast("每个选项至少填写文字或附图");
+                return;
+            }
             options.add(value);
         }
         int correct = -1;
@@ -2611,12 +2791,14 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.options.addAll(options);
         question.optionItems.clear();
         for (int i = 0; i < 4; i++) {
+            String image = choiceOptionImage(i);
             List<ProjectStructure.Question.OptionItem> items =
                     new ArrayList<>(choiceOptionItems.get(i));
             if (!mirrorListenOption(items).equals(options.get(i))) {
                 ProjectStructure.Question.OptionItem textItem =
                         new ProjectStructure.Question.OptionItem();
                 textItem.text = options.get(i);
+                textItem.image = image;
                 items.clear();
                 items.add(textItem);
             }
@@ -2629,7 +2811,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
             if (hasVocabOption) break;
         }
-        if (!hasVocabOption) question.optionItems.clear();
+        if (!hasVocabOption && !hasAnyOptionImage(question.optionItems)) question.optionItems.clear();
         question.correctIndex = correct;
         question.hintsEnabled = false;
         String fallback = lines.isEmpty() ? "" : lines.get(0).text;
@@ -2980,6 +3162,7 @@ public class QuestionEditorActivity extends ForgeActivity {
     }
 
     private void save() {
+        ensureOptionImagesScoped();
         if (typeSpinner != null && typeSpinner.getSelectedItemPosition() == 6) {
             saveDialog();
             return;
@@ -3021,10 +3204,11 @@ public class QuestionEditorActivity extends ForgeActivity {
             return;
         }
         List<String> options = new ArrayList<>();
-        for (ForgeTextField field : optionFields) {
+        for (int i = 0; i < 4; i++) {
+            ForgeTextField field = optionFields[i];
             String value = field.getText() == null ? "" : field.getText().toString().trim();
-            if (value.isEmpty()) {
-                toast("四个选项都必须填写");
+            if (value.isEmpty() && choiceOptionImage(i).isEmpty()) {
+                toast("每个选项至少填写文字或附图");
                 return;
             }
             options.add(value);
@@ -3094,12 +3278,14 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.options.addAll(options);
         question.optionItems.clear();
         for (int i = 0; i < 4; i++) {
+            String image = choiceOptionImage(i);
             List<ProjectStructure.Question.OptionItem> items =
                     new ArrayList<>(choiceOptionItems.get(i));
             if (!mirrorListenOption(items).equals(options.get(i))) {
                 ProjectStructure.Question.OptionItem textItem =
                         new ProjectStructure.Question.OptionItem();
                 textItem.text = options.get(i);
+                textItem.image = image;
                 items.clear();
                 items.add(textItem);
             }
@@ -3112,7 +3298,7 @@ public class QuestionEditorActivity extends ForgeActivity {
             }
             if (hasVocabOption) break;
         }
-        if (!hasVocabOption) question.optionItems.clear();
+        if (!hasVocabOption && !hasAnyOptionImage(question.optionItems)) question.optionItems.clear();
         question.correctIndex = correct;
         question.audio = audioRelative;
         question.audioDuration = Math.max(0, duration);
@@ -3136,6 +3322,54 @@ public class QuestionEditorActivity extends ForgeActivity {
         saved = true;
         toast("题目已保存");
         finish();
+    }
+
+    private String choiceOptionImage(int index) {
+        return index >= 0 && index < choiceOptionItems.size()
+                ? optionImagePath(choiceOptionItems.get(index)) : "";
+    }
+
+    private String listenOptionImage(int index) {
+        return index >= 0 && index < listenOptionItems.size()
+                ? optionImagePath(listenOptionItems.get(index)) : "";
+    }
+
+    private boolean hasAnyOptionImage(List<List<ProjectStructure.Question.OptionItem>> groups) {
+        for (List<ProjectStructure.Question.OptionItem> group : groups) {
+            if (!optionImagePath(group).isEmpty()) return true;
+        }
+        return false;
+    }
+
+    private void ensureOptionImagesScoped() {
+        ImageStore store = new ImageStore(projectDirectory, courseId);
+        List<List<ProjectStructure.Question.OptionItem>> groups = new ArrayList<>();
+        groups.addAll(choiceOptionItems);
+        groups.addAll(listenOptionItems);
+        for (List<ProjectStructure.Question.OptionItem> group : groups) {
+            for (ProjectStructure.Question.OptionItem item : group) {
+                if (item.image == null || item.image.isEmpty()) continue;
+                if (CourseResourcePaths.isCourseImagePath(projectDirectory, courseId,
+                        item.image)) {
+                    File existing = MediaFiles.resolveProjectFile(projectDirectory, item.image);
+                    if (existing != null && existing.isFile()) store.registerFile(existing);
+                    continue;
+                }
+                File source = MediaFiles.resolveProjectFile(projectDirectory, item.image);
+                if (source == null || !source.isFile()) continue;
+                try {
+                    File copied = CourseResourcePaths.copyImageToCourse(projectDirectory,
+                            courseId, source, question.id);
+                    String scoped = MediaFiles.relativePath(projectDirectory, copied);
+                    if (scoped != null) {
+                        item.image = scoped;
+                        store.registerFile(copied);
+                    }
+                } catch (Exception e) {
+                    toast("无法复制到课程图片目录");
+                }
+            }
+        }
     }
 
     private void syncCourseAudioManifest() {

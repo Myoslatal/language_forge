@@ -21,9 +21,12 @@ struct ImageEntry {
 
 struct ImageStore {
   fs::path projectDirectory;
+  std::string courseId;
+  fs::path manifestDirectory;
+  fs::path imageDirectory;
   std::vector<ImageEntry> images;
 
-  explicit ImageStore(fs::path projectDir);
+  explicit ImageStore(fs::path projectDir, std::string courseId = {});
   void load();
   bool save() const;
   ImageEntry* find(const std::string& id);

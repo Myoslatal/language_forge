@@ -40,6 +40,7 @@ struct QuestionOptionItem {
   std::string kind = "text";
   std::string text;
   std::string vocabId;
+  std::string image;
 };
 
 struct WarnRule {
