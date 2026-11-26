@@ -56,6 +56,29 @@ A zero-answerable card-only course completed with 本课没有可作答题目，
 the stats file (`t81-empty-complete.png`). Smoke also asserts archive exclusion
 (`learning_stats_export=excluded import=excluded`).
 
+### Learning review / self-test mode chooser (2026-11-26)
+
+Clicking a completed course now opens a 复习还是自测？ dialog on both clients. 复习 runs the existing
+learning flow unchanged (underlines, tappable vocabulary hints, explanations, card/custom-none pages,
+review best updates). 自测 suppresses underlines, vocabulary hints and the explanation panel; card and
+`custom` `none` questions are skipped, progress uses only answerable questions, and the completion
+page shows 自测完成 + current accuracy while leaving `learning-stats.json` and progress.json untouched.
+If a completed course contains only skipped pages, 自测 shows 本课没有可自测的题目 and stays on the list.
+Unfinished courses still start normal learning directly. Android uses an AlertDialog; desktop uses an
+ImGui modal; both use the same buttons and explain the restrictions.
+
+Fixture: 3 courses / 6 questions. Completed A has a choice with sentence hints/image/audio/option
+images, a card, a custom-none page and another choice; completed B has only a card; unfinished C has one
+choice. A's initial best was 50% (1/2); after self-test the JSON still held bestAccuracy 50/updatedAt 1 and progress.json still held completed A+B, unlocked A+B+C. Screenshots: Android `/tmp/t83-a-modal-final.png`,
+`/tmp/t83-a-selftest-q1.png`, `/tmp/t83-a-selftest-q2.png`, `/tmp/t83-a-selftest-complete.png`,
+`/tmp/t83-a-review-q1.png`, `/tmp/t83-a-review-hint.png`, `/tmp/t83-a-review-explain.png`,
+`/tmp/t83-a-review-card.png`, `/tmp/t83-a-uncompleted-direct.png`, `/tmp/t83-a-card-only-warning.png`;
+desktop `/tmp/t83-d-modal-final.png`, `/tmp/t83-d-selftest-q1.png`, `/tmp/t83-d-selftest-q2.png`,
+`/tmp/t83-d-selftest-complete.png`, `/tmp/t83-d-review-q1.png`, `/tmp/t83-d-review-hint.png`,
+`/tmp/t83-d-review-correct.png`, `/tmp/t83-d-review-card.png`, `/tmp/t83-d-uncompleted-direct.png`,
+`/tmp/t83-d-card-only-warning.png`. Android clean debug build and desktop clean Release build succeeded;
+desktop clean smoke ×2 reported SMOKE PASS (learning_stats_export=excluded).
+
 ### Learning course-list visual refresh (2026-11-25)
 
 The learning course selector now follows the share-site start page (`/tmp/nortu-site.html`,
@@ -149,6 +172,7 @@ verification uses WAV/MediaPlayer/SDL logs; physical audibility remains RD-07.
 | E2 | per-word duplicate mixed/cancel, default code, phonetic append | PASS | smoke lexicon_prompt/perword/unicode |
 | F1 | fonts/images/audio import/ref/delete guards | PASS | smoke font/image/audio flags |
 | F2 | .conlang export/import including question audio | PASS | smoke zip/import/browser export/import |
+| J1 | completed course 复习/自测 chooser | PASS | completed A/B + unfinished C fixture; cancel/review/self-test; self-test skipped card+custom-none, used 2/2 progress, no hints/explain, completion 2/2=100% with review best still 50% (1/2); card-only self-test showed no-test warning; unfinished C started directly; Android+desktop screenshots above |
 | I1 | learning course selector card refresh | PASS | Android/desktop 4-course hierarchy fixture: completed 80%/100%, unlocked no-stats, locked 50% disabled; light/dark; small Android 720x1280 and desktop 800x600 no overflow; start/retry works; screenshots above |
 | H1 | learning first-attempt accuracy + course best | PASS | desktop/Android mixed fixtures: 80% first run, 60% rerun kept 80, 100% rerun refreshed; card + custom-none excluded; restart/best and mid-run no-write verified; JSON learning-stats.json; screenshots above |
 | G1 | light/dark theme persistence | PASS | smoke theme/UI screenshots; no user desktop Xvfb |

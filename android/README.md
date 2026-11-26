@@ -597,4 +597,6 @@ Learning accuracy is tracked per run (one entry from question 1) in a separate v
 
 The course-selection page is card-based: a centered LEARN/project header, chapter sections, white 16dp rounded unit cards with a thin border and subtle elevation, and course rows with a state chip, best-score pill (`最佳 80% · 4/5` or `暂无成绩`) and a full-width blue start/retry button. Locked courses remain visible with a lock icon and a disabled button; completed courses offer `再练一次`; the existing chapter → unit → course hierarchy, unlock order and stats are unchanged.
 
+Completed courses open a review/self-test chooser. 复习 keeps the normal learning flow (word underlines, tappable hints, explanations and new-knowledge cards); 自测 suppresses underlines, hints and explanations, skips card and `custom` `none` pages, and counts only answerable questions. 自测 writes no `learning-stats` best and never changes completion/unlock progress; the completion page shows the current self-test accuracy alongside the untouched review best. Unfinished courses still enter normal learning directly.
+
 Learning course list is grouped by chapter → unit → course; exiting mid-question returns to this grouped list after confirmation.

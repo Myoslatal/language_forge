@@ -508,6 +508,9 @@ struct App {
   bool learningRunBestRefreshed = false;
   bool learningRunFinished = false;
   bool learningScrollTop = false;
+  bool learningSelfTest = false;
+  std::string learningModeCourseId;
+  bool learningModeDialogPending = false;
 
   std::vector<Course*> allCoursesFlat() {
     std::vector<Course*> courses;
@@ -650,6 +653,66 @@ struct App {
     return true;
   }
 
+  Question* firstAnswerableQuestion(Course* course) {
+    if (!course) return nullptr;
+    for (auto& question : course->questions)
+      if (answerableQuestion(question)) return &question;
+    return nullptr;
+  }
+
+  Question* nextAnswerableQuestion(Course* course, Question* current) {
+    if (!course || !current) return nullptr;
+    bool after = false;
+    for (auto& question : course->questions) {
+      if (after && answerableQuestion(question)) return &question;
+      if (&question == current) after = true;
+    }
+    return nullptr;
+  }
+
+  int answerableQuestionPosition(Course* course, Question* current) {
+    if (!course || !current) return 0;
+    int position = 0;
+    for (auto& question : course->questions) {
+      if (!answerableQuestion(question)) continue;
+      ++position;
+      if (&question == current) return position;
+    }
+    return 0;
+  }
+
+  bool isLastAnswerableQuestion(Course* course, Question* current) {
+    return nextAnswerableQuestion(course, current) == nullptr;
+  }
+
+  void startLearningCourse(Course* course, bool selfTest) {
+    if (!course) return;
+    Question* first = nullptr;
+    if (selfTest) {
+      first = firstAnswerableQuestion(course);
+      if (!first) {
+        showToast("本课没有可自测的题目");
+        return;
+      }
+    }
+    learningSelfTest = selfTest;
+    learningShowList = false;
+    learningScrollTop = true;
+    learningComplete = false;
+    learningAnswered = false;
+    learningSelected = -1;
+    learningHintId.clear();
+    learningWrongExplain = false;
+    learningRunFinished = false;
+    beginLearningRun(course);
+    learningCourseId = course->id;
+    if (selfTest) {
+      learningQuestionId = first->id;
+    } else {
+      learningQuestionId = course->questions.empty() ? "" : course->questions.front().id;
+    }
+  }
+
   void beginLearningRun(Course* course) {
     learningRunCourseId = course ? course->id : "";
     learningRunEligible = 0;
@@ -729,7 +792,8 @@ struct App {
       if (learningAnswered) recordLearningAttempt(true);
       else if (learningWrongExplain) recordLearningAttempt(false);
     }
-    completeCurrentCourse();
+    const bool selfTest = learningSelfTest;
+    if (!selfTest) completeCurrentCourse();
     learningComplete = true;
     learningQuestionId.clear();
     learningSelected = -1;
@@ -737,7 +801,7 @@ struct App {
     learningHintId.clear();
     stopAudioPlayback();
     learningRunBestRefreshed = false;
-    if (finished && learningRunEligible > 0) {
+    if (!selfTest && finished && learningRunEligible > 0) {
       const int accuracy = static_cast<int>(std::lround(
           learningRunCorrect * 100.0 / learningRunEligible));
       const LearningBest* old = bestFor(finished->id);
@@ -752,7 +816,7 @@ struct App {
         if (!saveLearningStats()) showToast("学习统计保存失败");
       }
     }
-    showToast("本课完成");
+    showToast(selfTest ? "自测完成" : "本课完成");
   }
   bool answerDialogOpen = false;
   int answerEditIndex = -1;
@@ -5696,14 +5760,12 @@ void renderLearningCourseList(App& app) {
         const std::string buttonLabel = !hasQuestions ? "暂无题目"
             : !unlocked ? "未解锁" : completed ? "再练一次" : "开始这一关";
         if (ImGui::Button(buttonLabel.c_str(), ImVec2(136, 40))) {
-          app.learningShowList = false;
-          app.learningScrollTop = true;
-          app.beginLearningRun(&course);
-          app.learningCourseId = course.id;
-          app.learningQuestionId = course.questions.front().id;
-          app.learningComplete = false;
-          app.learningAnswered = false;
-          app.learningSelected = -1;
+          if (completed) {
+            app.learningModeCourseId = course.id;
+            app.learningModeDialogPending = true;
+          } else {
+            app.startLearningCourse(&course, false);
+          }
         }
         if (!enabled) ImGui::EndDisabled();
         ImGui::PopStyleColor(4);
@@ -5719,12 +5781,59 @@ void renderLearningCourseList(App& app) {
   }
 }
 
+void renderLearningModeDialog(App& app) {
+  if (!ImGui::BeginPopupModal("复习还是自测？##learning_mode", nullptr,
+                              ImGuiWindowFlags_AlwaysAutoResize)) return;
+  Course* course = nullptr;
+  for (auto& chapter : app.structure.chapters)
+    for (auto& unit : chapter.units)
+      for (auto& item : unit.courses)
+        if (item.id == app.learningModeCourseId) course = &item;
+  if (!course) {
+    ImGui::CloseCurrentPopup();
+    app.learningModeCourseId.clear();
+    ImGui::EndPopup();
+    return;
+  }
+  ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 460.0f);
+  ImGui::TextUnformatted("复习：保留下划线提示、点词释义、答后解析和新知卡片。");
+  ImGui::Spacing();
+  ImGui::TextUnformatted("自测：不显示提示与解析，跳过新知卡片；"
+                         "音频、题图、选项图和作答判定照常。");
+  ImGui::Spacing();
+  ImGui::TextDisabled("自测成绩不会覆盖复习的历史最佳。");
+  ImGui::PopTextWrapPos();
+  ImGui::Spacing();
+  if (ImGui::Button("复习（正常学习）##learning_review", ImVec2(190, 38))) {
+    app.startLearningCourse(course, false);
+    ImGui::CloseCurrentPopup();
+    app.learningModeCourseId.clear();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("自测（无提示）##learning_self_test", ImVec2(170, 38))) {
+    app.startLearningCourse(course, true);
+    ImGui::CloseCurrentPopup();
+    app.learningModeCourseId.clear();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("取消##learning_mode_cancel", ImVec2(90, 38))) {
+    ImGui::CloseCurrentPopup();
+    app.learningModeCourseId.clear();
+  }
+  ImGui::EndPopup();
+}
+
 void renderLearning(App& app) {
   app.ensureLearningStatsLoaded();
   if (app.learningScrollTop) {
     ImGui::SetScrollY(0.0f);
     app.learningScrollTop = false;
   }
+  if (app.learningModeDialogPending) {
+    ImGui::OpenPopup("复习还是自测？##learning_mode");
+    app.learningModeDialogPending = false;
+  }
+  renderLearningModeDialog(app);
   if (app.learningCourseId.empty() && app.learningQuestionId.empty()) {
     app.learningComplete = false;
   }
@@ -5792,6 +5901,7 @@ void renderLearning(App& app) {
       app.learningComplete = true;
       app.learningCourseId.clear();
     } else {
+      app.learningSelfTest = false;
       app.beginLearningRun(current);
       app.learningCourseId = current->id;
       course = current;
@@ -5800,8 +5910,10 @@ void renderLearning(App& app) {
     }
   }
   if (app.learningComplete) {
-    pageTitle("LEARN", "本课完成", course ? course->name : "");
-    ImGui::TextWrapped("你已完成本课全部题目。");
+    const bool selfTest = app.learningSelfTest;
+    pageTitle("LEARN", selfTest ? "自测完成" : "本课完成", course ? course->name : "");
+    ImGui::TextWrapped(selfTest ? "本次自测完成；不覆盖复习历史最佳。"
+                                : "你已完成本课全部题目。");
     if (app.learningRunEligible > 0) {
       const int runAccuracy = static_cast<int>(std::lround(
           app.learningRunCorrect * 100.0 / app.learningRunEligible));
@@ -5809,23 +5921,25 @@ void renderLearning(App& app) {
                   app.learningRunEligible, runAccuracy);
       const App::LearningBest* best = app.bestFor(app.learningCourseId);
       if (best) {
-        ImGui::TextDisabled("历史最佳 %d%% · %d/%d", best->bestAccuracy,
+        ImGui::TextDisabled(selfTest ? "复习历史最佳 %d%% · %d/%d（未覆盖）"
+                                     : "历史最佳 %d%% · %d/%d", best->bestAccuracy,
                             best->bestCorrect, best->bestTotal);
       }
-      if (app.learningRunBestRefreshed) {
+      if (!selfTest && app.learningRunBestRefreshed) {
         ImGui::TextColored(ImVec4(0.08f, 0.58f, 0.28f, 1), "刷新最佳");
       }
     } else {
       ImGui::TextDisabled("本课没有可作答题目，不计入正确率。");
     }
     auto courses = app.allCoursesFlat();
-    for (std::size_t i = 0; i + 1 < courses.size(); ++i) {
+    for (std::size_t i = 0; !selfTest && i + 1 < courses.size(); ++i) {
       if (courses[i]->id != app.learningCourseId) continue;
       Course* next = courses[i + 1];
       if (app.unlockedCourseIds.count(next->id) && !next->questions.empty()) {
         if (ImGui::Button(("下一课：" + next->name + "##learning_next_course").c_str(),
                           ImVec2(-1, 42))) {
           app.learningComplete = false;
+          app.learningSelfTest = false;
           app.beginLearningRun(next);
           app.learningCourseId = next->id;
           app.learningQuestionId = next->questions.front().id;
@@ -5860,6 +5974,7 @@ void renderLearning(App& app) {
             for (auto& item : unit.courses)
               if (course == nullptr) { app.learningCourseId = item.id; course = &item; }
         if (course && !course->questions.empty()) {
+          app.learningSelfTest = false;
           app.beginLearningRun(course);
           app.learningQuestionId = course->questions.front().id;
           app.learningComplete = false;
@@ -5870,7 +5985,10 @@ void renderLearning(App& app) {
       }
     }
     if (course && !course->questions.empty()) {
-      if (app.learningRunCourseId != course->id) app.beginLearningRun(course);
+      if (app.learningRunCourseId != course->id) {
+        app.learningSelfTest = false;
+        app.beginLearningRun(course);
+      }
       app.learningQuestionId = course->questions.front().id;
       app.learningComplete = false;
     }
@@ -5882,6 +6000,20 @@ void renderLearning(App& app) {
     if (item.id == app.learningQuestionId) question = &item;
   }
   if (!question) return;
+  if (app.learningSelfTest && !app.answerableQuestion(*question)) {
+    Question* next = app.nextAnswerableQuestion(course, question);
+    if (next) {
+      app.learningQuestionId = next->id;
+      app.learningAnswered = false;
+      app.learningWrongExplain = false;
+      app.learningHintId.clear();
+      app.learningQuestionRenderedId.clear();
+      app.explainQuestionId.clear();
+      return;
+    }
+    app.finishLearning();
+    return;
+  }
   if (app.learningRunQuestionId != question->id) {
     app.learningRunQuestionId = question->id;
     app.learningRunQuestionCounted = false;
@@ -5892,8 +6024,15 @@ void renderLearning(App& app) {
     else if (app.learningWrongExplain) app.recordLearningAttempt(false);
   }
   if (app.learningRunEligible > 0) {
-    ImGui::TextDisabled("首次答对 %d · 已答 %d", app.learningRunCorrect,
-                        app.learningRunAnswered);
+    if (app.learningSelfTest) {
+      ImGui::TextDisabled("自测 · 第 %d / %d 题 · 首次答对 %d · 已答 %d",
+                          app.answerableQuestionPosition(course, question),
+                          app.learningRunEligible, app.learningRunCorrect,
+                          app.learningRunAnswered);
+    } else {
+      ImGui::TextDisabled("首次答对 %d · 已答 %d", app.learningRunCorrect,
+                          app.learningRunAnswered);
+    }
   }
   if (app.learningQuestionRenderedId != question->id) {
     app.learningQuestionRenderedId = question->id;
@@ -5904,7 +6043,8 @@ void renderLearning(App& app) {
     app.explainQuestionId = question->id;
     app.learningWrongExplain = false;
   }
-  if ((app.learningAnswered || app.learningWrongExplain) && !question->explain.empty()) {
+  if (!app.learningSelfTest &&
+      (app.learningAnswered || app.learningWrongExplain) && !question->explain.empty()) {
     ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 430,
                                    ImGui::GetIO().DisplaySize.y - 330), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(420, 150), ImGuiCond_Always);
@@ -5941,7 +6081,7 @@ void renderLearning(App& app) {
           const std::string raw = space == std::string::npos
               ? bodyLine.substr(pos) : bodyLine.substr(pos, space - pos);
           const VocabEntry* match =
-              question->hintsEnabled ? app.matchPassageToken(raw) : nullptr;
+              (!app.learningSelfTest && question->hintsEnabled) ? app.matchPassageToken(raw) : nullptr;
           if (match) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.43f, 0.92f, 0.10f));
@@ -5994,7 +6134,7 @@ void renderLearning(App& app) {
     if (mode == "choice") {
       app.drawChoiceOptions(*question);
       app.drawChoiceConfirm(course, question);
-      if (question->hintsEnabled) app.drawVocabHint();
+      if (!app.learningSelfTest && question->hintsEnabled) app.drawVocabHint();
       return;
     }
     if (mode == "type") {
@@ -6051,7 +6191,7 @@ void renderLearning(App& app) {
           }
         }
       }
-      if (question->hintsEnabled) app.drawVocabHint();
+      if (!app.learningSelfTest && question->hintsEnabled) app.drawVocabHint();
       return;
     }
     if (mode == "blocks") {
@@ -6338,7 +6478,7 @@ void renderLearning(App& app) {
           const std::string raw = space == std::string::npos
               ? line.substr(pos) : line.substr(pos, space - pos);
           const VocabEntry* match =
-              question->hintsEnabled ? app.matchPassageToken(raw) : nullptr;
+              (!app.learningSelfTest && question->hintsEnabled) ? app.matchPassageToken(raw) : nullptr;
           if (match) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.43f, 0.92f, 0.10f));
@@ -6434,7 +6574,7 @@ void renderLearning(App& app) {
       app.drawChoiceOptions(*question);
       app.drawChoiceConfirm(course, question);
     }
-    if (question->hintsEnabled) app.drawVocabHint();
+    if (!app.learningSelfTest && question->hintsEnabled) app.drawVocabHint();
     return;
   }
   if (question->type == "card") {
@@ -6726,21 +6866,23 @@ void renderLearning(App& app) {
         } else {
           app.recordLearningAttempt(false);
           bool warned = false;
-          for (const auto& rule : question->warn) {
-            std::string match = normalize(rule.match, question->ignoreCase, question->ignoreSpace);
-            bool hit = rule.kind == "has" ? typed.find(match) != std::string::npos : typed == match;
-            if (hit) {
-              app.showToast(rule.text.empty() ? "差一点就对了，应该是 " + rule.match : rule.text);
-              warned = true;
-              break;
-            }
-          }
-          if (!warned && question->near) {
-            for (const auto& answer : question->acceptedAnswers) {
-              if (distance(typed, normalize(answer, question->ignoreCase, question->ignoreSpace)) <= 1) {
-                app.showToast("差一点就对了，应该是 " + answer);
+          if (!app.learningSelfTest) {
+            for (const auto& rule : question->warn) {
+              std::string match = normalize(rule.match, question->ignoreCase, question->ignoreSpace);
+              bool hit = rule.kind == "has" ? typed.find(match) != std::string::npos : typed == match;
+              if (hit) {
+                app.showToast(rule.text.empty() ? "差一点就对了，应该是 " + rule.match : rule.text);
                 warned = true;
                 break;
+              }
+            }
+            if (!warned && question->near) {
+              for (const auto& answer : question->acceptedAnswers) {
+                if (distance(typed, normalize(answer, question->ignoreCase, question->ignoreSpace)) <= 1) {
+                  app.showToast("差一点就对了，应该是 " + answer);
+                  warned = true;
+                  break;
+                }
               }
             }
           }
@@ -7036,7 +7178,7 @@ void renderLearning(App& app) {
                                 app.currentProjectDirectory() / pathFromUtf8(entry->image),
                                 app.imageTextures)
               : nullptr;
-          if (question->hintsEnabled) {
+          if (!app.learningSelfTest && question->hintsEnabled) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.43f, 0.92f, 0.10f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.43f, 0.92f, 0.18f));
@@ -7095,7 +7237,7 @@ void renderLearning(App& app) {
   ImGui::Separator();
   app.drawChoiceOptions(*question);
   app.drawChoiceConfirm(course, question);
-  if (question->hintsEnabled && !app.learningHintId.empty()) app.drawVocabHint();
+  if (!app.learningSelfTest && question->hintsEnabled && !app.learningHintId.empty()) app.drawVocabHint();
 }
 
 void renderCourse(App& app) {

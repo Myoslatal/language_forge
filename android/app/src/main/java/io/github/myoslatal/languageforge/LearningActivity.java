@@ -93,6 +93,7 @@ public class LearningActivity extends ForgeActivity {
     private int runEligible;
     private int runAnswered;
     private int runFirstCorrect;
+    private boolean selfTest;
     private boolean currentAttemptRecorded;
     private String runSubtitleBase = "";
 
@@ -279,6 +280,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void showCourseList() {
         dismissHint();
+        selfTest = false;
         course = null;
         question = null;
         confirmButton.setVisibility(View.GONE);
@@ -461,7 +463,8 @@ public class LearningActivity extends ForgeActivity {
                 toast("完成上一课程后解锁");
                 return;
             }
-            startCourse(item);
+            if (progress.isCompleted(item)) showModeDialog(item);
+            else startCourse(item);
         });
         LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
@@ -511,7 +514,24 @@ public class LearningActivity extends ForgeActivity {
         return pill;
     }
 
+    private void showModeDialog(ProjectStructure.Course item) {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("复习还是自测？")
+                .setMessage("复习：保留下划线提示、点词释义、答后解析和新知卡片。\n\n"
+                        + "自测：不显示提示与解析，跳过新知卡片；音频、题图、选项图和作答判定照常。\n\n"
+                        + "自测成绩不会覆盖复习的历史最佳。")
+                .setPositiveButton("复习（正常学习）", (dialog, which) -> startCourse(item, false))
+                .setNeutralButton("自测（无提示）", (dialog, which) -> startCourse(item, true))
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     private void startCourse(ProjectStructure.Course selected) {
+        startCourse(selected, false);
+    }
+
+    private void startCourse(ProjectStructure.Course selected, boolean test) {
+        selfTest = test;
         runEligible = 0;
         runAnswered = 0;
         runFirstCorrect = 0;
@@ -519,6 +539,19 @@ public class LearningActivity extends ForgeActivity {
         runSubtitleBase = "";
         for (ProjectStructure.Question item : selected.questions) {
             if (answerable(item)) runEligible++;
+        }
+        if (test) {
+            ProjectStructure.Question first = null;
+            for (ProjectStructure.Question item : selected.questions) {
+                if (answerable(item)) { first = item; break; }
+            }
+            if (first == null) {
+                selfTest = false;
+                toast("本课没有可自测的题目");
+                return;
+            }
+            showQuestion(selected, first);
+            return;
         }
         if (selected.questions.isEmpty()) {
             course = selected;
@@ -566,15 +599,18 @@ public class LearningActivity extends ForgeActivity {
     private void showComplete() {
         dismissHint();
         ProjectStructure.Course finished = course;
+        boolean reviewMode = !selfTest;
         question = null;
         confirmButton.setVisibility(View.GONE);
+        if (explainView != null) explainView.setVisibility(View.GONE);
         List<ProjectStructure.Course> courses = allCourses();
-        if (finished != null && progress != null && !progress.isCompleted(finished)) {
+        if (reviewMode && finished != null && progress != null
+                && !progress.isCompleted(finished)) {
             progress.complete(courses, finished);
             if (!progress.save(projectDirectory)) toast("进度保存失败");
         }
         boolean refreshedBest = false;
-        if (finished != null && runEligible > 0 && learningStats != null) {
+        if (reviewMode && finished != null && runEligible > 0 && learningStats != null) {
             refreshedBest = learningStats.record(finished.id, runFirstCorrect, runEligible);
             if (refreshedBest && !learningStats.save(projectDirectory)) {
                 toast("学习统计保存失败");
@@ -582,18 +618,21 @@ public class LearningActivity extends ForgeActivity {
         }
         LearningStats.Entry best = finished == null || learningStats == null
                 ? null : learningStats.best(finished.id);
-        titleView.setText("本课完成");
+        titleView.setText(selfTest ? "自测完成" : "本课完成");
         subtitleView.setText(finished == null ? "" : finished.name);
         content.removeAllViews();
-        content.addView(text("本课完成", 26, R.color.forge_text));
-        content.addView(text("你已完成本课全部题目。", 16, R.color.forge_muted));
+        content.addView(text(selfTest ? "自测完成" : "本课完成", 26, R.color.forge_text));
+        content.addView(text(selfTest ? "本次自测已完成；不覆盖复习历史最佳。"
+                : "你已完成本课全部题目。", 16, R.color.forge_muted));
         if (runEligible > 0) {
             int accuracy = Math.round(runFirstCorrect * 100f / runEligible);
             content.addView(text("首次答对 " + runFirstCorrect + " / " + runEligible
                     + " · 正确率 " + accuracy + "%", 17, R.color.forge_text));
             if (best != null) {
-                content.addView(text("历史最佳 " + best.bestAccuracy + "% · "
-                        + best.bestCorrect + "/" + best.bestTotal, 14, R.color.forge_muted));
+                content.addView(text((selfTest ? "复习历史最佳 " : "历史最佳 ")
+                        + best.bestAccuracy + "% · " + best.bestCorrect + "/"
+                        + best.bestTotal + (selfTest ? "（未覆盖）" : ""),
+                        14, R.color.forge_muted));
             }
             if (refreshedBest) {
                 content.addView(text("刷新最佳", 14, R.color.forge_ok));
@@ -603,7 +642,7 @@ public class LearningActivity extends ForgeActivity {
         }
         ProjectStructure.Course next = finished == null || progress == null
                 ? null : progress.next(courses, finished);
-        if (next != null && progress.isUnlocked(next)) {
+        if (!selfTest && next != null && progress.isUnlocked(next)) {
             Button nextCourse = new Button(this);
             nextCourse.setAllCaps(false);
             nextCourse.setText("下一课：" + next.name);
@@ -664,8 +703,18 @@ public class LearningActivity extends ForgeActivity {
                         ? (item.customLabel == null || item.customLabel.isEmpty()
                                 ? "自定义题型" : item.customLabel) : "选择正确翻译";
         int progress = selected.questions.indexOf(item) + 1;
-        runSubtitleBase = selected.name + " · " + mode + " · 第 " + progress
-                + " / " + selected.questions.size() + " 题";
+        int total = selected.questions.size();
+        if (selfTest) {
+            int position = 0; total = 0;
+            for (ProjectStructure.Question candidate : selected.questions) {
+                if (!answerable(candidate)) continue;
+                total++;
+                if (candidate == item) position = total;
+            }
+            progress = Math.max(1, position);
+        }
+        runSubtitleBase = selected.name + (selfTest ? " · 自测" : "") + " · " + mode
+                + " · 第 " + progress + " / " + total + " 题";
         updateRunSubtitle();
         content.removeAllViews();
         if (scrollView != null) scrollView.scrollTo(0, 0);
@@ -733,7 +782,8 @@ public class LearningActivity extends ForgeActivity {
         });
         content.addView(sentence);
 
-        content.addView(text(item.hintsEnabled ? "点击带下划线的词查看提示" : "本题未启用学习提示",
+        content.addView(text(selfTest ? "自测模式：不显示提示"
+                : item.hintsEnabled ? "点击带下划线的词查看提示" : "本题未启用学习提示",
                 12, R.color.forge_muted));
 
         renderChoiceOptions(item);
@@ -1105,8 +1155,8 @@ public class LearningActivity extends ForgeActivity {
 
     private void refreshExplainPanel() {
         if (explainView == null) return;
-        if (question != null && (answered || explainWrongShown) && question.explain != null
-                && !question.explain.trim().isEmpty()) {
+        if (!selfTest && question != null && (answered || explainWrongShown)
+                && question.explain != null && !question.explain.trim().isEmpty()) {
             explainView.setText("解析\n" + question.explain.trim());
             explainView.setVisibility(View.VISIBLE);
         } else {
@@ -1198,7 +1248,7 @@ public class LearningActivity extends ForgeActivity {
             content.addView(text(item.customLabel, 13, R.color.forge_accent));
         }
         if (item.customBody != null && !item.customBody.isEmpty()) {
-            SpannableString body = styledVocabText(item.customBody, item.hintsEnabled);
+            SpannableString body = styledVocabText(item.customBody, !selfTest && item.hintsEnabled);
             TextView bodyView = text(body, 16, R.color.forge_text);
             bodyView.setLineSpacing(dp(4), 1f);
             bodyView.setMovementMethod(LinkMovementMethod.getInstance());
@@ -1337,7 +1387,7 @@ public class LearningActivity extends ForgeActivity {
     private void renderReadingQuestion(ProjectStructure.Question item) {
         content.removeAllViews();
         addQuestionAudio(item);
-        SpannableString passage = styledVocabText(item.passage, item.hintsEnabled);
+        SpannableString passage = styledVocabText(item.passage, !selfTest && item.hintsEnabled);
         TextView passageView = text(passage, 16, R.color.forge_text);
         passageView.setLineSpacing(dp(4), 1f);
         passageView.setMovementMethod(LinkMovementMethod.getInstance());
@@ -2195,7 +2245,7 @@ public class LearningActivity extends ForgeActivity {
             } else {
                 recordAttempt(false);
                 boolean warned = false;
-                for (ProjectStructure.Question.WarnRule rule : question.warn) {
+                if (!selfTest) for (ProjectStructure.Question.WarnRule rule : question.warn) {
                     String match = normalizeType(rule.match, question.ignoreCase, question.ignoreSpace);
                     boolean hit = "has".equals(rule.kind) ? normalized.contains(match)
                             : normalized.equals(match);
@@ -2207,7 +2257,7 @@ public class LearningActivity extends ForgeActivity {
                         break;
                     }
                 }
-                if (!warned && question.near) {
+                if (!selfTest && !warned && question.near) {
                     for (String answer : question.acceptedAnswers) {
                         if (editDistance(normalized, normalizeType(answer, question.ignoreCase,
                                 question.ignoreSpace)) <= 1) {
@@ -2245,7 +2295,7 @@ public class LearningActivity extends ForgeActivity {
             updateOptionStyles();
             confirmButton.setText(isLastQuestion() ? "完成" : "下一题");
             confirmButton.setVisibility(View.VISIBLE);
-            if (isLastQuestion()) toast("本课完成");
+            if (isLastQuestion()) toast(selfTest ? "自测完成" : "本课完成");
         } else {
             recordAttempt(false);
             { explainWrongShown = true; refreshExplainPanel(); toast("回答错误，请重新选择"); }
@@ -2254,12 +2304,28 @@ public class LearningActivity extends ForgeActivity {
 
     private boolean isLastQuestion() {
         if (course == null || question == null) return true;
+        if (selfTest) return nextAnswerable(course, question) == null;
         int index = course.questions.indexOf(question);
         return index < 0 || index >= course.questions.size() - 1;
     }
 
+    private ProjectStructure.Question nextAnswerable(ProjectStructure.Course selected,
+                                                     ProjectStructure.Question current) {
+        int index = selected.questions.indexOf(current);
+        for (int i = Math.max(0, index + 1); i < selected.questions.size(); i++) {
+            if (answerable(selected.questions.get(i))) return selected.questions.get(i);
+        }
+        return null;
+    }
+
     private void nextQuestion() {
         if (course == null || question == null) return;
+        if (selfTest) {
+            ProjectStructure.Question next = nextAnswerable(course, question);
+            if (next != null) showQuestion(course, next);
+            else showComplete();
+            return;
+        }
         int index = course.questions.indexOf(question);
         if (index >= 0 && index + 1 < course.questions.size()) {
             showQuestion(course, course.questions.get(index + 1));
@@ -2310,10 +2376,10 @@ public class LearningActivity extends ForgeActivity {
                             android.text.style.ImageSpan.ALIGN_BASELINE), start, end,
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
-            } else {
+            } else if (!selfTest) {
                 result.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
-            if (!item.hintsEnabled) continue;
+            if (selfTest || !item.hintsEnabled) continue;
             result.setSpan(new ClickableSpan() {
                 @Override public void onClick(View widget) {
                     if (widget instanceof TextView) {
@@ -2336,6 +2402,7 @@ public class LearningActivity extends ForgeActivity {
     }
 
     private void showHint(String vocabId) {
+        if (selfTest) return;
         VocabularyEntry entry = findEntry(vocabId);
         if (entry == null) {
             toast("词汇已删除");

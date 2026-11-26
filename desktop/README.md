@@ -366,4 +366,6 @@ Learning accuracy is tracked per run (one entry from question 1) in a separate v
 
 The course-selection page uses ImGui-drawn cards rather than a plain selectable list: a centered LEARN/project header, chapter sections, 760px max-width white unit cards with rounded corners/shadows, and course rows with a state label, a green best-score pill (`最佳 80% · 4/5` or `暂无成绩`) and a blue `开始这一关`/`再练一次` button. Locked courses keep a lock icon and disabled button; hierarchy, unlock order and stats are unchanged.
 
+Completed courses open a `复习还是自测？` ImGui modal. 复习 keeps the normal flow (underlined words/hints, explanations, card pages); 自测 hides hint affordances and the explanation window, skips card/`custom:none` questions, and uses only answerable questions for progress and completion. Self-test never writes `learning-stats` or changes course completion/unlock state, and its completion page reports the current score plus the untouched review best. Unfinished courses start normal learning directly.
+
 Learning course list is grouped by chapter → unit → course; exiting mid-question returns to this grouped list after confirmation.
