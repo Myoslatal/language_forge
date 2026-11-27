@@ -79,6 +79,34 @@ desktop `/tmp/t83-d-modal-final.png`, `/tmp/t83-d-selftest-q1.png`, `/tmp/t83-d-
 `/tmp/t83-d-card-only-warning.png`. Android clean debug build and desktop clean Release build succeeded;
 desktop clean smoke ×2 reported SMOKE PASS (learning_stats_export=excluded).
 
+### Per-course vocabulary hint overrides (2026-11-27)
+
+Each course can override the body text shown after clicking an underlined word in 复习; the title
+remains the global word form, while phonetics/POS/meanings/audio and image ownership stay global.
+A missing or cleared override falls back to the existing global hint. 自测 still shows no hint at all.
+The store is per course at `resources/courses/<safeCourseId>/vocab-hints.json`
+(`{"version":1,"hints":{"<vocabId>":"multiline body"}}`), loaded lazily and saved atomically
+(temp + rename). Course resources expose an entry with a live count; the manager supports search/add
+via the vocabulary picker, multiline editing, save/clear, and delete confirmation. Android mirrors
+the same store and UI natively; desktop uses `CourseVocabHints` in `model` plus a course-resources
+card. Deleting a course removes the whole course resource directory, including this file; `.conlang`
+export/import includes it because it is an ordinary project file (only `learning-stats.json` is excluded).
+
+Fixture: completed A and unfinished C share `shared`; A has overrides for `shared`/`other`, C has
+none. Android screenshots: `/tmp/t84-a-resources.png` (entry/count), `/tmp/t84-a-hints2.png` (list),
+`/tmp/t84-a-a-hint.png` (A override), `/tmp/t84-a-c-hint3.png` (C global fallback),
+`/tmp/t84-a-picker-search.png` (search), `/tmp/t84-a-editor-typed.png` (multiline edit),
+`/tmp/t84-a-cleared.png` (clear). Desktop: `/tmp/t84-d-resources.png`, `/tmp/t84-d-hints-list.png`,
+`/tmp/t84-d-editor-typed5.png`, `/tmp/t84-d-saved3.png` (saved body), `/tmp/t84-d-a-hint2.png`,
+`/tmp/t84-d-c-hint.png`, `/tmp/t84-d-selftest-no-hint.png`. Global `vocabulary.json` SHA-256 stayed
+`1d7994fe14db94a677f112ffdb13cd100ae8ef9c918f47628945eea410075245` on both fixtures; course A and C
+stayed independent. Archive round-trip via the store: `unzip -l` showed
+`resources/courses/course-a/vocab-hints.json`, no `learning-stats.json`; importing into a clean data
+dir preserved A's override, left B without a file, and kept the same vocabulary hash. Deleting course A
+through the Android course menu removed `resources/courses/course-a/` and the hint file. Android clean
+debug build and desktop clean Release build succeeded; smoke ×2 reported SMOKE PASS
+(lexicon fixture regenerated from the 5314-word Nortu project).
+
 ### Learning course-list visual refresh (2026-11-25)
 
 The learning course selector now follows the share-site start page (`/tmp/nortu-site.html`,

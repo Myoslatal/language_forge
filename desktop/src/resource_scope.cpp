@@ -404,6 +404,11 @@ std::string courseImageDir(const fs::path& projectDirectory, const std::string& 
   return (fs::path(kCourseRoot) / safeSegment(courseId) / "images").generic_string();
 }
 
+std::string courseVocabHintsFile(const fs::path& projectDirectory, const std::string& courseId) {
+  return (fs::path(kCourseRoot) / safeSegment(courseId) / "vocab-hints.json")
+      .generic_string();
+}
+
 bool isCourseImagePath(const fs::path& projectDirectory, const std::string& courseId,
                        const std::string& relative) {
   return underPath(relative, courseImageDir(projectDirectory, courseId));

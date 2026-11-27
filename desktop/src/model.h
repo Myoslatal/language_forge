@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -145,6 +146,19 @@ struct ProjectSummary {
   bool pinned = false;
   std::string ttsLang = "en-US";
   Stats stats;
+};
+
+/** Per-course vocabulary hint-body overrides; never mutates the global vocabulary. */
+struct CourseVocabHints {
+  fs::path projectDirectory;
+  std::string courseId;
+  std::map<std::string, std::string> hints;
+
+  CourseVocabHints(fs::path projectDir, std::string course);
+  void load();
+  bool save() const;
+  std::string get(const std::string& vocabId) const;
+  int count() const { return static_cast<int>(hints.size()); }
 };
 
 struct Store {

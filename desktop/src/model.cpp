@@ -973,6 +973,48 @@ bool Store::importConlang(const fs::path& input, ProjectSummary& project,
   return true;
 }
 
+CourseVocabHints::CourseVocabHints(fs::path projectDir, std::string course)
+    : projectDirectory(std::move(projectDir)), courseId(std::move(course)) {
+  load();
+}
+
+void CourseVocabHints::load() {
+  hints.clear();
+  if (projectDirectory.empty() || courseId.empty()) return;
+  const fs::path file = projectDirectory /
+      pathFromUtf8(courseVocabHintsFile(projectDirectory, courseId));
+  json value = readJson(file);
+  if (!value.is_object()) return;
+  const json values = value.value("hints", json::object());
+  if (!values.is_object()) return;
+  for (auto it = values.begin(); it != values.end(); ++it) {
+    if (!it.key().empty() && it.value().is_string()) {
+      const std::string text = trim(it.value().get<std::string>());
+      if (!text.empty()) hints[it.key()] = text;
+    }
+  }
+}
+
+bool CourseVocabHints::save() const {
+  if (projectDirectory.empty() || courseId.empty()) return false;
+  const fs::path file = projectDirectory /
+      pathFromUtf8(courseVocabHintsFile(projectDirectory, courseId));
+  std::error_code ec;
+  if (hints.empty()) {
+    const bool existed = fs::exists(file, ec);
+    fs::remove(file, ec);
+    return !ec || !existed;
+  }
+  json values = json::object();
+  for (const auto& entry : hints) values[entry.first] = entry.second;
+  return writeJsonAtomic(file, json{{"version", 1}, {"hints", values}});
+}
+
+std::string CourseVocabHints::get(const std::string& vocabId) const {
+  const auto it = hints.find(vocabId);
+  return it == hints.end() ? std::string() : it->second;
+}
+
 bool Store::loadTheme(bool& dark) const {
   json value = readJson(dataRoot / "ui.json");
   if (!value.is_object()) return false;

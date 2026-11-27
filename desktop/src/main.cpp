@@ -323,7 +323,7 @@ struct App {
   bool dark = false;
   bool running = true;
 
-  enum class Screen { Home, Structure, Course, Resources, Vocabulary, VocabularyEditor, Fonts, Images, Audios, Pos, QuestionEditor, Learning };
+  enum class Screen { Home, Structure, Course, Resources, Vocabulary, VocabularyEditor, Fonts, Images, Audios, Pos, QuestionEditor, Learning, VocabHints };
   Screen screen = Screen::Home;
   std::vector<ProjectSummary> projects;
   ProjectSummary project;
@@ -511,6 +511,16 @@ struct App {
   bool learningSelfTest = false;
   std::string learningModeCourseId;
   bool learningModeDialogPending = false;
+  std::map<std::string, std::string> courseVocabHints;
+  std::string courseVocabHintsCourseId;
+  bool courseVocabHintsLoaded = false;
+  bool vocabHintPickerOpen = false;
+  bool vocabHintEditorOpen = false;
+  bool vocabHintDeleteOpen = false;
+  std::string vocabHintEditId;
+  std::string vocabHintDeleteId;
+  char vocabHintSearch[256] = {};
+  char vocabHintEditBody[8192] = {};
 
   std::vector<Course*> allCoursesFlat() {
     std::vector<Course*> courses;
@@ -696,6 +706,7 @@ struct App {
       }
     }
     learningSelfTest = selfTest;
+    courseId = course->id;
     learningShowList = false;
     learningScrollTop = true;
     learningComplete = false;
@@ -2979,35 +2990,44 @@ struct App {
       if (hintTitle.empty() && !entry->codes.empty()) hintTitle = entry->codes.front();
       if (hintTitle.empty() && !entry->meanings.empty()) hintTitle = entry->meanings.front();
       ImGui::TextUnformatted(("提示：" + hintTitle).c_str());
-      if (!entry->phonetics.empty()) {
-        std::string phonetics;
-        for (const auto& value : entry->phonetics) {
-          if (!phonetics.empty()) phonetics += " / ";
-          phonetics += value;
-        }
-        ImGui::TextDisabled("音标：%s", phonetics.c_str());
-      } else if (!entry->phonetic.empty()) {
-        ImGui::TextDisabled("音标：%s", entry->phonetic.c_str());
-      }
-      if (entry->posMeanings.empty()) {
-        std::string meanings;
-        for (const auto& value : entry->meanings) {
-          if (!meanings.empty()) meanings += "、";
-          meanings += value;
-        }
-        ImGui::TextWrapped("释义：%s", meanings.empty() ? "暂无释义" : meanings.c_str());
+      ensureCourseVocabHintsLoaded();
+      const auto overrideIt = courseVocabHints.find(learningHintId);
+      const bool hasOverride = overrideIt != courseVocabHints.end() &&
+                               !overrideIt->second.empty();
+      if (hasOverride) {
+        ImGui::TextColored(ImVec4(0.18f, 0.43f, 0.92f, 1), "本课程自定义提示");
+        ImGui::TextWrapped("%s", overrideIt->second.c_str());
       } else {
-        for (const auto& group : entry->posMeanings) {
-          const PosEntry* posEntry = posStore.find(group.posId);
+        if (!entry->phonetics.empty()) {
+          std::string phonetics;
+          for (const auto& value : entry->phonetics) {
+            if (!phonetics.empty()) phonetics += " / ";
+            phonetics += value;
+          }
+          ImGui::TextDisabled("音标：%s", phonetics.c_str());
+        } else if (!entry->phonetic.empty()) {
+          ImGui::TextDisabled("音标：%s", entry->phonetic.c_str());
+        }
+        if (entry->posMeanings.empty()) {
           std::string meanings;
-          for (const auto& value : group.meanings) {
+          for (const auto& value : entry->meanings) {
             if (!meanings.empty()) meanings += "、";
             meanings += value;
           }
-          ImGui::TextWrapped("%s%s：%s", posEntry ? posEntry->name.c_str() : "未标注词性",
-                             posEntry && !posEntry->code.empty()
-                                 ? ("（" + posEntry->code + "）").c_str() : "",
-                             meanings.c_str());
+          ImGui::TextWrapped("释义：%s", meanings.empty() ? "暂无释义" : meanings.c_str());
+        } else {
+          for (const auto& group : entry->posMeanings) {
+            const PosEntry* posEntry = posStore.find(group.posId);
+            std::string meanings;
+            for (const auto& value : group.meanings) {
+              if (!meanings.empty()) meanings += "、";
+              meanings += value;
+            }
+            ImGui::TextWrapped("%s%s：%s", posEntry ? posEntry->name.c_str() : "未标注词性",
+                               posEntry && !posEntry->code.empty()
+                                   ? ("（" + posEntry->code + "）").c_str() : "",
+                               meanings.c_str());
+          }
         }
       }
       if (entry->audio.empty()) ImGui::TextDisabled("暂无示例发音");
@@ -3498,6 +3518,40 @@ struct App {
     resourceScopeCourse = true;
     courseAudioScope = false;
     screen = Screen::Resources;
+  }
+
+  void openCourseVocabHints() {
+    vocabHintPickerOpen = false;
+    vocabHintEditorOpen = false;
+    vocabHintDeleteOpen = false;
+    vocabHintSearch[0] = 0;
+    vocabHintEditBody[0] = 0;
+    courseVocabHintsLoaded = false;
+    screen = Screen::VocabHints;
+  }
+
+  void ensureCourseVocabHintsLoaded() {
+    if (courseId.empty()) {
+      courseVocabHints.clear();
+      courseVocabHintsCourseId.clear();
+      courseVocabHintsLoaded = false;
+      return;
+    }
+    if (courseVocabHintsLoaded && courseVocabHintsCourseId == courseId) return;
+    CourseVocabHints store(currentProjectDirectory(), courseId);
+    courseVocabHints = store.hints;
+    courseVocabHintsCourseId = courseId;
+    courseVocabHintsLoaded = true;
+  }
+
+  bool saveCourseVocabHints() {
+    if (courseId.empty()) return false;
+    CourseVocabHints store(currentProjectDirectory(), courseId);
+    store.hints = courseVocabHints;
+    const bool ok = store.save();
+    courseVocabHintsLoaded = true;
+    courseVocabHintsCourseId = courseId;
+    return ok;
   }
 
   fs::path audioAbsolute(const std::string& relative) const {
@@ -5902,6 +5956,7 @@ void renderLearning(App& app) {
       app.learningCourseId.clear();
     } else {
       app.learningSelfTest = false;
+      app.courseId = current->id;
       app.beginLearningRun(current);
       app.learningCourseId = current->id;
       course = current;
@@ -5940,6 +5995,7 @@ void renderLearning(App& app) {
                           ImVec2(-1, 42))) {
           app.learningComplete = false;
           app.learningSelfTest = false;
+          app.courseId = next->id;
           app.beginLearningRun(next);
           app.learningCourseId = next->id;
           app.learningQuestionId = next->questions.front().id;
@@ -5975,6 +6031,7 @@ void renderLearning(App& app) {
               if (course == nullptr) { app.learningCourseId = item.id; course = &item; }
         if (course && !course->questions.empty()) {
           app.learningSelfTest = false;
+          app.courseId = course->id;
           app.beginLearningRun(course);
           app.learningQuestionId = course->questions.front().id;
           app.learningComplete = false;
@@ -7499,6 +7556,7 @@ void drawToast(App& app) {
 }
 
 void renderResourcesWithPhase2(App& app);
+void renderCourseVocabHints(App& app);
 void renderVocabulary(App& app);
 void renderVocabularyEditor(App& app);
 void renderQuestionEditor(App& app);
@@ -7548,6 +7606,7 @@ void renderFrame(App& app) {
     case App::Screen::Pos: renderPos(app); break;
     case App::Screen::QuestionEditor: renderQuestionEditor(app); break;
     case App::Screen::Learning: renderLearning(app); break;
+    case App::Screen::VocabHints: renderCourseVocabHints(app); break;
   }
   ImGui::EndGroup();
   ImGui::EndChild();
@@ -9544,6 +9603,7 @@ void renderVocabularyEditor(App& app) {
 }
 
 void renderCourseResources(App& app);
+void renderCourseVocabHints(App& app);
 
 void renderResourcesWithPhase2(App& app) {
   if (app.resourceScopeCourse) {
@@ -9641,6 +9701,8 @@ void renderCourseResources(App& app) {
   ImGui::Spacing();
   app.ensureCourseAudioLoaded();
   app.ensureCourseImagesLoaded();
+  app.ensureCourseVocabHintsLoaded();
+  const int hintCount = static_cast<int>(app.courseVocabHints.size());
   int count = 0;
   if (app.courseAudioStore) {
     count = static_cast<int>(app.courseAudioStore->audios.size() +
@@ -9653,7 +9715,7 @@ void renderCourseResources(App& app) {
   }
   pageTitle("COURSE RESOURCES", "课程资源",
             std::to_string(count) + " 段题目音频 · " + std::to_string(imageCount) +
-                " 张题目图片 · 仅本课程");
+                " 张题目图片 · " + std::to_string(hintCount) + " 个词汇提示覆盖 · 仅本课程");
   ImGui::SameLine();
   const float right = ImGui::GetWindowWidth() - 460;
   if (right > 0) ImGui::SetCursorPosX(right);
@@ -9661,6 +9723,19 @@ void renderCourseResources(App& app) {
   ImGui::SameLine();
   if (ImGui::Button("打开课程题目图片", ImVec2(200, 34))) app.openCourseImages();
   ImGui::TextWrapped("这里只出现本课程题目引用的音频与图片。词汇、词性、字体与词汇音频/图片属于项目资源，请从项目结构进入「项目资源」。");
+  ImGui::Spacing();
+  ImGui::BeginChild("##course_vocab_hints_entry", ImVec2(0, 94), ImGuiChildFlags_Borders);
+  ImGui::SetCursorPos(ImVec2(14, 10));
+  ImGui::TextUnformatted("词汇提示覆盖");
+  ImGui::SameLine();
+  ImGui::TextDisabled("%d 个词 · 仅本课程复习点词生效", hintCount);
+  ImGui::SetCursorPos(ImVec2(14, 38));
+  ImGui::TextWrapped("为全局词汇设置本课程专用提示正文；未覆盖的词仍使用全局音标/词性/释义。自测不显示提示。");
+  ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 200, 32));
+  if (ImGui::Button("管理词汇提示覆盖##course_vocab_hints", ImVec2(180, 34))) {
+    app.openCourseVocabHints();
+  }
+  ImGui::EndChild();
   ImGui::Spacing();
   if (!app.courseAudioStore) {
     ImGui::TextDisabled("课程音频数据不可用");
@@ -9695,6 +9770,230 @@ void renderCourseResources(App& app) {
     ImGui::EndChild();
     ImGui::PopID();
     ImGui::Spacing();
+  }
+}
+
+void renderCourseVocabHints(App& app) {
+  Course* course = app.selectedCourse();
+  if (!course) {
+    ImGui::TextDisabled("课程不存在");
+    if (ImGui::Button("← 课程资源", ImVec2(120, 30))) app.screen = App::Screen::Resources;
+    return;
+  }
+  if (ImGui::Button("← 课程资源", ImVec2(120, 30))) app.screen = App::Screen::Resources;
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s / 词汇提示覆盖", course->name.c_str());
+  ImGui::Spacing();
+  app.ensureVocabularyLoaded();
+  app.ensureCourseVocabHintsLoaded();
+  const int count = static_cast<int>(app.courseVocabHints.size());
+  pageTitle("COURSE RESOURCES", "词汇提示覆盖",
+            std::to_string(count) + " 个词 · 仅本课程复习点词生效");
+  ImGui::TextWrapped("只替换本课程复习点词后的提示正文；标题、图片和音频仍来自全局词汇。"
+                     "未覆盖的词显示全局音标/词性/释义；自测不显示任何提示。");
+  ImGui::Spacing();
+  if (ImGui::Button("＋ 添加覆盖##add_vocab_hint", ImVec2(150, 36))) {
+    app.vocabHintPickerOpen = true;
+    app.vocabHintSearch[0] = 0;
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("从项目全局词汇中选择，支持搜索。");
+  ImGui::Spacing();
+  if (app.courseVocabHints.empty()) {
+    ImGui::BeginChild("##vocab_hints_empty", ImVec2(0, 100), ImGuiChildFlags_Borders);
+    ImGui::SetCursorPos(ImVec2(18, 22));
+    ImGui::TextDisabled("本课程还没有自定义词汇提示。");
+    ImGui::SetCursorPos(ImVec2(18, 46));
+    ImGui::TextWrapped("添加后仅在本课程复习点词时生效，不会修改 vocabulary.json。");
+    ImGui::EndChild();
+  }
+  for (auto it = app.courseVocabHints.begin(); it != app.courseVocabHints.end(); ++it) {
+    const std::string vocabId = it->first;
+    const VocabEntry* entry = app.vocabulary ? app.vocabulary->find(vocabId) : nullptr;
+    const std::string word = entry
+        ? displayName(*entry, app.vocabulary->entries) : "〔词汇已删除〕";
+    std::string summary = it->second;
+    for (char& ch : summary) if (ch == '\n' || ch == '\r') ch = ' ';
+    if (summary.size() > 110) summary = summary.substr(0, 110) + "…";
+    ImGui::PushID(vocabId.c_str());
+    ImGui::BeginChild("##vocab_hint_row", ImVec2(0, 92), ImGuiChildFlags_Borders);
+    ImGui::SetCursorPos(ImVec2(14, 10));
+    ImGui::TextUnformatted(word.c_str());
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.18f, 0.43f, 0.92f, 1), "本课程自定义提示");
+    ImGui::SetCursorPos(ImVec2(14, 34));
+    ImGui::TextWrapped("%s", summary.c_str());
+    ImGui::SetCursorPos(ImVec2(14, 60));
+    if (ImGui::Button("编辑提示", ImVec2(100, 26))) {
+      app.vocabHintEditId = vocabId;
+      std::snprintf(app.vocabHintEditBody, sizeof(app.vocabHintEditBody), "%s",
+                    it->second.c_str());
+      app.vocabHintEditorOpen = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("清除覆盖", ImVec2(100, 26))) {
+      app.vocabHintDeleteId = vocabId;
+      app.vocabHintDeleteOpen = true;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("清除后恢复全局提示");
+    ImGui::EndChild();
+    ImGui::PopID();
+    ImGui::Spacing();
+  }
+
+  if (app.vocabHintPickerOpen) {
+    if (!ImGui::IsPopupOpen("选择词汇##vocab_hint_picker")) {
+      ImGui::OpenPopup("选择词汇##vocab_hint_picker");
+    }
+    ImGui::SetNextWindowSize(ImVec2(620, 520), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("选择词汇##vocab_hint_picker", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      ImGui::TextWrapped("搜索项目全局词汇；选择一个词后编辑本课程提示正文。");
+      ImGui::SetNextItemWidth(-1);
+      ImGui::InputTextWithHint("##vocab_hint_search", "搜索词形 / 编码",
+                               app.vocabHintSearch, sizeof(app.vocabHintSearch));
+      std::string query = app.vocabHintSearch;
+      std::transform(query.begin(), query.end(), query.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      int shown = 0;
+      ImGui::BeginChild("##vocab_hint_pick_list", ImVec2(580, 340), ImGuiChildFlags_Borders);
+      if (app.vocabulary) {
+        for (const auto& entry : app.vocabulary->entries) {
+          if (shown >= 80) break;
+          const std::string name = displayName(entry, app.vocabulary->entries);
+          std::string lowerName = name;
+          std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+          bool match = query.empty() || lowerName.find(query) != std::string::npos;
+          if (!match) {
+            for (const auto& code : entry.codes) {
+              std::string value = code;
+              std::transform(value.begin(), value.end(), value.begin(),
+                             [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+              if (value.find(query) != std::string::npos) { match = true; break; }
+            }
+          }
+          if (!match) continue;
+          ++shown;
+          ImGui::PushID(entry.id.c_str());
+          const std::string label = name + "##pick";
+          if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(0, 30))) {
+            app.vocabHintEditId = entry.id;
+            const auto current = app.courseVocabHints.find(entry.id);
+            std::snprintf(app.vocabHintEditBody, sizeof(app.vocabHintEditBody), "%s",
+                          current == app.courseVocabHints.end() ? "" : current->second.c_str());
+            app.vocabHintPickerOpen = false;
+            app.vocabHintEditorOpen = true;
+            ImGui::CloseCurrentPopup();
+          }
+          if (!entry.codes.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", entry.codes.front().c_str());
+          }
+          ImGui::PopID();
+        }
+      }
+      if (shown == 0) ImGui::TextDisabled("没有匹配词汇，请调整搜索。");
+      ImGui::EndChild();
+      if (ImGui::Button("取消##vocab_hint_pick_cancel", ImVec2(100, 32))) {
+        app.vocabHintPickerOpen = false;
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
+  }
+
+  if (app.vocabHintEditorOpen) {
+    if (!ImGui::IsPopupOpen("编辑词汇提示##vocab_hint_editor")) {
+      ImGui::OpenPopup("编辑词汇提示##vocab_hint_editor");
+    }
+    ImGui::SetNextWindowSize(ImVec2(560, 0), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("编辑词汇提示##vocab_hint_editor", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      const VocabEntry* entry = app.vocabulary ? app.vocabulary->find(app.vocabHintEditId) : nullptr;
+      if (!entry) {
+        ImGui::TextDisabled("词汇不存在，无法编辑。");
+        if (ImGui::Button("关闭##vocab_hint_editor_missing", ImVec2(100, 32))) {
+          app.vocabHintEditorOpen = false;
+          ImGui::CloseCurrentPopup();
+        }
+      } else {
+        ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
+        ImGui::TextDisabled("标题和全局音标/图片/音频保持；正文仅在本课程复习点词时使用。");
+        ImGui::Spacing();
+        ImGui::TextUnformatted("自定义提示正文（支持多行）");
+        ImGui::InputTextMultiline("##vocab_hint_body", app.vocabHintEditBody,
+                                  sizeof(app.vocabHintEditBody), ImVec2(520, 180));
+        ImGui::Spacing();
+        if (ImGui::Button("保存##vocab_hint_save", ImVec2(110, 34))) {
+          const std::string body = trimCopy(app.vocabHintEditBody);
+          if (body.empty()) {
+            app.showToast("提示正文不能为空");
+          } else {
+            const auto old = app.courseVocabHints;
+            app.courseVocabHints[app.vocabHintEditId] = body;
+            if (!app.saveCourseVocabHints()) {
+              app.courseVocabHints = old;
+              app.showToast("保存词汇提示失败");
+            } else {
+              app.vocabHintEditorOpen = false;
+              app.showToast("已保存本课程提示");
+              ImGui::CloseCurrentPopup();
+            }
+          }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("清除覆盖##vocab_hint_clear", ImVec2(110, 34))) {
+          const auto old = app.courseVocabHints;
+          app.courseVocabHints.erase(app.vocabHintEditId);
+          if (!app.saveCourseVocabHints()) {
+            app.courseVocabHints = old;
+            app.showToast("清除词汇提示失败");
+          } else {
+            app.vocabHintEditorOpen = false;
+            app.showToast("已清除，恢复全局提示");
+            ImGui::CloseCurrentPopup();
+          }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("取消##vocab_hint_cancel", ImVec2(90, 34))) {
+          app.vocabHintEditorOpen = false;
+          ImGui::CloseCurrentPopup();
+        }
+      }
+      ImGui::EndPopup();
+    }
+  }
+
+  if (app.vocabHintDeleteOpen) {
+    if (!ImGui::IsPopupOpen("清除提示覆盖##vocab_hint_delete")) {
+      ImGui::OpenPopup("清除提示覆盖##vocab_hint_delete");
+    }
+    if (ImGui::BeginPopupModal("清除提示覆盖##vocab_hint_delete", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+      const VocabEntry* entry = app.vocabulary ? app.vocabulary->find(app.vocabHintDeleteId) : nullptr;
+      const std::string word = entry ? displayName(*entry, app.vocabulary->entries) : app.vocabHintDeleteId;
+      ImGui::TextWrapped("清除「%s」在本课程的自定义提示？清除后恢复全局提示。", word.c_str());
+      if (ImGui::Button("清除##vocab_hint_delete_yes", ImVec2(100, 32))) {
+        const auto old = app.courseVocabHints;
+        app.courseVocabHints.erase(app.vocabHintDeleteId);
+        if (!app.saveCourseVocabHints()) {
+          app.courseVocabHints = old;
+          app.showToast("清除词汇提示失败");
+        } else {
+          app.showToast("已清除，恢复全局提示");
+          app.vocabHintDeleteOpen = false;
+          ImGui::CloseCurrentPopup();
+        }
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("取消##vocab_hint_delete_no", ImVec2(90, 32))) {
+        app.vocabHintDeleteOpen = false;
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
   }
 }
 

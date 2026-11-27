@@ -31,6 +31,7 @@ public class ResourceManagementActivity extends ForgeActivity {
     private TextView fontSummary;
     private TextView imageSummary;
     private TextView audioSummary;
+    private TextView vocabHintSummary;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -45,6 +46,7 @@ public class ResourceManagementActivity extends ForgeActivity {
         fontSummary = findViewById(R.id.font_summary);
         imageSummary = findViewById(R.id.image_summary);
         audioSummary = findViewById(R.id.audio_summary);
+        vocabHintSummary = findViewById(R.id.vocab_hint_summary);
         folderName = getIntent().getStringExtra(EXTRA_FOLDER_NAME);
         courseId = getIntent().getStringExtra(EXTRA_COURSE_ID);
         courseName = getIntent().getStringExtra(EXTRA_COURSE_NAME);
@@ -54,6 +56,7 @@ public class ResourceManagementActivity extends ForgeActivity {
         findViewById(R.id.font_entry).setOnClickListener(v -> openFonts());
         findViewById(R.id.image_entry).setOnClickListener(v -> openImages());
         findViewById(R.id.audio_entry).setOnClickListener(v -> openAudios());
+        findViewById(R.id.vocab_hint_entry).setOnClickListener(v -> openVocabHints());
 
         String chapterName = getIntent().getStringExtra(EXTRA_CHAPTER_NAME);
         String unitName = getIntent().getStringExtra(EXTRA_UNIT_NAME);
@@ -71,6 +74,7 @@ public class ResourceManagementActivity extends ForgeActivity {
             findViewById(R.id.vocabulary_entry).setVisibility(View.GONE);
             findViewById(R.id.pos_entry).setVisibility(View.GONE);
             findViewById(R.id.font_entry).setVisibility(View.GONE);
+            findViewById(R.id.vocab_hint_entry).setVisibility(View.VISIBLE);
             ((TextView) findViewById(R.id.audio_title)).setText("课程题目音频");
             ((TextView) findViewById(R.id.image_title)).setText("课程题目图片");
         } else {
@@ -89,6 +93,7 @@ public class ResourceManagementActivity extends ForgeActivity {
         updateFontSummary();
         updateImageSummary();
         updateAudioSummary();
+        updateVocabHintSummary();
     }
 
     private void updateVocabularyCount() {
@@ -113,6 +118,28 @@ public class ResourceManagementActivity extends ForgeActivity {
             count = new PosStore(directory).entries.size();
         }
         posSummary.setText(count + " 个词性 · 名称、描述与编码");
+    }
+
+    private void updateVocabHintSummary() {
+        if (vocabHintSummary == null || !courseMode) return;
+        int count = 0;
+        java.io.File directory = VocabularyStore.resolveProjectDirectory(this, folderName);
+        if (directory != null) {
+            count = CourseVocabHints.load(directory, courseId).size();
+        }
+        vocabHintSummary.setText(count + " 个词 · 仅本课程复习提示");
+    }
+
+    private void openVocabHints() {
+        if (folderName == null || folderName.isEmpty()) {
+            toast("无法打开词汇提示：项目目录不存在");
+            return;
+        }
+        Intent intent = new Intent(this, CourseVocabHintsActivity.class);
+        intent.putExtra(CourseVocabHintsActivity.EXTRA_FOLDER_NAME, folderName);
+        intent.putExtra(CourseVocabHintsActivity.EXTRA_COURSE_ID, courseId);
+        intent.putExtra(CourseVocabHintsActivity.EXTRA_COURSE_NAME, courseName);
+        startActivity(intent);
     }
 
     private void openPos() {

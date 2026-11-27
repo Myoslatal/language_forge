@@ -14,6 +14,7 @@ final class CourseResourcePaths {
     static final String AUDIO_MANIFEST = "audios.json";
     static final String IMAGE_DIR_NAME = "images";
     static final String IMAGE_MANIFEST = "images.json";
+    static final String VOCAB_HINTS_MANIFEST = "vocab-hints.json";
 
     private CourseResourcePaths() {
     }
@@ -52,6 +53,10 @@ final class CourseResourcePaths {
 
     static File imageManifest(File projectDirectory, String courseId) {
         return new File(courseDirectory(projectDirectory, courseId), IMAGE_MANIFEST);
+    }
+
+    static File vocabHintsManifest(File projectDirectory, String courseId) {
+        return new File(courseDirectory(projectDirectory, courseId), VOCAB_HINTS_MANIFEST);
     }
 
     static String relativeCourseImage(File projectDirectory, String courseId, String fileName) {

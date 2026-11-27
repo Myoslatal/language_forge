@@ -90,6 +90,7 @@ public class LearningActivity extends ForgeActivity {
     private TextView typeNearView;
     private CourseProgress progress;
     private LearningStats learningStats;
+    private CourseVocabHints vocabHints;
     private int runEligible;
     private int runAnswered;
     private int runFirstCorrect;
@@ -281,6 +282,7 @@ public class LearningActivity extends ForgeActivity {
     private void showCourseList() {
         dismissHint();
         selfTest = false;
+        vocabHints = null;
         course = null;
         question = null;
         confirmButton.setVisibility(View.GONE);
@@ -532,6 +534,7 @@ public class LearningActivity extends ForgeActivity {
 
     private void startCourse(ProjectStructure.Course selected, boolean test) {
         selfTest = test;
+        vocabHints = CourseVocabHints.load(projectDirectory, selected.id);
         runEligible = 0;
         runAnswered = 0;
         runFirstCorrect = 0;
@@ -2412,22 +2415,27 @@ public class LearningActivity extends ForgeActivity {
             play(entry.audio, entry.audioStart, entry.audioEnd);
             return;
         }
+        String override = vocabHints == null ? null : vocabHints.get(vocabId);
         StringBuilder text = new StringBuilder();
-        if (!entry.phonetics.isEmpty()) {
-            text.append("音标：").append(String.join(" / ", entry.phonetics)).append("\n\n");
-        } else if (!entry.phonetic.isEmpty()) {
-            text.append("音标：").append(entry.phonetic).append("\n\n");
-        }
-        if (entry.posMeanings.isEmpty()) {
-            text.append("释义：").append(String.join("、", entry.meanings.isEmpty()
-                    ? List.of("暂无释义") : entry.meanings));
+        if (override != null && !override.trim().isEmpty()) {
+            text.append("本课程自定义提示\n\n").append(override.trim());
         } else {
-            for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
-                PosEntry pos = posStore.findById(group.posId);
-                String name = pos == null ? "未标注词性" : pos.name;
-                String code = pos == null || pos.code.isEmpty() ? "" : "（" + pos.code + "）";
-                text.append(name).append(code).append("：")
-                        .append(String.join("、", group.meanings)).append("\n");
+            if (!entry.phonetics.isEmpty()) {
+                text.append("音标：").append(String.join(" / ", entry.phonetics)).append("\n\n");
+            } else if (!entry.phonetic.isEmpty()) {
+                text.append("音标：").append(entry.phonetic).append("\n\n");
+            }
+            if (entry.posMeanings.isEmpty()) {
+                text.append("释义：").append(String.join("、", entry.meanings.isEmpty()
+                        ? List.of("暂无释义") : entry.meanings));
+            } else {
+                for (VocabularyEntry.PosMeaning group : entry.posMeanings) {
+                    PosEntry pos = posStore.findById(group.posId);
+                    String name = pos == null ? "未标注词性" : pos.name;
+                    String code = pos == null || pos.code.isEmpty() ? "" : "（" + pos.code + "）";
+                    text.append(name).append(code).append("：")
+                            .append(String.join("、", group.meanings)).append("\n");
+                }
             }
         }
         text.append("\n\n").append(entry.audio.isEmpty()

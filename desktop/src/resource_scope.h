@@ -14,6 +14,9 @@ bool isCourseAudioPath(const fs::path& projectDirectory, const std::string& cour
 /** Project-relative directory for a course's question images. */
 std::string courseImageDir(const fs::path& projectDirectory, const std::string& courseId);
 
+/** Project-relative file holding per-course vocabulary hint-body overrides. */
+std::string courseVocabHintsFile(const fs::path& projectDirectory, const std::string& courseId);
+
 /** True if a project-relative path belongs to the course question-image scope. */
 bool isCourseImagePath(const fs::path& projectDirectory, const std::string& courseId,
                        const std::string& relative);

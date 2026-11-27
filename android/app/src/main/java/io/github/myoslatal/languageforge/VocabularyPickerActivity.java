@@ -33,6 +33,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
     public static final String EXTRA_EXCLUDE_ID = "excludeId";
     public static final String EXTRA_SELECTED_IDS = "selectedIds";
     public static final String EXTRA_TITLE = "title";
+    public static final String EXTRA_SINGLE_SELECT = "singleSelect";
 
     private VocabularyStore store;
     private PosStore posStore;
@@ -48,6 +49,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
     private int page = 1;
     private final List<String> selectedIds = new ArrayList<>();
     private String query = "";
+    private boolean singleSelect;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -63,6 +65,7 @@ public class VocabularyPickerActivity extends ForgeActivity {
         posStore = new PosStore(projectDirectory);
         vocabTypeface = new FontStore(projectDirectory).activeTypeface();
         excludeId = getIntent().getStringExtra(EXTRA_EXCLUDE_ID);
+        singleSelect = getIntent().getBooleanExtra(EXTRA_SINGLE_SELECT, false);
         ArrayList<String> initialIds = getIntent().getStringArrayListExtra(EXTRA_SELECTED_IDS);
         if (initialIds != null) {
             for (String id : initialIds) {
@@ -213,7 +216,10 @@ public class VocabularyPickerActivity extends ForgeActivity {
         }
         check.setChecked(selectedIds.contains(entry.id));
         row.setOnClickListener(v -> {
-            if (selectedIds.contains(entry.id)) {
+            if (singleSelect) {
+                selectedIds.clear();
+                selectedIds.add(entry.id);
+            } else if (selectedIds.contains(entry.id)) {
                 selectedIds.remove(entry.id);
             } else {
                 selectedIds.add(entry.id);
