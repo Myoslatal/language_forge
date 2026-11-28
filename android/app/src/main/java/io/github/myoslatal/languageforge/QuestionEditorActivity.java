@@ -1,6 +1,7 @@
 package io.github.myoslatal.languageforge;
 
 import android.Manifest;
+import android.graphics.Bitmap;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
@@ -10,9 +11,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.Spannable;
+import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.ImageSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -979,10 +982,44 @@ public class QuestionEditorActivity extends ForgeActivity {
         if (!result.ok()) {
             binding.preview.setText("⚠ " + result.error);
             binding.preview.setTextColor(getColor(R.color.forge_warn));
-        } else {
-            binding.preview.setText("预览：" + (result.rendered.isEmpty() ? "（空）" : result.rendered));
-            binding.preview.setTextColor(getColor(R.color.forge_muted));
+            return;
         }
+        SpannableStringBuilder preview = new SpannableStringBuilder("预览：");
+        if (result.items.isEmpty()) {
+            preview.append("（空）");
+        } else {
+            for (ProjectStructure.Question.OptionItem item : result.items) {
+                if ("vocab".equals(item.kind)) {
+                    VocabularyEntry entry = findEntry(item.vocabId);
+                    if (entry == null) {
+                        preview.append("〔词汇已删除〕");
+                    } else if (VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                        appendTokenImagePreview(preview, entry);
+                    } else {
+                        preview.append(vocabulary.displayName(entry));
+                    }
+                } else {
+                    preview.append(item.text == null ? "" : item.text);
+                }
+            }
+        }
+        binding.preview.setText(preview);
+        binding.preview.setTextColor(getColor(R.color.forge_muted));
+    }
+
+    private void appendTokenImagePreview(SpannableStringBuilder preview, VocabularyEntry entry) {
+        Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+        if (bitmap == null) {
+            preview.append("〔手写文字图片缺失〕");
+            return;
+        }
+        int height = Math.max(dp(18), dp(22));
+        int width = Math.max(dp(18), bitmap.getWidth() * height / Math.max(1, bitmap.getHeight()));
+        int start = preview.length();
+        preview.append("\uFFFC");
+        Bitmap scaled = Bitmap.createScaledBitmap(bitmap, width, height, true);
+        preview.setSpan(new ImageSpan(this, scaled, ImageSpan.ALIGN_BASELINE),
+                start, start + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private void applyTokenHighlights(TokenBinding binding) {
@@ -2975,6 +3012,12 @@ public class QuestionEditorActivity extends ForgeActivity {
         question.card.def = def; question.card.detail = cardDetail.getText().toString();
         question.card.examples.clear();
         for (ProjectStructure.Question.CardExample ex : editExamples) question.card.examples.add(ex);
+        syncSegmentsFromTokenItems();
+        question.segments.clear();
+        question.segments.addAll(segments);
+        question.parts.clear();
+        question.parts.addAll(parts);
+        question.sentence = sentenceText();
         question.name = word.isEmpty() && def.isEmpty() ? "题目图片" : word + " · " + def;
         question.hintsEnabled = false;
         if (!course.questions.contains(question)) course.questions.add(question);

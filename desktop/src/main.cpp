@@ -2123,6 +2123,7 @@ struct App {
       return;
     }
     if (editQuestion.type == "card") {
+      syncSentenceFromTokenItems();
       editQuestion.card.word = trim(cardWordInput);
       editQuestion.card.pron = trim(cardPronInput);
       editQuestion.card.def = trim(cardDefInput);
@@ -2925,6 +2926,41 @@ struct App {
     }
   }
 
+  void drawTokenPreview(const std::vector<QuestionOptionItem>& items) {
+    ImGui::TextColored(ImVec4(0.45f, 0.5f, 0.58f, 1), "预览：");
+    ImGui::SameLine(0.0f, 0.0f);
+    if (items.empty()) {
+      ImGui::TextDisabled("（空）");
+      return;
+    }
+    bool first = true;
+    for (const auto& item : items) {
+      if (!first) ImGui::SameLine(0.0f, 0.0f);
+      first = false;
+      if (item.kind == "vocab") {
+        const VocabEntry* entry = vocabulary ? vocabulary->find(item.vocabId) : nullptr;
+        if (!entry) {
+          ImGui::TextUnformatted("〔词汇已删除〕");
+        } else if (entry->type == "image") {
+          SDL_Texture* texture = textureForImage(
+              renderer, currentProjectDirectory() / pathFromUtf8(entry->image), imageTextures);
+          if (!texture) {
+            ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔手写文字图片缺失〕");
+          } else {
+            const float h = 22.0f;
+            const float w = std::max(h, h * static_cast<float>(std::max(1, entry->imageWidth)) /
+                                            static_cast<float>(std::max(1, entry->imageHeight)));
+            ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(w, h));
+          }
+        } else {
+          ImGui::TextUnformatted(displayName(*entry, vocabulary->entries).c_str());
+        }
+      } else {
+        ImGui::TextUnformatted(item.text.c_str());
+      }
+    }
+  }
+
   void drawTokenField(const std::string& key, std::vector<QuestionOptionItem>& items,
                       char* mirror, std::size_t mirrorSize, bool preserveImages = true) {
     if (items.empty() && mirror && mirror[0] != '\0') {
@@ -2988,8 +3024,7 @@ struct App {
     if (errorIt != tokenErrors.end()) {
       ImGui::TextColored(ImVec4(0.8f, 0.25f, 0.1f, 1), "⚠ %s", errorIt->second.c_str());
     } else {
-      ImGui::TextColored(ImVec4(0.45f, 0.5f, 0.58f, 1), "预览：%s",
-                         tokenRenderItems(items).c_str());
+      drawTokenPreview(items);
     }
   }
 
@@ -5302,6 +5337,36 @@ void renderQuestionEditor(App& app) {
     if (ImGui::Button("＋ 例句##card_ex_add", ImVec2(100, 26))) {
       app.editQuestion.card.examples.push_back({});
       app.questionDirty = true;
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted("句子（#<编码> 表示词汇）");
+    app.drawTokenField("sentence", app.sentenceTokenItems, app.sentenceTokenMirror,
+                       sizeof(app.sentenceTokenMirror), false);
+    if (app.tokenErrors.find("sentence") == app.tokenErrors.end()) {
+      app.syncSentenceFromTokenItems();
+    }
+    if (ImGui::Button("选择词汇##card_sentence_pick", ImVec2(110, 30))) {
+      app.openQuestionPicker();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("插入标点##card_sentence_punct", ImVec2(100, 30))) {
+      ImGui::OpenPopup("##card_sentence_punct");
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("插入光标位置；只用于编辑，不影响卡片学习展示。");
+    if (ImGui::BeginPopup("##card_sentence_punct")) {
+      const char* marks[] = {"，", "。", "、", "？", "！", "；", "：", "“", "”", "（", "）", "…", "—", "/"};
+      for (const char* mark : marks) {
+        if (ImGui::Button(mark, ImVec2(38, 28))) {
+          app.insertTextIntoTokenField("sentence", mark, app.sentenceTokenItems,
+                                       app.sentenceTokenMirror,
+                                       sizeof(app.sentenceTokenMirror));
+          app.syncSentenceFromTokenItems();
+          ImGui::CloseCurrentPopup();
+        }
+        if (mark != marks[13]) ImGui::SameLine();
+      }
+      ImGui::EndPopup();
     }
     if (ImGui::Button("保存题目##card_save", ImVec2(120, 34))) app.saveQuestion();
     return;

@@ -56,6 +56,41 @@ Known boundaries:
   Android has no such small fixed limit.
 - HTML is unchanged; all course fixtures remain under /tmp or app external storage.
 
+### Card sentence persistence + image token previews (2026-11-28, task-86)
+
+- Card persistence: Android saveCard now writes the common sentence token state back to
+  segments/parts/sentence; the desktop card editor exposes the same sentence token field and
+  the card save branch synchronizes it before persistence. Card learning remains unchanged
+  (the card page still intentionally does not display the sentence).
+- Image vocabulary token previews are image-aware on both platforms: Android creates an
+  ImageSpan bitmap thumbnail from MediaFiles.loadProjectImage; desktop drawTokenField draws
+  the texture inline. Missing files show "〔手写文字图片缺失〕". Text/Unicode/combination
+  vocabulary still render their display text; meanings are never substituted for an image.
+
+Verified (Android API36, desktop Xvfb):
+- Android card edit with "hello #<imgword>" previews text + image, saves, reopens and survives
+  force-stop/start:
+  /tmp/t86-a-card-edited.png, /tmp/t86-a-card-reopen.png, /tmp/t86-a-card-restart.png.
+- Card JSON after save:
+  segments=[{kind:punct,text:"hello "},{kind:word,vocabId:<image entry>}],
+  parts=[<image entry>], sentence="hello imgword".
+- Android choice sentence + option previews display the image thumbnail:
+  /tmp/t86-a-choice-preview.png. Android learning displays the same image in the sentence and
+  option, not the meaning: /tmp/t86-a-choice-learn.png.
+- Android missing image placeholder: /tmp/t86-a-missing.png.
+- Desktop seeded card sentence/field and image preview: /tmp/t86-d-card-seeded.png; card save
+  persisted segments/parts/sentence in structure.json.
+- Desktop choice sentence + option image previews: /tmp/t86-d-choice-image.png; missing image
+  placeholder: /tmp/t86-d-missing.png.
+- Desktop clean Release build: /tmp/task86-dclean; smoke x2 PASS:
+  /tmp/task86-smoke1.log and /tmp/task86-smoke2.log (question=true, learning=true).
+- Android clean debug build: /tmp/task86-aclean.log; install/launch /tmp/t86-a-final-launch.png
+  (no FATAL). HTML unchanged; no course data added; no commit/push.
+
+Known boundary: desktop card sentence typing was seeded/persisted in this test (the field itself
+was rendered and picker-capable); Android covered the full typed edit/save/restart path. The
+underlying save path is shared for both platforms and smoke still passes.
+
 PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 
 ### TTS follow-up (2026-11-24)
