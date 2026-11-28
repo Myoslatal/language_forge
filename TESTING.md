@@ -17,7 +17,9 @@ options, listen options, type prompt, cloze prompt/candidates and match left/rig
 text stays plain; tokens are blue in the real input (Android ForegroundColorSpan; desktop InputText
 overlay) and a picker inserts a token at the current cursor. #<code>, # <code> and #< code > are
 accepted; unknown or unclosed tokens show an error and block save. The stored schema is unchanged:
-parsed text becomes text items and parsed tokens become vocab items in order.
+parsed text becomes text items and parsed tokens become vocab items in order. Whitespace-only text
+items are preserved (fixed 2026-11-28), so consecutive spaces in token fields and choice sentences
+survive save/reload; only an entirely empty field is treated as empty.
 
 Vocabulary codes now reject #, < and > in the Android/desktop vocabulary editors and in both
 lexicon import paths. Android and desktop project .conlang imports warn when the imported

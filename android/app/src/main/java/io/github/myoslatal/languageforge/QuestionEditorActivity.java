@@ -1077,7 +1077,8 @@ public class QuestionEditorActivity extends ForgeActivity {
             if ("vocab".equals(item.kind)) {
                 segments.add(ProjectStructure.Question.Segment.word(item.vocabId));
                 parts.add(item.vocabId);
-            } else if (item.text != null && !item.text.trim().isEmpty()) {
+            } else if (item.text != null && !item.text.isEmpty()) {
+                // Keep whitespace-only text items so runs of spaces survive save/reload.
                 segments.add(ProjectStructure.Question.Segment.punct(item.text));
             }
         }

@@ -3039,7 +3039,8 @@ struct App {
         segment.vocabId = item.vocabId;
         editQuestion.segments.push_back(segment);
         editQuestion.parts.push_back(item.vocabId);
-      } else if (!trimCopy(item.text).empty()) {
+      } else if (!item.text.empty()) {
+        // Preserve whitespace-only segments so consecutive spaces survive save/reload.
         QuestionSegment segment;
         segment.kind = "punct";
         segment.text = item.text;
