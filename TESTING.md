@@ -99,29 +99,50 @@ underlying save path is shared for both platforms and smoke still passes.
   image; missing files show 〔手写文字图片缺失〕; text, Unicode and combination vocabulary use
   display text. If segments are empty, the legacy sentence field is used as plain fallback.
   No label is shown when both are empty, and card questions remain unscored introductions.
-- ForgeActivity now installs a base IME inset listener on the activity content root. When the
-  keyboard is visible the whole root gets an absolute -IME-height translationY and the focused
-  input is scrolled into view; when hidden the translation resets to zero. This covers editor
-  and vocabulary/input pages, does not accumulate offsets, and survives activity recreation.
+- ForgeActivity adds the base IME inset listener; task-88 below replaces its initial full-height
+  translation with a per-focused-field minimal shift.
 
 Verified:
 - Android card learning with text + image + Unicode/combination tokens:
   /tmp/t87-a-learn-course.png.
 - Desktop card learning with the same kinds of segments: /tmp/t87-d-learn4.png; legacy
   sentence fallback without segments: /tmp/t87-d-fallback.png.
-- Android IME question editor: before /tmp/t87-a-ime-before.png, keyboard open and bottom
-  option visible /tmp/t87-a-ime-open3.png, restored /tmp/t87-a-ime-closed.png.
-- Android vocabulary editor: code field focused above keyboard /tmp/t87-a-vocab-ime2.png,
-  restored /tmp/t87-a-vocab-ime-closed.png.
-- Rotation/recreation while IME was open did not leave a double offset:
-  /tmp/t87-a-ime-rotate.png (landscape, keyboard hidden, normal top bar).
 - Android clean debug build /tmp/task87-aclean.log; desktop clean Release build
   /tmp/task87-dclean, smoke x2 PASS: /tmp/task87-smoke1.log, /tmp/task87-smoke2.log
   (question=true, learning=true). HTML unchanged; no course data added; no commit/push.
 
-Known boundary: the whole content is translated by the requested IME height, so the topbar
-can be clipped while the keyboard is open (editor area is still visible); this is the requested
-“整体上移” behavior. Desktop has no soft keyboard and is unaffected.
+Desktop has no soft keyboard and is unaffected.
+
+### Minimal per-field IME translation (2026-11-28, task-88)
+
+- ForgeActivity still listens globally for IME insets, but no longer shifts the content by the
+  whole keyboard height. It measures the focused view's screen rectangle independently of the
+  current translation and moves the content only by the overlap with the IME top (plus an 8dp
+  margin). A field already above the keyboard leaves translationY at 0; a bottom field moves only
+  enough to become visible. The shift is clamped to the IME height and limited so the focused
+  field does not go under the status bar.
+- A ViewTreeObserver focus listener recomputes the target when focus moves while the keyboard is
+  open; absolute translation means focus switches and repeated insets cannot accumulate. Hide
+  resets translationY to 0; Activity recreation/rotation starts with a fresh listener. No
+  ScrollView requestRectangleOnScreen hack is used.
+
+Verified:
+- Android question editor, top token field focused: UI stays in place, topbar and field visible,
+  /tmp/t88-a-top-ime.png; bottom option focused: minimal upward shift with the option above the
+  keyboard and the top input still visible, /tmp/t88-a-bottom-ime.png; switching focus bottom
+  to top while the IME stays open restores zero offset, /tmp/t88-a-switch-top.png; hiding the
+  keyboard restores the original positions, /tmp/t88-a-ime-closed.png.
+- Android vocabulary editor, top code field focused: no shift, field visible above the keyboard,
+  /tmp/t88-a-vocab-top-ime.png; hide restores, /tmp/t88-a-vocab-closed.png.
+- Rotation with the IME open left no residual offset; normal topbar after recreation:
+  /tmp/t88-a-rotate.png.
+- Android clean debug build /tmp/task88-aclean.log; desktop clean Release build
+  /tmp/task88-dclean, smoke x2 PASS /tmp/task88-smoke1.log, /tmp/task88-smoke2.log
+  (question=true, learning=true). HTML unchanged; no course data added; no commit/push.
+
+The topbar itself can still be clipped when a bottom field needs a larger shift, but the focused
+field and the top fields remain in the visible area; top-field focus leaves the page at zero
+translation. Desktop has no soft keyboard.
 
 PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 
