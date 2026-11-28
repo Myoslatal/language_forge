@@ -19,6 +19,9 @@ import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -26,6 +29,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import io.github.myoslatal.languageforge.uikit.ForgeActivity;
 import io.github.myoslatal.languageforge.uikit.ForgeBadge;
@@ -406,6 +412,7 @@ public class ProjectListActivity extends ForgeActivity {
         toast("正在导入…");
         ioExecutor.execute(() -> {
             String importedName = null;
+            File importedDir = null;
             String error = null;
             try (InputStream in = getContentResolver().openInputStream(uri)) {
                 if (in == null) {
@@ -414,21 +421,56 @@ public class ProjectListActivity extends ForgeActivity {
                 ProjectArchive.ImportResult result =
                         ProjectArchive.importProject(store, in, displayName);
                 importedName = result.name;
+                importedDir = result.directory;
             } catch (Exception e) {
                 error = e.getMessage() == null ? "未知错误" : e.getMessage();
             }
             final String name = importedName;
             final String failure = error;
+            final File directory = importedDir;
             runOnUiThread(() -> {
                 ioInProgress = false;
                 if (name != null) {
                     loadProjects();
-                    toast("已导入「" + name + "」");
+                    int invalidCodes = countInvalidVocabularyCodes(directory);
+                    toast(invalidCodes > 0
+                            ? "已导入「" + name + "」；有 " + invalidCodes
+                                    + " 个词汇编码含 #、< 或 >，请到词汇表修正"
+                            : "已导入「" + name + "」");
                 } else {
                     toast("导入失败：" + failure);
                 }
             });
         });
+    }
+
+    private int countInvalidVocabularyCodes(File directory) {
+        if (directory == null) return 0;
+        File file = new File(directory, "vocabulary.json");
+        if (!file.isFile()) return 0;
+        try (FileInputStream in = new FileInputStream(file)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+            JSONObject root = new JSONObject(out.toString("UTF-8"));
+            JSONArray entries = root.optJSONArray("entries");
+            if (entries == null) return 0;
+            int invalid = 0;
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject entry = entries.optJSONObject(i);
+                if (entry == null) continue;
+                JSONArray codes = entry.optJSONArray("codes");
+                if (codes == null) continue;
+                for (int j = 0; j < codes.length(); j++) {
+                    String code = codes.optString(j, "").trim();
+                    if (!code.isEmpty() && !TokenCodec.isValidCode(code)) invalid++;
+                }
+            }
+            return invalid;
+        } catch (Exception ignored) {
+            return 0;
+        }
     }
 
     private String queryDisplayName(Uri uri) {

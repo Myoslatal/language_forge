@@ -1631,6 +1631,12 @@ public class VocabularyEditorActivity extends ForgeActivity {
             meanings.addAll(aggregate);
         }
         List<String> codes = collect(codeFields, VocabularyStore.MAX_CODE);
+        for (String code : codes) {
+            if (!TokenCodec.isValidCode(code)) {
+                toast(TokenCodec.invalidCodeMessage(code));
+                return;
+            }
+        }
         String type = selectedType();
 
         String text = "";

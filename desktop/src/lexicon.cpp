@@ -202,6 +202,8 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     entry->phonetic = entry->phonetics.empty() ? "" : entry->phonetics.front();
   };
   auto ensureCode = [](VocabEntry* entry, const std::string& value) {
+    if (value.find('#') != std::string::npos || value.find('<') != std::string::npos ||
+        value.find('>') != std::string::npos) return;
     if (std::find(entry->codes.begin(), entry->codes.end(), value) == entry->codes.end()) {
       entry->codes.push_back(value);
     }
@@ -350,7 +352,8 @@ bool importLexiconJsonl(const fs::path& file, const fs::path& projectDirectory,
     entry.type = "text";
     entry.text = word;
     entry.meanings = meanings;
-    entry.codes = {word};
+    if (word.find('#') == std::string::npos && word.find('<') == std::string::npos &&
+        word.find('>') == std::string::npos) entry.codes = {word};
     if (!pronunciation.empty()) {
       entry.phonetics.push_back(pronunciation);
       entry.phonetic = pronunciation;

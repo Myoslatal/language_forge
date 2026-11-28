@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
 #include "miniz.h"
@@ -455,6 +456,13 @@ struct App {
   int matchPickPair = -1;
   std::string matchPickSide = "l";
   std::string pickerForId;
+  std::map<std::string, std::string> tokenTexts;
+  std::map<std::string, int> tokenCursors;
+  std::map<std::string, std::string> tokenErrors;
+  std::string tokenTargetKey;
+  std::vector<QuestionOptionItem> sentenceTokenItems;
+  char sentenceTokenMirror[4096] = {};
+  bool sentenceTouched = false;
   Question editQuestion;
   bool questionIsNew = false;
   bool questionDirty = false;
@@ -1348,6 +1356,12 @@ struct App {
     }
     if (editEntry.meanings.empty()) editEntry.meanings.push_back("");
     if (editEntry.codes.empty()) editEntry.codes.push_back("");
+    for (const auto& code : editEntry.codes) {
+      if (!validTokenCode(code)) {
+        showToast("编码不能包含 #、< 或 >（会破坏 #<编码> 定界）：" + code);
+        return;
+      }
+    }
     auto trimText = [](std::string value) {
       auto notSpace = [](unsigned char c) { return !std::isspace(c); };
       value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
@@ -1582,7 +1596,9 @@ struct App {
               if (name.empty()) name = "〔图片〕";
             }
             if (!name.empty()) {
-              if (!sentence.empty()) sentence += " ";
+              if (!sentence.empty() && !std::isspace(static_cast<unsigned char>(sentence.back()))) {
+                sentence += " ";
+              }
               sentence += name;
             }
             break;
@@ -1623,6 +1639,26 @@ struct App {
         editQuestion.audioEnd = editQuestion.audioDuration;
       }
       while (editQuestion.options.size() < 4) editQuestion.options.push_back("");
+    }
+    tokenTexts.clear();
+    tokenCursors.clear();
+    tokenErrors.clear();
+    sentenceTokenItems.clear();
+    sentenceTouched = false;
+    for (const auto& segment : editQuestion.segments) {
+      QuestionOptionItem item;
+      if (segment.kind == "word") {
+        item.kind = "vocab";
+        item.vocabId = segment.vocabId;
+      } else {
+        item.kind = "text";
+        item.text = segment.text;
+      }
+      sentenceTokenItems.push_back(item);
+    }
+    {
+      const std::string sentence = questionSentence(editQuestion);
+      std::snprintf(sentenceTokenMirror, sizeof(sentenceTokenMirror), "%s", sentence.c_str());
     }
     questionCorrectIndex = editQuestion.correctIndex;
     std::string acceptedText;
@@ -1743,6 +1779,7 @@ struct App {
     ensureQuestionAudioScoped();
     ensureQuestionImageScoped();
     ensureOptionImagesScoped();
+    if (hasTokenErrors()) { showToast(firstTokenError()); return; }
     auto trim = [](std::string value) {
       auto notSpace = [](unsigned char c) { return !std::isspace(c); };
       value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
@@ -2697,6 +2734,348 @@ struct App {
       }
     }
     return clicked;
+  }
+
+  static bool validTokenCode(const std::string& raw) {
+    const std::string code = trimCopy(raw);
+    return code.empty() || (code.find('#') == std::string::npos &&
+                            code.find('<') == std::string::npos &&
+                            code.find('>') == std::string::npos);
+  }
+
+  const VocabEntry* vocabByTokenCode(const std::string& raw) const {
+    if (!vocabulary) return nullptr;
+    const std::string code = trimCopy(raw);
+    if (code.empty()) return nullptr;
+    const VocabEntry* exact = nullptr;
+    for (const auto& entry : vocabulary->entries) {
+      for (const auto& candidate : entry.codes) {
+        if (trimCopy(candidate) == code) {
+          if (exact && exact->id != entry.id) return nullptr;
+          exact = &entry;
+        }
+      }
+    }
+    if (exact) return exact;
+    std::string lower = code;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    for (const auto& entry : vocabulary->entries) {
+      for (const auto& candidate : entry.codes) {
+        std::string value = trimCopy(candidate);
+        std::transform(value.begin(), value.end(), value.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (value == lower) {
+          if (exact && exact->id != entry.id) return nullptr;
+          exact = &entry;
+        }
+      }
+    }
+    return exact;
+  }
+
+  std::string tokenCodeForItem(const QuestionOptionItem& item) const {
+    if (!vocabulary) return "";
+    const VocabEntry* entry = nullptr;
+    for (const auto& candidate : vocabulary->entries) {
+      if (candidate.id == item.vocabId) { entry = &candidate; break; }
+    }
+    if (!entry || entry->codes.empty()) return "";
+    return trimCopy(entry->codes.front());
+  }
+
+  std::string tokenTextFromItems(const std::vector<QuestionOptionItem>& items) const {
+    std::string out;
+    for (const auto& item : items) {
+      if (item.kind == "vocab") {
+        std::string code = tokenCodeForItem(item);
+        if (code.empty() || !validTokenCode(code)) code = item.vocabId;
+        out += "#<" + code + ">";
+      } else {
+        out += item.text;
+      }
+    }
+    return out;
+  }
+
+  struct TokenParse {
+    std::vector<QuestionOptionItem> items;
+    std::string error;
+    std::string rendered;
+    bool ok() const { return error.empty(); }
+  };
+
+  TokenParse parseTokenText(const std::string& text) const {
+    TokenParse result;
+    std::string plain;
+    auto appendPlain = [&]() {
+      if (plain.empty()) return;
+      if (!result.items.empty() && result.items.back().kind != "vocab") {
+        result.items.back().text += plain;
+      } else {
+        QuestionOptionItem item;
+        item.kind = "text";
+        item.text = plain;
+        result.items.push_back(item);
+      }
+      plain.clear();
+    };
+    std::size_t i = 0;
+    while (i < text.size()) {
+      if (text[i] != '#') { plain += text[i++]; continue; }
+      std::size_t j = i + 1;
+      while (j < text.size() && std::isspace(static_cast<unsigned char>(text[j]))) ++j;
+      if (j >= text.size() || text[j] != '<') { plain += text[i++]; continue; }
+      const std::size_t close = text.find('>', j + 1);
+      if (close == std::string::npos) {
+        result.error = "词汇 token 未闭合：缺少 >";
+        result.rendered = text;
+        return result;
+      }
+      const std::string rawCode = text.substr(j + 1, close - j - 1);
+      if (rawCode.find('<') != std::string::npos || rawCode.find('#') != std::string::npos) {
+        result.error = "词汇 token 内含非法字符：# 或 <";
+        result.rendered = text;
+        return result;
+      }
+      const std::string code = trimCopy(rawCode);
+      if (code.empty()) {
+        result.error = "词汇 token 的编码不能为空";
+        result.rendered = text;
+        return result;
+      }
+      const VocabEntry* entry = vocabByTokenCode(code);
+      if (!entry) {
+        result.error = "未知词汇编码：" + code;
+        result.rendered = text;
+        return result;
+      }
+      appendPlain();
+      QuestionOptionItem item;
+      item.kind = "vocab";
+      item.vocabId = entry->id;
+      result.items.push_back(item);
+      i = close + 1;
+    }
+    appendPlain();
+    result.rendered = tokenRenderItems(result.items);
+    return result;
+  }
+
+  std::string tokenRenderItems(const std::vector<QuestionOptionItem>& items) const {
+    std::string out;
+    for (const auto& item : items) {
+      if (item.kind == "vocab") {
+        const VocabEntry* entry = nullptr;
+        if (vocabulary) {
+          for (const auto& candidate : vocabulary->entries) {
+            if (candidate.id == item.vocabId) { entry = &candidate; break; }
+          }
+        }
+        out += entry ? displayName(*entry, vocabulary->entries) : "〔词汇已删除〕";
+      } else {
+        out += item.text;
+      }
+    }
+    return out;
+  }
+
+  std::vector<std::pair<int, int>> tokenRanges(const std::string& text) const {
+    std::vector<std::pair<int, int>> ranges;
+    std::size_t i = 0;
+    while (i < text.size()) {
+      if (text[i] != '#') { ++i; continue; }
+      std::size_t j = i + 1;
+      while (j < text.size() && std::isspace(static_cast<unsigned char>(text[j]))) ++j;
+      if (j >= text.size() || text[j] != '<') { ++i; continue; }
+      const std::size_t close = text.find('>', j + 1);
+      if (close == std::string::npos) break;
+      ranges.push_back({static_cast<int>(i), static_cast<int>(close + 1)});
+      i = close + 1;
+    }
+    return ranges;
+  }
+
+  void applyTokenText(const std::string& key, std::vector<QuestionOptionItem>& items,
+                      char* mirror, std::size_t mirrorSize, bool preserveImages) {
+    const auto found = tokenTexts.find(key);
+    if (found == tokenTexts.end()) return;
+    std::string image;
+    if (preserveImages) {
+      for (const auto& item : items) {
+        if (!item.image.empty()) { image = item.image; break; }
+      }
+    }
+    TokenParse parsed = parseTokenText(found->second);
+    if (!parsed.ok()) {
+      tokenErrors[key] = parsed.error;
+      return;
+    }
+    tokenErrors.erase(key);
+    items = parsed.items;
+    if (preserveImages && !image.empty() && !items.empty()) {
+      bool assigned = false;
+      for (auto& item : items) {
+        if (item.kind != "vocab") { item.image = image; assigned = true; break; }
+      }
+      if (!assigned) items.front().image = image;
+    }
+    if (mirror && mirrorSize > 0) {
+      std::snprintf(mirror, mirrorSize, "%s", parsed.rendered.c_str());
+    }
+  }
+
+  void drawTokenField(const std::string& key, std::vector<QuestionOptionItem>& items,
+                      char* mirror, std::size_t mirrorSize, bool preserveImages = true) {
+    if (items.empty() && mirror && mirror[0] != '\0') {
+      QuestionOptionItem item;
+      item.kind = "text";
+      item.text = mirror;
+      items.push_back(item);
+    }
+    if (tokenTexts.find(key) == tokenTexts.end()) {
+      tokenTexts[key] = tokenTextFromItems(items);
+    }
+    std::string& text = tokenTexts[key];
+    char buffer[4096];
+    std::snprintf(buffer, sizeof(buffer), "%s", text.c_str());
+    const std::string inputId = "##token_" + key;
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0));
+    ImGui::SetNextItemWidth(-1);
+    const bool changed = ImGui::InputText(inputId.c_str(), buffer, sizeof(buffer));
+    ImGui::PopStyleColor();
+    const ImGuiID itemId = ImGui::GetItemID();
+    const ImVec2 rectMin = ImGui::GetItemRectMin();
+    const ImVec2 rectMax = ImGui::GetItemRectMax();
+    if (changed) {
+      text = buffer;
+      applyTokenText(key, items, mirror, mirrorSize, preserveImages);
+      if (key == "sentence") sentenceTouched = true;
+      questionDirty = true;
+    }
+    if (ImGuiInputTextState* state = ImGui::GetInputTextState(itemId)) {
+      tokenCursors[key] = state->GetCursorPos();
+    }
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 padding = ImGui::GetStyle().FramePadding;
+    const ImVec2 origin(rectMin.x + padding.x, rectMin.y + padding.y);
+    const ImU32 normal = ImGui::GetColorU32(ImGuiCol_Text);
+    const ImU32 accent = IM_COL32(47, 111, 235, 255);
+    float x = origin.x;
+    int cursor = 0;
+    const auto ranges = tokenRanges(text);
+    for (const auto& range : ranges) {
+      const std::string before = text.substr(cursor, range.first - cursor);
+      if (!before.empty()) {
+        draw->AddText(origin + ImVec2(x - origin.x, 0), normal, before.c_str());
+        x += ImGui::CalcTextSize(before.c_str()).x;
+      }
+      const std::string token = text.substr(range.first, range.second - range.first);
+      draw->AddText(origin + ImVec2(x - origin.x, 0), accent, token.c_str());
+      x += ImGui::CalcTextSize(token.c_str()).x;
+      cursor = range.second;
+    }
+    const std::string tail = text.substr(cursor);
+    if (!tail.empty()) draw->AddText(origin + ImVec2(x - origin.x, 0), normal, tail.c_str());
+    if (ImGui::IsItemActive()) {
+      const int at = std::min(static_cast<int>(text.size()), std::max(0, tokenCursors[key]));
+      const std::string prefix = text.substr(0, at);
+      const float cx = origin.x + ImGui::CalcTextSize(prefix.c_str()).x;
+      draw->AddLine(ImVec2(cx, rectMin.y + padding.y),
+                    ImVec2(cx, rectMax.y - padding.y), normal, 1.0f);
+    }
+    const auto errorIt = tokenErrors.find(key);
+    if (errorIt != tokenErrors.end()) {
+      ImGui::TextColored(ImVec4(0.8f, 0.25f, 0.1f, 1), "⚠ %s", errorIt->second.c_str());
+    } else {
+      ImGui::TextColored(ImVec4(0.45f, 0.5f, 0.58f, 1), "预览：%s",
+                         tokenRenderItems(items).c_str());
+    }
+  }
+
+  void insertSelectedTokens(const std::string& key, const std::vector<std::string>& ids,
+                            std::vector<QuestionOptionItem>& items, char* mirror,
+                            std::size_t mirrorSize, bool preserveImages = true) {
+    if (ids.empty()) return;
+    std::string addition;
+    for (const auto& id : ids) {
+      const VocabEntry* entry = vocabulary ? vocabulary->find(id) : nullptr;
+      if (!entry) continue;
+      if (entry->codes.empty() || !validTokenCode(entry->codes.front()) ||
+          trimCopy(entry->codes.front()).empty()) {
+        showToast("词汇「" + displayName(*entry, vocabulary->entries) +
+                  "」缺少可用于 token 的合法编码");
+        continue;
+      }
+      if (!addition.empty()) addition += ' ';
+      addition += "#<" + trimCopy(entry->codes.front()) + ">";
+    }
+    if (addition.empty()) return;
+    if (key == "sentence") sentenceTouched = true;
+    auto& text = tokenTexts[key];
+    if (text.empty() && !items.empty()) text = tokenTextFromItems(items);
+    int cursor = tokenCursors[key];
+    if (cursor < 0 || cursor > static_cast<int>(text.size())) cursor = static_cast<int>(text.size());
+    std::string insert = addition;
+    if (cursor > 0 && !std::isspace(static_cast<unsigned char>(text[cursor - 1])) &&
+        text[cursor - 1] != '(' && text[cursor - 1] != '（') {
+      insert = " " + insert;
+    }
+    text = text.substr(0, cursor) + insert + text.substr(cursor);
+    tokenCursors[key] = static_cast<int>(cursor + insert.size());
+    applyTokenText(key, items, mirror, mirrorSize, preserveImages);
+    questionDirty = true;
+  }
+
+  void syncSentenceFromTokenItems() {
+    if (!sentenceTouched) return;
+    if (tokenErrors.find("sentence") != tokenErrors.end()) return;
+    editQuestion.segments.clear();
+    editQuestion.parts.clear();
+    for (const auto& item : sentenceTokenItems) {
+      if (item.kind == "vocab") {
+        QuestionSegment segment;
+        segment.kind = "word";
+        segment.vocabId = item.vocabId;
+        editQuestion.segments.push_back(segment);
+        editQuestion.parts.push_back(item.vocabId);
+      } else if (!trimCopy(item.text).empty()) {
+        QuestionSegment segment;
+        segment.kind = "punct";
+        segment.text = item.text;
+        editQuestion.segments.push_back(segment);
+      }
+    }
+    editQuestion.sentence = tokenRenderItems(sentenceTokenItems);
+  }
+
+  void insertTextIntoTokenField(const std::string& key, const std::string& value,
+                                std::vector<QuestionOptionItem>& items, char* mirror,
+                                std::size_t mirrorSize, bool preserveImages = false) {
+    if (value.empty()) return;
+    if (key == "sentence") sentenceTouched = true;
+    auto& text = tokenTexts[key];
+    if (text.empty() && !items.empty()) text = tokenTextFromItems(items);
+    int cursor = tokenCursors[key];
+    if (cursor < 0 || cursor > static_cast<int>(text.size())) cursor = static_cast<int>(text.size());
+    text = text.substr(0, cursor) + value + text.substr(cursor);
+    tokenCursors[key] = static_cast<int>(cursor + value.size());
+    applyTokenText(key, items, mirror, mirrorSize, preserveImages);
+    questionDirty = true;
+  }
+
+  bool hasTokenErrors() const {
+    for (const auto& entry : tokenErrors) {
+      if (!entry.second.empty()) return true;
+    }
+    return false;
+  }
+
+  std::string firstTokenError() const {
+    for (const auto& entry : tokenErrors) {
+      if (!entry.second.empty()) return entry.second;
+    }
+    return "";
   }
 
   void drawOptionItemsEditor(std::vector<QuestionOptionItem>& items, char* mirror,
@@ -4172,7 +4551,17 @@ struct App {
     }
     refreshProjects();
     browserOpen = false;
-    showToast("已导入项目：" + imported.name);
+    VocabularyStore importedVocabulary(store->projectDirectory(imported.folder));
+    int invalidCodes = 0;
+    for (const auto& entry : importedVocabulary.entries) {
+      for (const auto& code : entry.codes) {
+        if (!validTokenCode(code)) ++invalidCodes;
+      }
+    }
+    showToast(invalidCodes > 0
+                  ? "已导入项目：" + imported.name + "；有 " + std::to_string(invalidCodes) +
+                        " 个词汇编码含 #、< 或 >，请到词汇表修正"
+                  : "已导入项目：" + imported.name);
   }
 };
 
@@ -4755,15 +5144,15 @@ void renderQuestionEditor(App& app) {
       app.pickerSelected.clear();
       app.pickerOpen = true;
     }
-    app.drawOptionItemsEditor(app.clozePromptItems, app.clozePromptInput,
-                              sizeof(app.clozePromptInput));
+    app.drawTokenField("cloze:prompt", app.clozePromptItems, app.clozePromptInput,
+                       sizeof(app.clozePromptInput), false);
     const int blanks = clozeBlankCount(app.clozeTextInput);
     ImGui::Text("当前空格数：%d", blanks);
     for (int i = 0; i < 4; ++i) {
       ImGui::PushID(i + 18000);
-      ImGui::SetNextItemWidth(420);
-      if (ImGui::InputText("##cloze_opt", app.clozeOptionsInput[i], sizeof(app.clozeOptionsInput[i])))
-        app.questionDirty = true;
+      while (app.clozeCandidateItems.size() < 4) app.clozeCandidateItems.push_back({});
+      app.drawTokenField("cloze:" + std::to_string(i), app.clozeCandidateItems[i],
+                         app.clozeOptionsInput[i], sizeof(app.clozeOptionsInput[i]), false);
       ImGui::SameLine();
       if (ImGui::Checkbox("正确词", &app.clozeChecks[i])) app.questionDirty = true;
       ImGui::SameLine();
@@ -4781,9 +5170,7 @@ void renderQuestionEditor(App& app) {
         app.pickerOpen = true;
       }
       ImGui::PopID();
-      while (app.clozeCandidateItems.size() < 4) app.clozeCandidateItems.push_back({});
-      app.drawOptionItemsEditor(app.clozeCandidateItems[i], app.clozeOptionsInput[i],
-                                sizeof(app.clozeOptionsInput[i]));
+
     }
     if (ImGui::Button("保存题目##cloze_save", ImVec2(120, 34))) app.saveQuestion();
     return;
@@ -4815,11 +5202,10 @@ void renderQuestionEditor(App& app) {
       ImGui::TextUnformatted("四个选项（唯一正确答案）");
       for (int i = 0; i < 4; ++i) {
         ImGui::PushID(7800 + i);
-        ImGui::SetNextItemWidth(-260);
-        if (ImGui::InputText("##reading_option", app.questionOptions[i],
-                             sizeof(app.questionOptions[i]))) {
-          app.questionDirty = true;
-        }
+        while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+        app.drawTokenField("choice:" + std::to_string(i),
+                           app.editQuestion.optionItems[i], app.questionOptions[i],
+                           sizeof(app.questionOptions[i]), true);
         ImGui::SameLine();
         if (ImGui::Button("选词##reading_option_pick", ImVec2(64, 0))) {
           app.pickerForChoiceOption = true;
@@ -4845,7 +5231,6 @@ void renderQuestionEditor(App& app) {
         }
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
         auto& items = app.editQuestion.optionItems[i];
-        app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
         app.drawOptionImageEditor(i);
         ImGui::PopID();
       }
@@ -4964,11 +5349,10 @@ void renderQuestionEditor(App& app) {
     ImGui::TextUnformatted("四个选项（唯一正确答案）");
     for (int i = 0; i < 4; ++i) {
       ImGui::PushID(7600 + i);
-      ImGui::SetNextItemWidth(-260);
-      if (ImGui::InputText("##dialog_option", app.questionOptions[i],
-                           sizeof(app.questionOptions[i]))) {
-        app.questionDirty = true;
-      }
+      while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+      app.drawTokenField("choice:" + std::to_string(i),
+                         app.editQuestion.optionItems[i], app.questionOptions[i],
+                         sizeof(app.questionOptions[i]), true);
       ImGui::SameLine();
       if (ImGui::Button("选词##dialog_option_pick", ImVec2(64, 0))) {
         app.pickerForChoiceOption = true;
@@ -4994,7 +5378,6 @@ void renderQuestionEditor(App& app) {
       }
       while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
       auto& items = app.editQuestion.optionItems[i];
-      app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
       app.drawOptionImageEditor(i);
       ImGui::PopID();
     }
@@ -5077,11 +5460,10 @@ void renderQuestionEditor(App& app) {
     ImGui::TextUnformatted("四个选项（选择正确项）");
     for (int i = 0; i < 4; ++i) {
       ImGui::PushID(i);
-      ImGui::SetNextItemWidth(-150);
-      if (ImGui::InputText("##listen_option", app.questionOptions[i],
-                           sizeof(app.questionOptions[i]))) {
-        app.questionDirty = true;
-      }
+      while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+      app.drawTokenField("listen:" + std::to_string(i),
+                         app.editQuestion.optionItems[i], app.questionOptions[i],
+                         sizeof(app.questionOptions[i]), true);
       ImGui::SameLine();
       if (ImGui::Button("选词##listen_option_pick", ImVec2(64, 0))) {
         app.pickerForListenOption = true;
@@ -5097,7 +5479,6 @@ void renderQuestionEditor(App& app) {
       ImGui::RadioButton("正确", &app.questionCorrectIndex, i);
       while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
       auto& items = app.editQuestion.optionItems[i];
-      app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
       app.drawOptionImageEditor(i);
       ImGui::PopID();
     }
@@ -5105,62 +5486,10 @@ void renderQuestionEditor(App& app) {
     return;
   }
   if (app.editQuestion.type == "type") {
-    ImGui::TextUnformatted("题干/要翻译的内容（必填）");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputTextWithHint("##type_prompt", "题干/要翻译的内容",
-                                 app.arrangePromptInput, sizeof(app.arrangePromptInput))) {
-      app.questionDirty = true;
-    }
+    ImGui::TextUnformatted("题干/要翻译的内容（#<编码> 表示词汇）");
+    app.drawTokenField("type:prompt", app.editQuestion.promptItems,
+                       app.arrangePromptInput, sizeof(app.arrangePromptInput), false);
     if (ImGui::Button("从词库选词##type_pick", ImVec2(120, 28))) app.openTypePromptPicker();
-    ImGui::SameLine();
-    if (ImGui::Button("插入标点##type_punct", ImVec2(100, 28))) ImGui::OpenPopup("type_punct_popup");
-    if (ImGui::BeginPopup("type_punct_popup")) {
-      const char* marks[] = {"。", "，", "、", "！", "？", "；", "：", "（）"};
-      for (const char* mark : marks) {
-        if (ImGui::Button(mark)) {
-          std::string text = app.arrangePromptInput;
-          text += mark;
-          std::snprintf(app.arrangePromptInput, sizeof(app.arrangePromptInput), "%s", text.c_str());
-          app.editQuestion.prompt = text;
-          app.questionDirty = true;
-        }
-        ImGui::SameLine();
-      }
-      ImGui::EndPopup();
-    }
-    for (std::size_t j = 0; j < app.editQuestion.promptItems.size(); ++j) {
-      auto& item = app.editQuestion.promptItems[j];
-      ImGui::PushID(static_cast<int>(j) + 12000);
-      if (item.kind == "vocab") {
-        const VocabEntry* entry = nullptr;
-        if (app.vocabulary) {
-          for (const auto& candidate : app.vocabulary->entries) {
-            if (candidate.id == item.vocabId) { entry = &candidate; break; }
-          }
-        }
-        if (entry && entry->type == "image") {
-          SDL_Texture* texture = textureForImage(app.renderer,
-              app.currentProjectDirectory() / pathFromUtf8(entry->image), app.imageTextures);
-          if (texture) ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(24, 24));
-          else ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
-        } else if (entry) {
-          ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
-        }
-      } else {
-        ImGui::TextUnformatted(item.text.c_str());
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("×##type_prompt_item_del", ImVec2(26, 22))) {
-        app.editQuestion.promptItems.erase(app.editQuestion.promptItems.begin() + j);
-        std::string mirrored = app.optionMirror(app.editQuestion.promptItems);
-        std::snprintf(app.arrangePromptInput, sizeof(app.arrangePromptInput), "%s", mirrored.c_str());
-        app.questionDirty = true;
-        ImGui::PopID();
-        break;
-      }
-      ImGui::PopID();
-      ImGui::SameLine();
-    }
     ImGui::NewLine();
     ImGui::TextUnformatted("可接受答案（一行一个）");
     if (ImGui::InputTextMultiline("##type_answers", app.typeAnswersInput,
@@ -5227,14 +5556,13 @@ void renderQuestionEditor(App& app) {
     for (std::size_t i = 0; i < app.editQuestion.pairs.size(); ++i) {
       auto& pair = app.editQuestion.pairs[i];
       ImGui::PushID(static_cast<int>(i));
-      char left[256];
-      char right[256];
+      char left[4096];
+      char right[4096];
       std::snprintf(left, sizeof(left), "%s", pair.left.c_str());
       std::snprintf(right, sizeof(right), "%s", pair.right.c_str());
-      ImGui::SetNextItemWidth(230);
-      if (ImGui::InputText("##pair_left", left, sizeof(left))) {
-        pair.left = left; app.questionDirty = true;
-      }
+      app.drawTokenField("match:" + std::to_string(i) + ":l", pair.leftItems,
+                         left, sizeof(left), false);
+      pair.left = left;
       ImGui::SameLine();
       if (ImGui::Button("选词左##match_pick_l", ImVec2(60, 0))) {
         app.pickerForMatchSide = true;
@@ -5250,10 +5578,9 @@ void renderQuestionEditor(App& app) {
         app.pickerOpen = true;
       }
       ImGui::SameLine();
-      ImGui::SetNextItemWidth(230);
-      if (ImGui::InputText("##pair_right", right, sizeof(right))) {
-        pair.right = right; app.questionDirty = true;
-      }
+      app.drawTokenField("match:" + std::to_string(i) + ":r", pair.rightItems,
+                         right, sizeof(right), false);
+      pair.right = right;
       ImGui::SameLine();
       if (ImGui::Button("选词右##match_pick_r", ImVec2(60, 0))) {
         app.pickerForMatchSide = true;
@@ -5275,14 +5602,6 @@ void renderQuestionEditor(App& app) {
         ImGui::PopID();
         break;
       }
-      ImGui::NewLine();
-      ImGui::PushID("left_preview");
-      app.drawMatchItemsPreview(pair.leftItems, pair.left, "×##ml");
-      ImGui::PopID();
-      ImGui::SameLine(0, 24);
-      ImGui::PushID("right_preview");
-      app.drawMatchItemsPreview(pair.rightItems, pair.right, "×##mr");
-      ImGui::PopID();
       ImGui::NewLine();
       ImGui::PopID();
     }
@@ -5327,11 +5646,10 @@ void renderQuestionEditor(App& app) {
       ImGui::TextUnformatted("四个选项（唯一正确答案）");
       for (int i = 0; i < 4; ++i) {
         ImGui::PushID(9200 + i);
-        ImGui::SetNextItemWidth(-260);
-        if (ImGui::InputText("##custom_option", app.questionOptions[i],
-                             sizeof(app.questionOptions[i]))) {
-          app.questionDirty = true;
-        }
+        while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+        app.drawTokenField("choice:" + std::to_string(i),
+                           app.editQuestion.optionItems[i], app.questionOptions[i],
+                           sizeof(app.questionOptions[i]), true);
         ImGui::SameLine();
         if (ImGui::Button("选词##custom_option_pick", ImVec2(64, 0))) {
           app.pickerForChoiceOption = true;
@@ -5353,8 +5671,9 @@ void renderQuestionEditor(App& app) {
           app.questionDirty = true;
         }
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
-        app.drawOptionItemsEditor(app.editQuestion.optionItems[i], app.questionOptions[i],
-                                  sizeof(app.questionOptions[i]));
+        app.drawTokenField("choice:" + std::to_string(i),
+                           app.editQuestion.optionItems[i], app.questionOptions[i],
+                           sizeof(app.questionOptions[i]), true);
         app.drawOptionImageEditor(i);
         ImGui::PopID();
       }
@@ -5477,75 +5796,31 @@ void renderQuestionEditor(App& app) {
     }
     return;
   }
-  ImGui::TextUnformatted("句子词汇与标点（按顺序）");
-  if (app.editQuestion.segments.empty()) ImGui::TextDisabled("尚未选择词汇");
-  for (std::size_t i = 0; i < app.editQuestion.segments.size(); ++i) {
-    auto& segment = app.editQuestion.segments[i];
-    std::string name = segment.text;
-    const VocabEntry* segmentImage = nullptr;
-    if (segment.kind == "word" && app.vocabulary) {
-      name = segment.vocabId;
-      for (const auto& entry : app.vocabulary->entries) {
-        if (entry.id == segment.vocabId) {
-          name = displayName(entry, app.vocabulary->entries);
-          if (entry.type == "image") segmentImage = &entry;
-          break;
-        }
-      }
-    }
-    ImGui::PushID(static_cast<int>(i));
-    if (segment.kind == "punct") {
-      ImGui::TextColored(ImVec4(0.2f, 0.5f, 0.8f, 1), "%zu. 标点 %s", i + 1, name.c_str());
-    } else if (segmentImage) {
-      ImGui::Text("%zu.", i + 1);
-      ImGui::SameLine();
-      SDL_Texture* texture = textureForImage(
-          app.renderer, app.currentProjectDirectory() / pathFromUtf8(segmentImage->image),
-          app.imageTextures);
-      if (texture) {
-        ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(26, 26));
-      } else {
-        ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔图片缺失〕");
-      }
-    } else {
-      ImGui::Text("%zu. %s", i + 1, name.c_str());
-    }
-    ImGui::SameLine(360);
-    if (ImGui::Button("↑", ImVec2(30, 24)) && i > 0) {
-      std::swap(app.editQuestion.segments[i], app.editQuestion.segments[i - 1]);
-      app.questionDirty = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("↓", ImVec2(30, 24)) && i + 1 < app.editQuestion.segments.size()) {
-      std::swap(app.editQuestion.segments[i], app.editQuestion.segments[i + 1]);
-      app.questionDirty = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("×", ImVec2(30, 24))) {
-      app.editQuestion.segments.erase(app.editQuestion.segments.begin() + i);
-      app.questionDirty = true;
-    }
-    ImGui::PopID();
+  ImGui::TextUnformatted("句子（#<编码> 表示词汇）");
+  app.drawTokenField("sentence", app.sentenceTokenItems, app.sentenceTokenMirror,
+                     sizeof(app.sentenceTokenMirror), false);
+  if (app.tokenErrors.find("sentence") == app.tokenErrors.end()) {
+    app.syncSentenceFromTokenItems();
   }
   if (ImGui::Button("选择词汇", ImVec2(110, 30))) app.openQuestionPicker();
   ImGui::SameLine();
   if (ImGui::Button("插入标点", ImVec2(100, 30))) ImGui::OpenPopup("##question_punct");
   ImGui::SameLine();
-  ImGui::TextDisabled("可多选；单个词也可成题。");
+  ImGui::TextDisabled("插入光标位置；单个词也可成题。");
   if (ImGui::BeginPopup("##question_punct")) {
     const char* marks[] = {"，", "。", "、", "？", "！", "；", "：", "“", "”", "（", "）", "…", "—", "/"};
     for (const char* mark : marks) {
       if (ImGui::Button(mark, ImVec2(38, 28))) {
-        app.editQuestion.segments.push_back({"punct", "", mark});
-        app.questionDirty = true;
+        app.insertTextIntoTokenField("sentence", mark, app.sentenceTokenItems,
+                                     app.sentenceTokenMirror,
+                                     sizeof(app.sentenceTokenMirror));
+        app.syncSentenceFromTokenItems();
         ImGui::CloseCurrentPopup();
       }
       if (mark != marks[13]) ImGui::SameLine();
     }
     ImGui::EndPopup();
   }
-  ImGui::Spacing();
-  ImGui::TextWrapped("句子：%s", app.questionSentence(app.editQuestion).c_str());
   ImGui::Separator();
   ImGui::TextUnformatted("整句录音");
   if (app.editQuestion.audio.empty()) {
@@ -5596,10 +5871,10 @@ void renderQuestionEditor(App& app) {
   ImGui::TextUnformatted("四个选项（唯一正确答案）");
   for (int i = 0; i < 4; ++i) {
     ImGui::PushID(7000 + i);
-    ImGui::SetNextItemWidth(-260);
-    if (ImGui::InputText("##option", app.questionOptions[i], sizeof(app.questionOptions[i]))) {
-      app.questionDirty = true;
-    }
+    while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
+    app.drawTokenField("choice:" + std::to_string(i),
+                       app.editQuestion.optionItems[i], app.questionOptions[i],
+                       sizeof(app.questionOptions[i]), true);
     ImGui::SameLine();
     if (ImGui::Button("选词##choice_option_pick", ImVec2(64, 0))) {
       app.pickerForChoiceOption = true;
@@ -5621,7 +5896,6 @@ void renderQuestionEditor(App& app) {
     if (correct) { ImGui::SameLine(); ImGui::TextColored(ImVec4(0.2f, 0.6f, 0.3f, 1), "✓"); }
     while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
     auto& items = app.editQuestion.optionItems[i];
-      app.drawOptionItemsEditor(items, app.questionOptions[i], sizeof(app.questionOptions[i]));
       app.drawOptionImageEditor(i);
     ImGui::PopID();
   }
@@ -10410,17 +10684,9 @@ void renderPicker(App& app) {
           app.vocabulary) {
         auto& pair = app.editQuestion.pairs[app.matchPickPair];
         auto& items = app.matchPickSide == "l" ? pair.leftItems : pair.rightItems;
-        for (const auto& id : app.pickerSelected) {
-          for (const auto& entry : app.vocabulary->entries) {
-            if (entry.id != id) continue;
-            QuestionOptionItem item;
-            item.kind = "vocab";
-            item.vocabId = id;
-            items.push_back(item);
-            break;
-          }
-        }
-        const std::string mirrored = app.optionMirror(items);
+        app.insertSelectedTokens("match:" + std::to_string(app.matchPickPair) + ":" +
+                                 app.matchPickSide, app.pickerSelected, items, nullptr, 0, false);
+        const std::string mirrored = app.tokenRenderItems(items);
         if (app.matchPickSide == "l") pair.left = mirrored;
         else pair.right = mirrored;
         app.questionDirty = true;
@@ -10434,24 +10700,14 @@ void renderPicker(App& app) {
           while (app.clozeCandidateItems.size() < 4) app.clozeCandidateItems.push_back({});
           target = &app.clozeCandidateItems[app.clozePickIndex];
         }
-        for (const auto& id : app.pickerSelected) {
-          for (const auto& entry : app.vocabulary->entries) {
-            if (entry.id != id) continue;
-            QuestionOptionItem item;
-            item.kind = "vocab";
-            item.vocabId = id;
-            target->push_back(item);
-            break;
-          }
-        }
-        const std::string mirrored = app.optionMirror(*target);
         if (app.clozePickIndex == -1) {
-          std::snprintf(app.clozePromptInput, sizeof(app.clozePromptInput), "%s",
-                        mirrored.c_str());
+          app.insertSelectedTokens("cloze:prompt", app.pickerSelected, *target,
+                                   app.clozePromptInput, sizeof(app.clozePromptInput), false);
         } else {
-          std::snprintf(app.clozeOptionsInput[app.clozePickIndex],
-                        sizeof(app.clozeOptionsInput[app.clozePickIndex]), "%s",
-                        mirrored.c_str());
+          app.insertSelectedTokens("cloze:" + std::to_string(app.clozePickIndex),
+                                   app.pickerSelected, *target,
+                                   app.clozeOptionsInput[app.clozePickIndex],
+                                   sizeof(app.clozeOptionsInput[app.clozePickIndex]), false);
         }
         app.questionDirty = true;
       }
@@ -10459,21 +10715,11 @@ void renderPicker(App& app) {
     } else if (app.pickerForChoiceOption) {
       if (app.choiceOptionPickIndex >= 0 && app.choiceOptionPickIndex < 4 && app.vocabulary) {
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
-        for (const auto& id : app.pickerSelected) {
-          for (const auto& entry : app.vocabulary->entries) {
-            if (entry.id != id) continue;
-            QuestionOptionItem item;
-            item.kind = "vocab";
-            item.vocabId = id;
-            app.editQuestion.optionItems[app.choiceOptionPickIndex].push_back(item);
-            break;
-          }
-        }
-        std::string option = app.optionMirror(
-            app.editQuestion.optionItems[app.choiceOptionPickIndex]);
-        std::snprintf(app.questionOptions[app.choiceOptionPickIndex],
-                      sizeof(app.questionOptions[app.choiceOptionPickIndex]), "%s",
-                      option.c_str());
+        app.insertSelectedTokens("choice:" + std::to_string(app.choiceOptionPickIndex),
+                                 app.pickerSelected,
+                                 app.editQuestion.optionItems[app.choiceOptionPickIndex],
+                                 app.questionOptions[app.choiceOptionPickIndex],
+                                 sizeof(app.questionOptions[app.choiceOptionPickIndex]), true);
         app.questionDirty = true;
       }
       app.pickerForChoiceOption = false;
@@ -10506,19 +10752,11 @@ void renderPicker(App& app) {
     } else if (app.pickerForListenOption) {
       if (app.listenOptionPickIndex >= 0 && app.listenOptionPickIndex < 4 && app.vocabulary) {
         while (app.editQuestion.optionItems.size() < 4) app.editQuestion.optionItems.push_back({});
-        for (const auto& id : app.pickerSelected) {
-          for (const auto& entry : app.vocabulary->entries) {
-            if (entry.id != id) continue;
-            QuestionOptionItem item;
-            item.kind = "vocab";
-            item.vocabId = id;
-            app.editQuestion.optionItems[app.listenOptionPickIndex].push_back(item);
-            break;
-          }
-        }
-        std::string option = app.optionMirror(app.editQuestion.optionItems[app.listenOptionPickIndex]);
-        std::snprintf(app.questionOptions[app.listenOptionPickIndex],
-                      sizeof(app.questionOptions[app.listenOptionPickIndex]), "%s", option.c_str());
+        app.insertSelectedTokens("listen:" + std::to_string(app.listenOptionPickIndex),
+                                 app.pickerSelected,
+                                 app.editQuestion.optionItems[app.listenOptionPickIndex],
+                                 app.questionOptions[app.listenOptionPickIndex],
+                                 sizeof(app.questionOptions[app.listenOptionPickIndex]), true);
         app.questionDirty = true;
       }
       app.pickerForListenOption = false;
@@ -10540,15 +10778,9 @@ void renderPicker(App& app) {
       }
       app.pickerForListenAudio = false;
     } else if (app.pickerForTypePrompt) {
-      for (const auto& id : app.pickerSelected) {
-        QuestionOptionItem item;
-        item.kind = "vocab";
-        item.vocabId = id;
-        app.editQuestion.promptItems.push_back(item);
-      }
-      std::string prompt = app.optionMirror(app.editQuestion.promptItems);
-      std::snprintf(app.arrangePromptInput, sizeof(app.arrangePromptInput), "%s", prompt.c_str());
-      app.editQuestion.prompt = prompt;
+      app.insertSelectedTokens("type:prompt", app.pickerSelected,
+                               app.editQuestion.promptItems, app.arrangePromptInput,
+                               sizeof(app.arrangePromptInput), false);
       app.questionDirty = true;
       app.pickerForTypePrompt = false;
     } else if (app.pickerForBlocks) {
@@ -10577,17 +10809,9 @@ void renderPicker(App& app) {
       app.questionDirty = true;
       app.pickerForBlocks = false;
     } else if (app.pickerForQuestion) {
-      std::vector<QuestionSegment> punctuation;
-      for (const auto& segment : app.editQuestion.segments) {
-        if (segment.kind == "punct") punctuation.push_back(segment);
-      }
-      app.editQuestion.segments.clear();
-      app.editQuestion.parts = app.pickerSelected;
-      for (const auto& id : app.pickerSelected) {
-        app.editQuestion.segments.push_back({"word", id, ""});
-      }
-      for (const auto& segment : punctuation) app.editQuestion.segments.push_back(segment);
-      if (!punctuation.empty()) app.showToast("已保留标点并移到新词序列末尾");
+      app.insertSelectedTokens("sentence", app.pickerSelected, app.sentenceTokenItems,
+                               app.sentenceTokenMirror, sizeof(app.sentenceTokenMirror), false);
+      app.syncSentenceFromTokenItems();
       app.questionDirty = true;
     } else {
       app.editEntry.parts = app.pickerSelected;

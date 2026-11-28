@@ -256,7 +256,7 @@ final class LexiconImporter {
                 entry.phonetic = importedPhonetic;
             }
             entry.meanings.addAll(meanings);
-            entry.codes.add(text);
+            if (TokenCodec.isValidCode(text)) entry.codes.add(text);
             entry.createdAt = entry.updatedAt = System.currentTimeMillis();
             if (pos != null) {
                 VocabularyEntry.PosMeaning group = new VocabularyEntry.PosMeaning();
@@ -307,6 +307,7 @@ final class LexiconImporter {
     }
 
     private static void ensureCode(VocabularyEntry entry, String text) {
+        if (text == null || !TokenCodec.isValidCode(text)) return;
         if (!entry.codes.contains(text)) {
             entry.codes.add(text);
         }

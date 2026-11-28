@@ -8,6 +8,52 @@ Tested source: 18c9b2f feat: add question punctuation and trimmed sentence audio
 HTML: NostongueForge_v1.3.1.html unchanged (git diff exit 0)
 
 ## Summary
+
+### Token text editor + vocabulary code validation (2026-11-28)
+
+All editor fields that used to compose text from multiple vocabulary chips now use one text field
+with #<code> tokens and a live preview: choice sentence segments, choice/dialog/reading/custom
+options, listen options, type prompt, cloze prompt/candidates and match left/right items. Plain
+text stays plain; tokens are blue in the real input (Android ForegroundColorSpan; desktop InputText
+overlay) and a picker inserts a token at the current cursor. #<code>, # <code> and #< code > are
+accepted; unknown or unclosed tokens show an error and block save. The stored schema is unchanged:
+parsed text becomes text items and parsed tokens become vocab items in order.
+
+Vocabulary codes now reject #, < and > in the Android/desktop vocabulary editors and in both
+lexicon import paths. Android and desktop project .conlang imports warn when the imported
+vocabulary contains such codes; existing data still opens and can be fixed in the editor. Unicode
+and combination vocabulary codes remain valid.
+
+Evidence (true UI, Android API36 + desktop Xvfb):
+- Desktop sentence token input/preview: /tmp/t85-d-sentence.png; token + preview in option:
+  /tmp/t85-token-option.png; token picker insertion: /tmp/t85-d-picked.png.
+- Desktop unknown-token preview/save block: /tmp/t85-d-unknown.png, /tmp/t85-d-save-block.png.
+- Android sentence token input/preview: /tmp/t85-a-sentence2.png; picker insertion at cursor:
+  /tmp/t85-a-picked2.png; unknown-token error/save block: /tmp/t85-a-unknown2.png,
+  /tmp/t85-a-saveblock.png.
+- Android choice learning regression (token-backed option selected/correct):
+  /tmp/t85-a-learn-select.png, /tmp/t85-a-learn-correct2.png.
+- Final gates: desktop clean Release build from a fresh build directory:
+  /tmp/task85-dclean-final; smoke run 1: /tmp/task85-final-smoke1b.log (SMOKE PASS,
+  question=true/learning=true); smoke run 2: /tmp/task85-final-smoke2b.log (SMOKE PASS).
+  Android clean debug build: /tmp/task85-aclean2.log; install/launch no crash:
+  /tmp/t85-final-launch.png. HTML SHA-256 remains
+  7c1f30f8b37f7b4b91dd31ae1f63032f10e10b9ccdb516b6045a4228e39643dd.
+- Desktop invalid vocabulary code # blocked with an explicit toast and JSON unchanged:
+  /tmp/t85-d-badcode3.png. Android has the equivalent check in VocabularyEditorActivity
+  (compiled and clean-built); both lexicon importers skip invalid codes and both project
+  import flows report invalid-code counts.
+
+Known boundaries:
+- In the choice-sentence field, whitespace-only text segments are treated as separators and
+  dropped when the sentence is rebuilt, so JSON stores "shared other" rather than a
+  duplicate-space punctuation segment. Option/type/cloze text preserves user spaces exactly.
+- A token always uses the first code of the chosen vocabulary entry. Duplicate codes are
+  ambiguous and the preview reports an error rather than guessing.
+- Desktop token input is backed by a 4 KB buffer per field; extremely long prose can exceed it.
+  Android has no such small fixed limit.
+- HTML is unchanged; all course fixtures remain under /tmp or app external storage.
+
 PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 
 ### TTS follow-up (2026-11-24)
