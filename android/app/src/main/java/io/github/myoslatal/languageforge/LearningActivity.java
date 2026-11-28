@@ -1,15 +1,19 @@
 package io.github.myoslatal.languageforge;
 
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.SpannableString;
+import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
+import android.text.style.ImageSpan;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
@@ -1467,6 +1471,43 @@ public class LearningActivity extends ForgeActivity {
         }
     }
 
+    private CharSequence renderCardSentence(ProjectStructure.Question item) {
+        if (item.segments.isEmpty()) {
+            return item.sentence == null ? "" : item.sentence;
+        }
+        SpannableStringBuilder result = new SpannableStringBuilder();
+        for (ProjectStructure.Question.Segment segment : item.segments) {
+            if (segment.word) {
+                VocabularyEntry entry = findEntry(segment.vocabId);
+                if (entry == null) {
+                    result.append("〔词汇已删除〕");
+                } else if (VocabularyEntry.TYPE_IMAGE.equals(entry.type)) {
+                    Bitmap bitmap = MediaFiles.loadProjectImage(projectDirectory, entry.image);
+                    if (bitmap == null) {
+                        result.append("〔手写文字图片缺失〕");
+                    } else {
+                        int height = Math.max(dp(20), (int) (15 * 1.6f * getResources()
+                                .getDisplayMetrics().density));
+                        int width = Math.max(dp(20), bitmap.getWidth() * height
+                                / Math.max(1, bitmap.getHeight()));
+                        int start = result.length();
+                        result.append("\uFFFC");
+                        BitmapDrawable drawable = new BitmapDrawable(getResources(), bitmap);
+                        drawable.setBounds(0, 0, width, height);
+                        result.setSpan(new ImageSpan(drawable, ImageSpan.ALIGN_BASELINE),
+                                start, start + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                } else {
+                    result.append(vocabulary.displayName(entry));
+                }
+                result.append(' ');
+            } else {
+                result.append(segment.text);
+            }
+        }
+        return result;
+    }
+
     private void renderCardQuestion(ProjectStructure.Question item) {
         content.removeAllViews();
         addQuestionAudio(item);
@@ -1488,6 +1529,14 @@ public class LearningActivity extends ForgeActivity {
         if (!item.card.pron.isEmpty()) content.addView(text("/" + item.card.pron + "/", 15, R.color.forge_muted));
         content.addView(text(item.card.def, 18, R.color.forge_text));
         if (!item.card.detail.isEmpty()) content.addView(text(item.card.detail, 14, R.color.forge_text));
+        CharSequence cardSentence = renderCardSentence(item);
+        if (cardSentence.length() > 0) {
+            content.addView(text("例句", 12, R.color.forge_muted));
+            TextView sentenceView = text("", 15, R.color.forge_text);
+            sentenceView.setText(cardSentence);
+            sentenceView.setLineSpacing(0, 1.15f);
+            content.addView(sentenceView);
+        }
         for (ProjectStructure.Question.CardExample ex : item.card.examples) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.VERTICAL);

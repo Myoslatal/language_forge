@@ -91,6 +91,38 @@ Known boundary: desktop card sentence typing was seeded/persisted in this test (
 was rendered and picker-capable); Android covered the full typed edit/save/restart path. The
 underlying save path is shared for both platforms and smoke still passes.
 
+### Card example sentence + Android IME avoidance (2026-11-28, task-87)
+
+- Card learning now shows a saved example sentence in both platforms. Android renders
+  segments with text/vocab/image handling in LearningActivity.renderCardQuestion; desktop
+  renders the same in the card learning branch. Image vocabulary renders the hand-written
+  image; missing files show 〔手写文字图片缺失〕; text, Unicode and combination vocabulary use
+  display text. If segments are empty, the legacy sentence field is used as plain fallback.
+  No label is shown when both are empty, and card questions remain unscored introductions.
+- ForgeActivity now installs a base IME inset listener on the activity content root. When the
+  keyboard is visible the whole root gets an absolute -IME-height translationY and the focused
+  input is scrolled into view; when hidden the translation resets to zero. This covers editor
+  and vocabulary/input pages, does not accumulate offsets, and survives activity recreation.
+
+Verified:
+- Android card learning with text + image + Unicode/combination tokens:
+  /tmp/t87-a-learn-course.png.
+- Desktop card learning with the same kinds of segments: /tmp/t87-d-learn4.png; legacy
+  sentence fallback without segments: /tmp/t87-d-fallback.png.
+- Android IME question editor: before /tmp/t87-a-ime-before.png, keyboard open and bottom
+  option visible /tmp/t87-a-ime-open3.png, restored /tmp/t87-a-ime-closed.png.
+- Android vocabulary editor: code field focused above keyboard /tmp/t87-a-vocab-ime2.png,
+  restored /tmp/t87-a-vocab-ime-closed.png.
+- Rotation/recreation while IME was open did not leave a double offset:
+  /tmp/t87-a-ime-rotate.png (landscape, keyboard hidden, normal top bar).
+- Android clean debug build /tmp/task87-aclean.log; desktop clean Release build
+  /tmp/task87-dclean, smoke x2 PASS: /tmp/task87-smoke1.log, /tmp/task87-smoke2.log
+  (question=true, learning=true). HTML unchanged; no course data added; no commit/push.
+
+Known boundary: the whole content is translated by the requested IME height, so the topbar
+can be clipped while the keyboard is open (editor area is still visible); this is the requested
+“整体上移” behavior. Desktop has no soft keyboard and is unaffected.
+
 PASS 26 / FAIL 0 / N/A 1 (matrix rows 27).
 
 ### TTS follow-up (2026-11-24)

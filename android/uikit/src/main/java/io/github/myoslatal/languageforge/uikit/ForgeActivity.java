@@ -1,6 +1,7 @@
 package io.github.myoslatal.languageforge.uikit;
 
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
@@ -56,6 +57,41 @@ public abstract class ForgeActivity extends AppCompatActivity {
         boolean dark = ForgeTheme.isDark(this);
         controller.setAppearanceLightStatusBars(!dark);
         controller.setAppearanceLightNavigationBars(!dark);
+    }
+
+    @Override
+    public void onContentChanged() {
+        super.onContentChanged();
+        installImeTranslation();
+    }
+
+    private void scrollFocusedIntoView() {
+        View focus = getCurrentFocus();
+        if (focus == null) return;
+        focus.post(() -> {
+            Rect rect = new Rect(0, 0, focus.getWidth(), focus.getHeight());
+            focus.requestRectangleOnScreen(rect, true);
+        });
+    }
+
+    /**
+     * Edge-to-edge windows do not resize their content for the IME. Translate the whole
+     * activity content root by the keyboard height instead, and reset it when the IME hides.
+     * The translation is absolute so repeated inset dispatches or a keyboard resize cannot
+     * accumulate into a permanent offset.
+     */
+    private void installImeTranslation() {
+        View content = findViewById(android.R.id.content);
+        if (content == null) return;
+        content.setTranslationY(0f);
+        ViewCompat.setOnApplyWindowInsetsListener(content, (view, windowInsets) -> {
+            Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+            float target = ime.bottom > 0 ? -ime.bottom : 0f;
+            if (view.getTranslationY() != target) view.setTranslationY(target);
+            if (ime.bottom > 0) scrollFocusedIntoView();
+            return windowInsets;
+        });
+        ViewCompat.requestApplyInsets(content);
     }
 
     /** Adds the status bar inset to the view's top padding (keeps its other padding). */

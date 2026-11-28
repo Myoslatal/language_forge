@@ -6217,6 +6217,40 @@ void renderLearningModeDialog(App& app) {
   ImGui::EndPopup();
 }
 
+void drawCardSentenceContent(App& app, const Question& question) {
+  if (question.segments.empty()) {
+    if (!question.sentence.empty()) ImGui::TextWrapped("%s", question.sentence.c_str());
+    return;
+  }
+  for (const auto& segment : question.segments) {
+    if (segment.kind == "word") {
+      const VocabEntry* entry = app.vocabulary ? app.vocabulary->find(segment.vocabId) : nullptr;
+      if (!entry) {
+        ImGui::TextUnformatted("〔词汇已删除〕");
+      } else if (entry->type == "image") {
+        SDL_Texture* texture = textureForImage(
+            app.renderer, app.currentProjectDirectory() / pathFromUtf8(entry->image),
+            app.imageTextures);
+        if (!texture) {
+          ImGui::TextColored(ImVec4(0.8f, 0.35f, 0.05f, 1), "〔手写文字图片缺失〕");
+        } else {
+          const float h = 24.0f;
+          const float w = std::max(h, h * static_cast<float>(std::max(1, entry->imageWidth)) /
+                                          static_cast<float>(std::max(1, entry->imageHeight)));
+          ImGui::Image(reinterpret_cast<ImTextureID>(texture), ImVec2(w, h));
+        }
+      } else {
+        ImGui::TextUnformatted(displayName(*entry, app.vocabulary->entries).c_str());
+      }
+      ImGui::SameLine(0.0f, 4.0f);
+    } else {
+      ImGui::TextUnformatted(segment.text.c_str());
+      ImGui::SameLine(0.0f, 0.0f);
+    }
+  }
+  ImGui::NewLine();
+}
+
 void renderLearning(App& app) {
   app.ensureLearningStatsLoaded();
   if (app.learningScrollTop) {
@@ -7002,6 +7036,10 @@ void renderLearning(App& app) {
     if (!question->card.pron.empty()) ImGui::TextDisabled("/%s/", question->card.pron.c_str());
     ImGui::TextWrapped("%s", question->card.def.c_str());
     if (!question->card.detail.empty()) ImGui::TextWrapped("%s", question->card.detail.c_str());
+    if (!question->segments.empty() || !question->sentence.empty()) {
+      ImGui::TextDisabled("例句");
+      drawCardSentenceContent(app, *question);
+    }
     for (const auto& ex : question->card.examples) {
       ImGui::TextUnformatted(ex.l.c_str());
       if (!ex.z.empty()) {
